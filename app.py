@@ -12,12 +12,22 @@ def index():
 
 @app.route('/files', methods=['GET'])
 def list_files():
-    completed_files = set(os.listdir(completed_dir))
-    media_files = set(os.listdir(media_dir))
+    completed_files = {}
+    media_files = {}
+    for root, dirs, files in os.walk(completed_dir):
+        for file in files:
+            path = os.path.join(root, file)
+            inode = os.stat(path).st_ino
+            completed_files[file] = inode
+    for root, dirs, files in os.walk(media_dir):
+        for file in files:
+            path = os.path.join(root, file)
+            inode = os.stat(path).st_ino
+            media_files[file] = inode
     result = []
-    for filename in completed_files - media_files:
-        inode = os.stat(os.path.join(completed_dir, filename)).st_ino
-        result.append({'inode': inode, 'filename': filename})
+    for file, inode in completed_files.items():
+        if inode not in media_files.values():
+            result.append({'inode': inode, 'filename': file})
     return jsonify(result)
 
 @app.route('/files/<int:inode>', methods=['DELETE'])
