@@ -18,15 +18,15 @@ def list_files():
         for file in files:
             path = os.path.join(root, file)
             inode = os.stat(path).st_ino
-            completed_files[file] = inode
+            completed_files[inode] = file
     for root, dirs, files in os.walk(media_dir):
         for file in files:
             path = os.path.join(root, file)
             inode = os.stat(path).st_ino
-            media_files[file] = inode
+            media_files[inode] = file
     result = []
-    for file, inode in completed_files.items():
-        if inode not in media_files.values():
+    for inode, file in completed_files.items():
+        if inode not in media_files:
             result.append({'inode': inode, 'filename': file})
     return jsonify(result)
 
