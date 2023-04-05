@@ -3,8 +3,9 @@ from flask import Flask, jsonify, request, render_template
 
 app = Flask(__name__)
 
-completed_dir = '/data/completed'
-media_dir = '/data/medias'
+completed_dir = "/data/completed"
+medias_dir = "/data/medias"
+file_extension = ('.mkv', '.mp4', '.avi', '.mov')
 
 @app.route('/')
 def index():
@@ -13,20 +14,21 @@ def index():
 @app.route('/files', methods=['GET'])
 def list_files():
     completed_files = {}
+    media_files = {}
+    result = []
+
     for dirpath, dirnames, filenames in os.walk(completed_dir):
         for filename in filenames:
-            if filename.lower().endswith(('.mkv', '.mp4', '.avi', '.mov')):
+            if filename.lower().endswith(file_extension):
                 inode = os.stat(os.path.join(dirpath, filename)).st_ino
                 completed_files[inode] = filename
 
-    media_files = {}
-    for dirpath, dirnames, filenames in os.walk(media_dir):
+    for dirpath, dirnames, filenames in os.walk(medias_dir):
         for filename in filenames:
-            if filename.lower().endswith(('.mkv', '.mp4', '.avi', '.mov')):
+            if filename.lower().endswith(file_extension):
                 inode = os.stat(os.path.join(dirpath, filename)).st_ino
                 media_files[inode] = filename
 
-    result = []
     for inode, filename in completed_files.items():
         if inode not in media_files:
             result.append({'inode': inode, 'filename': filename})
@@ -52,5 +54,5 @@ def delete_file(inode):
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0')
+    app.run(debug=True, host='0.0.0.0', port="5000")
 
