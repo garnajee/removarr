@@ -1,6 +1,6 @@
 version: '3.3'
 services:
-  removearr:
+  removarr:
     image: 'ghcr.io/garnajee/removarr:1.0'
     container_name: removarr
     restart: always
