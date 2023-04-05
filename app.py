@@ -34,9 +34,12 @@ def list_files():
 @app.route('/files/<int:inode>', methods=['DELETE'])
 def delete_file(inode):
     filename = None
-    for f in os.listdir(completed_dir):
-        if os.stat(os.path.join(completed_dir, f)).st_ino == inode:
-            filename = f
+    for dirpath, dirnames, filenames in os.walk(completed_dir):
+        for f in filenames:
+            if os.stat(os.path.join(dirpath, f)).st_ino == inode:
+                filename = f
+                break
+        if filename:
             break
     if filename is None:
         return jsonify({'error': 'File not found.'}), 404
