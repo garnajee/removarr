@@ -15,14 +15,14 @@ def list_files():
     completed_files = {}
     for dirpath, dirnames, filenames in os.walk(completed_dir):
         for filename in filenames:
-            file_inode = os.stat(os.path.join(dirpath, filename)).st_ino
-            completed_files[file_inode] = filename
+            inode = os.stat(os.path.join(dirpath, filename)).st_ino
+            completed_files[inode] = filename
 
     media_files = {}
     for dirpath, dirnames, filenames in os.walk(media_dir):
         for filename in filenames:
-            file_inode = os.stat(os.path.join(dirpath, filename)).st_ino
-            media_files[file_inode] = filename
+            inode = os.stat(os.path.join(dirpath, filename)).st_ino
+            media_files[inode] = filename
 
     result = []
     for inode, filename in completed_files.items():
