@@ -1,0 +1,12 @@
+version: '3.3'
+services:
+  removearr:
+    image: 'ghcr.io/garnajee/removarr:latest'
+    container_name: removarr
+    restart: always
+    volumes:
+      - '/tmp/test/completed/:/data/completed'
+      - '/tmp/test/medias/:/data/medias'
+    ports:
+      - '127.0.0.1:8012:5000'
+
