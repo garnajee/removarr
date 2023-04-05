@@ -5,16 +5,16 @@ on:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-  steps:
-    - uses: actions/checkout@main
-    - name: Login to GitHub Container Registry
-      uses: docker/login-action@v2
-      with:
-        registry: ghcr.io
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v3
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Build the removarr image
-      run: |
-        docker build --tag ghcr.io/garnajee/removarr:latest .
-        docker push ghcr.io/garnajee/removarr:latest
+      - name: Build the removarr image
+        run: |
+          docker build --tag ghcr.io/garnajee/removarr:latest .
+          docker push ghcr.io/garnajee/removarr:latest
