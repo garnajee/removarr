@@ -3,8 +3,8 @@ from flask import Flask, jsonify, request, render_template
 
 app = Flask(__name__)
 
-completed_dir = '/tmp/test/completed'
-media_dir = '/tmp/test/medias'
+completed_dir = '/data/completed'
+media_dir = '/data/medias'
 
 @app.route('/')
 def index():
