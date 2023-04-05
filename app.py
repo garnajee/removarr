@@ -10,8 +10,8 @@ media_dir = '/data/medias'
 def index():
     return render_template('index.html')
 
-@app.route('/files', methods=['GET'])
-def list_files():
+@app.route('/files_old', methods=['GET'])
+def list_files_old():
     completed_files = {}
     media_files = {}
     for root, dirs, files in os.walk(completed_dir):
@@ -28,6 +28,29 @@ def list_files():
     for inode, file in completed_files.items():
         if inode not in media_files:
             result.append({'inode': inode, 'filename': file})
+    return jsonify(result)
+
+@app.route('/files', methods=['GET'])
+def list_files():
+    completed_files = {}
+    for dirpath, dirnames, filenames in os.walk(completed_dir):
+        for filename in filenames:
+            if filename.endswith(".mkv"):
+                file_inode = os.stat(os.path.join(dirpath, filename)).st_ino
+                completed_files[file_inode] = filename
+
+    media_files = {}
+    for dirpath, dirnames, filenames in os.walk(media_dir):
+        for filename in filenames:
+            if filename.endswith(".mkv"):
+                file_inode = os.stat(os.path.join(dirpath, filename)).st_ino
+                media_files[file_inode] = filename
+
+    result = []
+    for inode, filename in completed_files.items():
+        if inode not in media_files:
+            result.append({'inode': inode, 'filename': filename})
+
     return jsonify(result)
 
 @app.route('/files/<int:inode>', methods=['DELETE'])
