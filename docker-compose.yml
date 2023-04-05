@@ -1,7 +1,7 @@
 version: '3.3'
 services:
   removearr:
-    image: 'ghcr.io/garnajee/removarr:latest'
+    image: 'ghcr.io/garnajee/removarr:1.0'
     container_name: removarr
     restart: always
     volumes:
