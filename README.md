@@ -21,3 +21,9 @@ A recursive comparison according to the inodes of the files is made between the 
 
 All the files present on the side of Jellyfin are the latest versions that we want to keep. So, all we want to remove is everything that is present on the Transmission side but not on the Jellyfin side.
 
+## Todo
+
+- [ ] get hash of torrent file to delete it (need to mount one more volume)
+- [ ] create a checkbox to delete multiples files at once
+- [ ] create a buton to delete all files at once
+
