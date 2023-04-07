@@ -53,17 +53,23 @@ def delete_file(inode):
     # Loop through completed_dir to find file to delete
     for dirpath, dirnames, filenames in os.walk(completed_dir):
         for f in filenames:
+            # Check if the inode of the file matches the requested inode
             if os.stat(os.path.join(dirpath, f)).st_ino == inode:
+                # If there's a match, set the filename variable to the path of the file
                 filename = os.path.join(dirpath, f)
                 break
         if filename:
             break
+    # If no file with the specified inode was found, return an error response
     if filename is None:
         return jsonify({'error': 'File not found.'}), 404
     try:
+        # Attempt to delete the file
         os.remove(filename)
+        # If successful, return a success response
         return jsonify({'message': 'File deleted successfully.'}), 200
     except Exception as e:
+        # If an exception occurs during deletion, return an error response with the exception message
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
