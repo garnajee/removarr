@@ -27,11 +27,11 @@
         function refreshFileList() {
             $.getJSON('/files', function(data) {
                 $('#file-list').empty();
-                $('#total-size').text('Total size = ' + data.total_size);
-                $.each(data, function(i, file) {
+                $.each(data.result, function(i, file) {
                     var row = '<tr><td>' + file.inode + '</td><td>' + file.filename + '</td><td><button type="button" class="btn btn-danger" onclick="deleteFile(' + file.inode + ')">Delete</button></td></tr>';
                     $('#file-list').append(row);
                 });
+                $('#total-size').text('Total size = ' + data.total_size);
             });
         }
 

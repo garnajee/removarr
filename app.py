@@ -47,9 +47,15 @@ def list_files():
         if inode not in media_files:
             result.append({'inode': inode, 'filename': filename})
 
-    result.append({'total_size': total_size})
-
-    return jsonify(result)
+    num = total_size
+    suffix = "B"
+    for unit in ["", "Ki", "Mi", "Gi", "Ti", "Pi", "Ei", "Zi"]:
+        if abs(num) < 1024.0:
+            total_size = f"{num:3.1f} {unit}{suffix}"
+            break
+        num /= 1024.
+    
+    return jsonify({'total_size': total_size, 'result': result})
 
 def check_delete_empty_folder(file_path):
     # get the parent folder of the file that was just deleted
