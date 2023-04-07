@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Liste des fichiers</title>
+    <title>Removarr</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css">
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
@@ -9,13 +9,14 @@
 </head>
 <body>
     <div class="container">
-        <h1>Liste des fichiers</h1>
+        <h1>Files List</h1>
+        <p id="total-size"></p>
         <table class="table table-striped table-bordered table-hover">
             <thead>
                 <tr>
                     <th>Inode</th>
-                    <th>Nom du fichier</th>
-                    <th>Supprimer</th>
+                    <th>File Name</th>
+                    <th>Delete</th>
                 </tr>
             </thead>
             <tbody id="file-list">
@@ -26,15 +27,16 @@
         function refreshFileList() {
             $.getJSON('/files', function(data) {
                 $('#file-list').empty();
+                $('#total-size').text('Total size = ' + data.total_size);
                 $.each(data, function(i, file) {
-                    var row = '<tr><td>' + file.inode + '</td><td>' + file.filename + '</td><td><button type="button" class="btn btn-danger" onclick="deleteFile(' + file.inode + ')">Supprimer</button></td></tr>';
+                    var row = '<tr><td>' + file.inode + '</td><td>' + file.filename + '</td><td><button type="button" class="btn btn-danger" onclick="deleteFile(' + file.inode + ')">Delete</button></td></tr>';
                     $('#file-list').append(row);
                 });
             });
         }
 
         function deleteFile(inode) {
-            if (confirm('Êtes-vous sûr de vouloir supprimer ce fichier?')) {
+            if (confirm('Are you sure you want to delete this file?')) {
                 $.ajax({
                     url: '/files/' + inode,
                     type: 'DELETE',
@@ -50,9 +52,9 @@
         }
 
         $(document).ready(function() {
-            // Appeler la fonction refreshFileList pour afficher la liste des fichiers au chargement de la page
+            // Call the refreshFileList function to display the list of files when loading the page
             refreshFileList();
-            // Rafraîchir la liste des fichiers toutes les 5 secondes
+            // Refresh the list of files every 5 seconds
             setInterval(refreshFileList, 5000);
         });
 </script>
