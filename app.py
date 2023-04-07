@@ -19,6 +19,7 @@ def list_files():
     completed_files = {}    # dictionary to store the inodes and filenames in completed_dir
     media_files = {}        # dictionary to store the medias_dir inodes and filenames
     result = []             # list to store the result of (inodes) files not in medias_dir
+    total_size = 0          # total size of all files found (completed_files)
 
     # recursive loop through all directories and files 
     # os.walk return a 3-tuple containing:
@@ -32,6 +33,8 @@ def list_files():
                 inode = os.stat(os.path.join(dirpath, filename)).st_ino
                 # store the inode and filename in the dictionary
                 completed_files[inode] = filename
+                # increment the total size variable
+                total_size += os.path.getsize(os.path.join(dirpath, filename))
 
     for dirpath, dirnames, filenames in os.walk(medias_dir):
         for filename in filenames:
@@ -43,6 +46,8 @@ def list_files():
     for inode, filename in completed_files.items():
         if inode not in media_files:
             result.append({'inode': inode, 'filename': filename})
+
+    result.append({'total_size': total_size})
 
     return jsonify(result)
 
