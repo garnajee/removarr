@@ -27,6 +27,7 @@ All the files present on the side of Jellyfin are the latest versions that we wa
 
 - [ ] modify README (setup installation, how to use, screenshot,...)
 - [ ] get hash of torrent file to delete it (need to mount one more volume)
+- [ ] delete empty folder (ignore other files differents than .mkv/avi/...)
 - [ ] create a checkbox to delete multiples files at once
 - [ ] create a buton to delete all files at once
 
