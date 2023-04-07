@@ -46,6 +46,44 @@ def list_files():
 
     return jsonify(result)
 
+def check_delete_empty_folder(file_path):
+    # get the parent folder of the file that was just deleted
+    folder_path = os.path.dirname(file_path)
+
+    # only proceed if the folder is not the completed_dir folder
+    if folder_path == completed_dir:
+        return
+
+    # check if the folder is empty or only contains files with certain extensions
+    files_to_remove = []
+    for f in os.listdir(folder_path):
+        file_ext = os.path.splitext(f)[-1].lower()
+        if file_ext not in file_extension:
+            files_to_remove.append(f)
+
+    # check if the folder is empty or only contains files with certain extensions
+    files_to_remove = []
+    for f in os.listdir(folder_path):
+        f_path = os.path.join(folder_path, f)
+        # if it is a folder, do nothing
+        if os.path.isdir(f_path):
+            return
+        else:
+            file_ext = os.path.splitext(f)[-1].lower()
+            if file_ext not in file_extension:
+                files_to_remove.append(f)
+
+    if len(os.listdir(folder_path)) == len(files_to_remove):
+        # all files have extensions different from the ones in file_extension, remove them
+        for f in files_to_remove:
+            os.remove(os.path.join(folder_path, f))
+        # if the folder is empty, delete it
+        if not os.listdir(folder_path):
+            os.rmdir(folder_path)
+    elif len(os.listdir(folder_path)) == 0:
+        # the folder is empty, delete it
+        os.rmdir(folder_path)
+
 # define route for deleting a file
 @app.route('/files/<int:inode>', methods=['DELETE'])
 def delete_file(inode):
@@ -66,6 +104,8 @@ def delete_file(inode):
     try:
         # Attempt to delete the file
         os.remove(filename)
+        # Call the check_delete_empty_folder function to delete the parent folder if it is empty
+        check_delete_empty_folder(filename)
         # If successful, return a success response
         return jsonify({'message': 'File deleted successfully.'}), 200
     except Exception as e:
