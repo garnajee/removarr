@@ -35,6 +35,7 @@ If the deleted file was in a folder :
 - [ ] get hash of torrent file to delete it (need to mount one more volume)
 - [x] delete empty folder (ignore other files differents than .mkv/avi/...)
 - [x] add total size of all files
+- [x] add size of each file in a column
 - [ ] create a checkbox to delete multiples files at once
 - [ ] create a buton to delete all files at once
 
