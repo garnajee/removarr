@@ -13,6 +13,14 @@ file_extension = ('.mkv', '.mp4', '.avi', '.mov')
 def index():
     return render_template('index.html')
 
+def sizeof_fmt(num, suffix="B"):
+    # convert a size to human readable string
+    for unit in ["", "Ki", "Mi", "Gi", "Ti", "Pi", "Ei", "Zi"]:
+        if abs(num) < 1024.0:
+            return f"{num:3.1f} {unit}{suffix}"
+        num /= 1024.0
+    return f"{num:.1f} Yi{suffix}"
+
 # define route for listing files
 @app.route('/files', methods=['GET'])
 def list_files():
@@ -46,17 +54,12 @@ def list_files():
     # Check for files in completed_dir that are not in media_dir
     for inode, filename in completed_files.items():
         if inode not in media_files:
-            result.append({'inode': inode, 'filename': filename, 'file_size': file_size[inode]})
+            result.append({'inode': inode, 'filename': filename, 'file_size': sizeof_fmt(file_size[inode])})
             # calculate the total size
             total_size += file_size[inode]
-
-    num = total_size
-    suffix = "B"
-    for unit in ["", "Ki", "Mi", "Gi", "Ti", "Pi", "Ei", "Zi"]:
-        if abs(num) < 1024.0:
-            total_size = f"{num:3.1f} {unit}{suffix}"
-            break
-        num /= 1024.
+    
+    # convert size to human readable
+    total_size = sizeof_fmt(total_size)
     
     return jsonify({'total_size': total_size, 'result': result})
 
