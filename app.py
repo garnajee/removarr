@@ -46,7 +46,7 @@ def list_files():
     # Check for files in completed_dir that are not in media_dir
     for inode, filename in completed_files.items():
         if inode not in media_files:
-            result.append({'inode': inode, 'filename': filename})
+            result.append({'inode': inode, 'filename': filename, 'file_size': file_size[inode]})
             # calculate the total size
             total_size += file_size[inode]
 
