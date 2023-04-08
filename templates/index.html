@@ -16,6 +16,7 @@
                 <tr>
                     <th>Inode</th>
                     <th>File Name</th>
+                    <th>File Size</th>
                     <th>Delete</th>
                 </tr>
             </thead>
@@ -28,7 +29,7 @@
             $.getJSON('/files', function(data) {
                 $('#file-list').empty();
                 $.each(data.result, function(i, file) {
-                    var row = '<tr><td>' + file.inode + '</td><td>' + file.filename + '</td><td><button type="button" class="btn btn-danger" onclick="deleteFile(' + file.inode + ')">Delete</button></td></tr>';
+                    var row = '<tr><td>' + file.inode + '</td><td>' + file.filename + '</td><td>' + file.file_size + '</td><td><button type="button" class="btn btn-danger" onclick="deleteFile(' + file.inode + ')">Delete</button></td></tr>';
                     $('#file-list').append(row);
                 });
                 $('#total-size').text('Total size = ' + data.total_size);
