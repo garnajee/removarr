@@ -79,6 +79,7 @@ $ id username
 - [x] add size of each file in a column
 - [ ] create a checkbox to delete multiples files at once
 - [ ] create a button to delete all files at once
+- [ ] made the app responsive
 
 # License
 
