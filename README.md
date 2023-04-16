@@ -29,6 +29,8 @@ If the deleted file was in a folder :
 - if the folder does not contain other files with extension '.mkv', '.mp4', '.avi', '.mov', then the folder is deleted
 - if the folder does not contain subfolder(s), the folder is deleted
 
+Take a look at the screenshot of the web-app [here](https://zupimages.net/up/23/15/jhb0.png).
+
 ## How to install
 
 Nothing more simple than to use the [docker-compose](docker-compose.yml) file:
@@ -79,7 +81,7 @@ $ id username
 - [x] add size of each file in a column
 - [ ] create a checkbox to delete multiples files at once
 - [ ] create a button to delete all files at once
-- [ ] made the app responsive
+- [ ] make the app responsive
 
 # License
 
