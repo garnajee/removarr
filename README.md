@@ -99,7 +99,7 @@ The application will be available at `<you_ip>:8012`.
 
 * User/Group Identifiers
 
-UserID (`PUID`) and GroupID (`PGID`) are optionals. To find these ids just type `id user` as below:
+UserID (`PUID`) and GroupID (`PGID`) are optionals. To find these ids just type `id <username>` as below:
 
 ```bash
 $ id username
@@ -109,6 +109,7 @@ $ id username
 * Volumes
 
 `/tmp/test/completed/`: change this by the path of your download folder
+
 `/tmp/test/medias/`   : change this by the path of your Jellyfin medias folder
 
 * Port
@@ -117,7 +118,7 @@ $ id username
 
 ## Todo
 
-- [ ] modify README (setup installation, how to use, how to build, screenshot,...)
+- [x] modify README (setup installation, how to use, how to build, screenshot,...) - needs to be improved
 - [ ] get hash of torrent file to delete it (need to mount one more volume)
 - [x] delete empty folder (ignore other files different than .mkv/avi/...)
 - [x] add total size of all files
