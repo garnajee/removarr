@@ -1,0 +1,16 @@
+version: '3.9'
+services:
+  removarr:
+    image: ghcr.io/garnajee/removarr:latest
+    container_name: removarr
+    restart: always
+    environment:
+      - PUID=1030
+      - PGID=100
+    volumes:
+      - '/your/path/completed/:/data/completed'
+      - '/your/path/movies/:/data/movies'
+      - '/your/path/series/:/data/series'
+    ports:
+      - '127.0.0.1:8012:5000'
+
