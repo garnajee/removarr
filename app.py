@@ -6,7 +6,17 @@ app = Flask(__name__)
 
 completed_dir = "/data/completed"
 medias_dir = "/data/medias"
+series_dir = "/data/series"
 file_extension = ('.mkv', '.mp4', '.avi', '.mov')
+
+if os.path.isdir(medias_dir):
+    if not os.listdir(medias_dir):
+        num_volumes = 3
+        medias_dir = "/data/movies"
+    else:
+        num_volumes = 2
+else:
+    print("ERROR: directory",medias_dir,"doesn't exist")
 
 # default route for the homepage
 @app.route('/')
@@ -50,6 +60,13 @@ def list_files():
             if filename.lower().endswith(file_extension):
                 inode = os.stat(os.path.join(dirpath, filename)).st_ino
                 media_files[inode] = filename
+
+    if num_volumes == 3:
+        for dirpath, dirnames, filenames in os.walk(series_dir):
+            for filename in filenames:
+                if filename.lower().endswith(file_extension):
+                    inode = os.stat(os.path.join(dirpath, filename)).st_ino
+                    media_files[inode] = filename
 
     # Check for files in completed_dir that are not in media_dir
     for inode, filename in completed_files.items():
