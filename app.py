@@ -13,8 +13,6 @@ if os.path.isdir(medias_dir):
     if not os.listdir(medias_dir):
         num_volumes = 3
         medias_dir = "/data/movies"
-    else:
-        num_volumes = 2
 else:
     print("ERROR: directory",medias_dir,"doesn't exist")
 
