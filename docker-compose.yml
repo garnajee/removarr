@@ -8,8 +8,8 @@ services:
       - PUID=1030
       - PGID=100
     volumes:
-      - '/tmp/test/completed/:/data/completed'
-      - '/tmp/test/medias/:/data/medias'
+      - '/your/path/completed/:/data/completed'
+      - '/your/path/medias/:/data/medias'
     ports:
       - '127.0.0.1:8012:5000'
 
