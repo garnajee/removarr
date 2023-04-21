@@ -36,7 +36,7 @@ A recursive comparison according to the inodes of the files is made between the 
 
 All the files present on the side of Jellyfin are the latest versions that we want to keep. So, all we want to remove is everything that is present on the Transmission side but not on the Jellyfin side.
 
-If the deleted file was in a folder : 
+If the deleted file was in a folder: 
 
 - if the folder is now empty, then the folder is deleted
 - if the folder does not contain other files with extension '.mkv', '.mp4', '.avi', '.mov', then the folder is deleted
@@ -76,7 +76,9 @@ Overall:
 
 ## How to install
 
-Nothing more simple than to use the [docker-compose](docker-compose.yml) file:
+Nothing more simple than to use the [docker-compose](docker-compose.yml) file.
+
+* First option: (like the example above) you have **one** folder for all your media, use [this file](docker-compose.yml):
 
 ```yaml
 version: '3.9'
@@ -89,8 +91,28 @@ services:
       - PUID=1030
       - PGID=100
     volumes:
-      - '/tmp/test/completed/:/data/completed'
-      - '/tmp/test/medias/:/data/medias'
+      - '/your/path/completed/:/data/completed'
+      - '/your/path/medias/:/data/medias'
+    ports:
+      - '127.0.0.1:8012:5000'
+```
+
+* Second option: you have several folders not in the same place, use [this file](docker-compose-2.yml):
+
+```yaml
+version: '3.9'
+services:
+  removarr:
+    image: ghcr.io/garnajee/removarr:latest
+    container_name: removarr
+    restart: always
+    environment:
+      - PUID=1030
+      - PGID=100
+    volumes:
+      - '/your/path/completed/:/data/completed'
+      - '/your/path/movies/:/data/movies'
+      - '/your/path/series/:/data/series'
     ports:
       - '127.0.0.1:8012:5000'
 ```
