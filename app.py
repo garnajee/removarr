@@ -9,6 +9,7 @@ medias_dir = "/data/medias"
 series_dir = "/data/series"
 file_extension = ('.mkv', '.mp4', '.avi', '.mov')
 
+num_volumes = 0
 if os.path.isdir(medias_dir):
     if not os.listdir(medias_dir):
         num_volumes = 3
