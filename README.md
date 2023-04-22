@@ -2,7 +2,7 @@
 
 *build status:* ![build check](https://github.com/garnajee/removarr/actions/workflows/publish-image.yml/badge.svg)
 
-This is a web application, created to help you manually delete files present in the (Transmission `completed/`) download folder but not in the (Jellyfin) `medias/` folder.
+This is a web application, created to help you manually delete files present in the (Transmission `completed/`) download folder but not in the (Jellyfin) `medias/` folder. If you have separated folders it'll also works.
 
 Take a look at the screenshot of the web-app [here](https://zupimages.net/up/23/15/jhb0.png).
 
@@ -17,7 +17,9 @@ Take a look at the screenshot of the web-app [here](https://zupimages.net/up/23/
 
 ## How it works
 
-A recursive comparison according to the inodes of the files is made between the `completed/` folder (on the Transmission side) and the folders where the medias are stored (on the Jellyfin side)
+A recursive comparison according to the inodes of the files is made between the `completed/` folder (on the Transmission side) and the folders where the media are stored (on the Jellyfin side).
+
+Example 1:
 
 ```
 ├── completed       # Transmission side
@@ -31,6 +33,25 @@ A recursive comparison according to the inodes of the files is made between the 
     │   └── ...
     └── series
         ├── folders
+        └── ...
+```
+
+Example 2:
+
+```
+├── completed       # Transmission side
+│   ├── folder1
+│   ├── ...
+│   ├── files
+│   └── ...
+├── movies          # Jellyfin side
+│   ├── files
+│   ├── folders
+│   │   └── ...
+│   └── ...
+└── series          # Jellyfin side
+    ├── files
+    └── folders
         └── ...
 ```
 
