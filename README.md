@@ -13,6 +13,7 @@ Take a look at the screenshot of the web-app [here](https://zupimages.net/up/23/
       + [Proof it works](#proof-it-works)
   * [How to install](#how-to-install)
   * [Todo](#todo)
+  * [Build](#build)
 - [License](#license)
 
 ## How it works
@@ -170,6 +171,35 @@ $ id username
 - [ ] create a button to delete all files at once
 - [ ] sort table by alphabetic order and file size
 - [ ] make the app responsive
+
+## Build
+
+To build this application, follow these steps:
+
+* build the Dockerfile: `$ docker build -t <your_image_name> .`
+* run the image: `$ docker run -p 5000:5000 -v /your/path/completed:/data/completed -v /your/path/medias:/data/medias <your_image_name>`
+
+If you want to use a docker-compose.yml instead of the Dockerfile, then use this example:
+
+```yml
+version: '3.9'
+services:
+  removarr:
+    build: .
+    container_name: removarr
+    restart: always
+    environment:
+      - PUID=1030
+      - PGID=100
+    volumes:
+      - '/your/path/completed/:/data/completed'
+      - '/your/path/medias/:/data/medias'
+    ports:
+      - '127.0.0.1:8012:5000'
+```
+
+* you can now build this docker-compose.yml: `$ docker-compose build`
+* and finally, run: `$  docker-compose up -d`
 
 # License
 
