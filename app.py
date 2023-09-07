@@ -145,6 +145,19 @@ def delete_file(inode):
         # If an exception occurs during deletion, return an error response with the exception message
         return jsonify({'error': str(e)}), 500
 
+# define route for deleting selected files
+@app.route('/files/', methods=['DELETE'])
+def delete_selected_files():
+    selected_inodes = []
+    # get the selected inodes from the javascript function
+    data = request.get_json()
+    selected_inodes = data['inodes']
+    # delete the selected files
+    for inode in selected_inodes:
+        delete_file(inode)
+    # return a success response
+    return jsonify({'message': 'Files deleted successfully.'}), 200
+
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port="5000")
 

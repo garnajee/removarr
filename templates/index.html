@@ -3,33 +3,50 @@
 <head>
     <title>Removarr</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" href="../favicon.ico" type="image/x-icon" />
     <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css">
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
     <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/js/bootstrap.min.js"></script>
+    <style>
+        .file-checkbox {
+            transform: scale(1.5); /* increase size of checkbox */
+        }
+        td {
+            text-align: center; /* align text to center */
+            vertical-align: middle; /* align checkbox to center */
+        }
+    </style>
 </head>
 <body>
     <div class="container">
         <h1>Files List</h1>
         <p id="total-size"></p>
-        <table class="table table-striped table-bordered table-hover">
-            <thead>
-                <tr>
-                    <th>Inode</th>
-                    <th>File Name</th>
-                    <th>File Size</th>
-                    <th>Delete</th>
-                </tr>
-            </thead>
-            <tbody id="file-list">
-            </tbody>
-        </table>
+        <button type="button" class="btn btn-primary" onclick="refreshFileList()">Refresh List</button>
+        <button type="button" class="btn btn-info" onclick="toggleSelectAll()">Select All</button>
+        <button type="button" class="btn btn-danger" style="float: right;" onclick="deleteSelectedFiles()">Delete Selected</button>
+        <p></p>
+        <div class="table-responsive">
+            <table class="table table-striped table-bordered table-hover">
+                <thead>
+                    <tr>
+                        <th class="text-center">Select</th>
+                        <th class="text-center">Inode</th>
+                        <th class="text-center">File Name</th>
+                        <th class="text-center">File Size</th>
+                        <th class="text-center">Delete</th>
+                    </tr>
+                </thead>
+                <tbody id="file-list">
+                </tbody>
+            </table>
+        </div>
     </div>
     <script>
         function refreshFileList() {
             $.getJSON('/files', function(data) {
                 $('#file-list').empty();
                 $.each(data.result, function(i, file) {
-                    var row = '<tr><td>' + file.inode + '</td><td>' + file.filename + '</td><td>' + file.file_size + '</td><td><button type="button" class="btn btn-danger" onclick="deleteFile(' + file.inode + ')">Delete</button></td></tr>';
+                    var row = '<tr><td><input type="checkbox" class="file-checkbox" data-inode="' + file.inode + '"></td><td>' + file.inode + '</td><td>' + file.filename + '</td><td>' + file.file_size + '</td><td><button type="button" class="btn btn-danger" onclick="deleteFile(' + file.inode + ')">Delete</button></td></tr>';
                     $('#file-list').append(row);
                 });
                 $('#total-size').text('Total size = ' + data.total_size);
@@ -52,11 +69,50 @@
             }
         }
 
+        function deleteSelectedFiles() {
+            var selectedInodes = [];
+            $('.file-checkbox:checked').each(function() {
+                selectedInodes.push($(this).data('inode'));
+            });
+
+            if (selectedInodes.length === 0) {
+                alert('Select at least one file to delete.');
+                return;
+            }
+
+            if (confirm('Are you sure you want to delete the selected files?')) {
+                $.ajax({
+                    url: '/files',
+                    type: 'DELETE',
+                    data: JSON.stringify({inodes: selectedInodes}),
+                    contentType: 'application/json',
+                    success: function(result) {
+                        alert(result.message);
+                        refreshFileList();
+                    },
+                    error: function(result) {
+                        alert(result.responseJSON.error);
+                    }
+                });
+            }
+        }
+
+        var selectAllToggle = false;
+        function toggleSelectAll() {
+            if (selectAllToggle) {
+                // if var is true, then uncheck all checkboxes
+                $('.file-checkbox').prop('checked', false);
+            } else {
+                // if var is false, then check all checkboxes
+                $('.file-checkbox').prop('checked', true);
+            }
+            // toggle the var
+            selectAllToggle = !selectAllToggle;
+        }
+
         $(document).ready(function() {
             // Call the refreshFileList function to display the list of files when loading the page
             refreshFileList();
-            // Refresh the list of files every 5 seconds
-            setInterval(refreshFileList, 5000);
         });
 </script>
 </body>
