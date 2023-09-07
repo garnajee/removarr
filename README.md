@@ -167,8 +167,8 @@ $ id username
 - [x] delete empty folder (ignore other files different than .mkv/avi/...)
 - [x] add total size of all files
 - [x] add size of each file in a column
-- [ ] create a checkbox to delete multiples files at once
-- [ ] create a button to delete all files at once
+- [x] create a checkbox to delete multiples files at once
+- [x] create a button to delete all files at once => use the "Select All" button
 - [ ] sort table by alphabetic order and file size
 - [ ] make the app responsive
 
