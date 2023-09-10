@@ -170,7 +170,8 @@ $ id username
 - [x] create a checkbox to delete multiples files at once
 - [x] create a button to delete all files at once => use the "Select All" button
 - [ ] sort table by alphabetic order and file size
-- [ ] make the app responsive
+- [ ] add an "unwanted" button, hide files to avoid deleting them by mistake
+- [ ] make the app more responsive
 
 ## Build
 
