@@ -3,11 +3,10 @@ FROM python:alpine
 ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
-RUN mkdir static templates
 
 COPY app.py .
-COPY static/ .
-COPY templates/index.html templates
+COPY static/ static/
+COPY templates/ templates/
 
 RUN pip install --no-cache-dir Flask
 
