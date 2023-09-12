@@ -200,7 +200,7 @@ services:
 ```
 
 * you can now build this docker-compose.yml: `$ docker-compose build`
-* and finally, run: `$  docker-compose up -d`
+* and finally, run: `$ docker-compose up -d`
 
 # License
 
