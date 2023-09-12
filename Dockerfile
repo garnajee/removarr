@@ -7,7 +7,7 @@ RUN mkdir templates
 
 COPY app.py .
 COPY templates/index.html templates
-COPY favicon.ico /
+COPY favicon.ico .
 
 RUN pip install --no-cache-dir Flask
 
