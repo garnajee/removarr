@@ -3,9 +3,10 @@ FROM python:alpine
 ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
+RUN mkdir templates
 
 COPY app.py .
-COPY templates/index.html .
+COPY templates/index.html templates
 COPY favicon.ico /
 
 RUN pip install --no-cache-dir Flask
