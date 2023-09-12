@@ -4,7 +4,7 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-COPY app.py
+COPY app.py .
 COPY templates/index.html .
 COPY favicon.ico /
 
