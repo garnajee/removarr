@@ -3,7 +3,7 @@ FROM python:alpine
 ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
-RUN mkdir templates
+RUN mkdir static templates
 
 COPY app.py .
 COPY static/ .
