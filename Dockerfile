@@ -2,6 +2,10 @@ FROM python:alpine
 
 ENV PYTHONUNBUFFERED=1
 
+RUN adduser --disabled-password --gecos '' nonrootuser
+USER nonrootuser
+
+
 WORKDIR /app
 
 COPY app.py .
