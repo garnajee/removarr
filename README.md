@@ -174,9 +174,6 @@ services:
     build: .
     container_name: removarr
     restart: always
-    environment:
-      - PUID=1030
-      - PGID=100
     volumes:
       - '/your/path/completed/:/data/completed'
       - '/your/path/medias/:/data/medias'
