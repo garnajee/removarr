@@ -152,9 +152,9 @@ $ id username
 
 * Volumes
 
-`/tmp/test/completed/`: change this by the path of your download folder
+`/your/path/completed/`: change this by the path of your download folder
 
-`/tmp/test/medias/`   : change this by the path of your Jellyfin medias folder
+`/your/path/medias/`   : change this by the path of your Jellyfin medias folder
 
 * Port
 
