@@ -9,14 +9,6 @@ medias_dir = "/data/medias"
 series_dir = "/data/series"
 file_extension = ('.mkv', '.mp4', '.avi', '.mov')
 
-# get puid and pgid from docker env variables
-pu_id = int(os.environ.get('PUID', 1000))
-pg_id = int(os.environ.get('PGID', 100))
-
-# change default user and group according to puid and pgid
-os.setuid(pu_id)
-os.setgid(pg_id)
-
 num_volumes = 0
 if os.path.isdir(medias_dir):
     if not os.listdir(medias_dir):
