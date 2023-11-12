@@ -109,9 +109,6 @@ services:
     image: ghcr.io/garnajee/removarr:latest
     container_name: removarr
     restart: always
-    environment:
-      - PUID=1030
-      - PGID=100
     volumes:
       - '/your/path/completed/:/data/completed'
       - '/your/path/medias/:/data/medias'
@@ -128,9 +125,6 @@ services:
     image: ghcr.io/garnajee/removarr:latest
     container_name: removarr
     restart: always
-    environment:
-      - PUID=1030
-      - PGID=100
     volumes:
       - '/your/path/completed/:/data/completed'
       - '/your/path/movies/:/data/movies'
@@ -140,15 +134,6 @@ services:
 ```
 
 The application will be available at `<you_ip>:8012`.
-
-* User/Group Identifiers
-
-UserID (`PUID`) and GroupID (`PGID`) are optionals. To find these ids just type `id <username>` as below:
-
-```bash
-$ id username
-    uid=1000(dockeruser) gid=1000(dockergroup) groups=1000(dockergroup)
-```
 
 * Volumes
 
