@@ -10,8 +10,12 @@ series_dir = "/data/series"
 file_extension = ('.mkv', '.mp4', '.avi', '.mov')
 
 num_volumes = 0
+# check if the directory medias_dir exists
 if os.path.isdir(medias_dir):
+    # if the directory exists, check if it is empty
     if not os.listdir(medias_dir):
+        # if if its empty, movies and series directory are not in medias directory,
+        # (meaning using docker-compose-2.yml)
         num_volumes = 3
         medias_dir = "/data/movies"
 else:
