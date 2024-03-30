@@ -168,7 +168,6 @@ To build this application, follow these steps:
 If you want to use a docker-compose.yml instead of the Dockerfile, then use this example:
 
 ```yml
-version: '3.9'
 services:
   removarr:
     build: .
