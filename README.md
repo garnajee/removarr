@@ -2,6 +2,12 @@
 
 *build status:* ![build check](https://github.com/garnajee/removarr/actions/workflows/publish-image.yml/badge.svg)
 
+> [!IMPORTANT]
+> This application is about to change!
+> I'm working on using the `transmission-rpc` api instead of `os.remove`
+> This will also allow to delete `<hash>.torrent` files
+> It'll be soon, stay tuned!
+
 This is a web application, created to help you manually delete files present in the (Transmission `completed/`) download folder but not in the (Jellyfin) `medias/` folder. If you have separated folders it'll also works.
 
 Take a look at the screenshot of the web-app [here](https://zupimages.net/up/23/37/0wll.png).
