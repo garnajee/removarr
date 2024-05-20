@@ -61,7 +61,8 @@ def clean_parent_dirs_list(root_dir, parent_dirs_list):
     """
     dirs_list = [dir_path.replace(root_dir+"/", '') for dir_path in parent_dirs_list]
     unique_dirs = set([i.split('/')[0] for i in dirs_list])
-    unique_dirs.discard('.') # discard remove only if element exists
+    unique_dirs.discard('') # discard remove only if element exists
+    unique_dirs.discard('.')
     unique_dirs.discard("..")
     return unique_dirs
 
