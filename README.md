@@ -162,6 +162,7 @@ The application will be available at `<you_ip>:8012`.
 - [ ] add `.mov` extension
 - [ ] add `user: "${PUID}:${PGID}` in docker compose files
 - [ ] update README to specify how to use the .env file
+- [ ] update tests/README to explain how to source .env file when not using the removarr docker (`set -/+ a`...)
 - [ ] add total size of all files
 - [ ] add size of each file in a column
 - [ ] sort table by alphabetic order and file size
