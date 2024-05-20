@@ -4,7 +4,7 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-COPY app.py main.py file_sweeper.py .
+COPY app.py main.py file_sweeper.py requirements.txt .
 COPY static/ static/
 COPY templates/ templates/
 
