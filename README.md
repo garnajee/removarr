@@ -159,6 +159,9 @@ The application will be available at `<you_ip>:8012`.
 
 ## Todo
 
+- [ ] add `.mov` extension
+- [ ] add `user: "${PUID}:${PGID}` in docker compose files
+- [ ] update README to specify how to use the .env file
 - [ ] add total size of all files
 - [ ] add size of each file in a column
 - [ ] sort table by alphabetic order and file size
