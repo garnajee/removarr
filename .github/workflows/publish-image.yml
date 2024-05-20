@@ -2,6 +2,10 @@ name: Deploy image to GHCR
 on: 
   push:
     branches: [ "master" ]
+    paths-ignore:
+      - "README.md"
+      - "**.yml"
+      - "tests/"
 
 env:
   REGISTRY: ghcr.io
