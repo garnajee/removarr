@@ -81,7 +81,7 @@ if __name__ == "__main__":
     port = 9091
     username = "admin"
     password = "admin"
-    root_dir = "../tests/data/complete" # for file_sweeper
+    root_dir = "./tests/data/complete" # for file_sweeper
     extensions = [".mkv", ".avi", ".mp4"] # for file_sweeper
 
     # to try without the docker removarr

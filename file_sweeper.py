@@ -105,7 +105,7 @@ def main(root_dir, extensions):
     return files_to_remove + folders_to_remove
 
 if __name__ == "__main__":
-    root_dir = "../tests/data/complete"
+    root_dir = "./tests/data/complete"
     extensions = [".mkv", ".mp4", ".avi"]
     to_remove = main(root_dir, extensions)
     print("Elements to delete:", to_remove)
