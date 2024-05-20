@@ -30,9 +30,8 @@
                 <thead>
                     <tr>
                         <th class="text-center">Select</th>
-                        <th class="text-center">Inode</th>
                         <th class="text-center">File Name</th>
-                        <th class="text-center">File Size</th>
+                        <!--<th class="text-center">File Size</th>-->
                         <th class="text-center">Delete</th>
                     </tr>
                 </thead>
@@ -44,19 +43,19 @@
     <script>
         function refreshFileList() {
             $.getJSON('/files', function(data) {
-                $('#file-list').empty();
-                $.each(data.result, function(i, file) {
-                    var row = '<tr><td><input type="checkbox" class="file-checkbox" data-inode="' + file.inode + '"></td><td>' + file.inode + '</td><td>' + file.filename + '</td><td>' + file.file_size + '</td><td><button type="button" class="btn btn-danger" onclick="deleteFile(' + file.inode + ')">Delete</button></td></tr>';
-                    $('#file-list').append(row);
-                });
-                $('#total-size').text('Total size = ' + data.total_size);
+              $('#file-list').empty();
+              $.each(data, function(index, file) {
+                var row = '<tr><td><input type="checkbox" class="file-checkbox"></td><td>' + file[1] + '</td><td style="display: none;"><input type="hidden" class="file-id" value="' + file[0] + '"></td><td><button type="button" class="btn btn-danger" onclick="deleteFile(' + file[0] + ')">Delete</button></td></tr>';
+
+                $('#file-list').append(row);
+              });
             });
         }
 
-        function deleteFile(inode) {
+        function deleteFile(id) {
             if (confirm('Are you sure you want to delete this file?')) {
                 $.ajax({
-                    url: '/files/' + inode,
+                    url: '/files/' + id,
                     type: 'DELETE',
                     success: function(result) {
                         alert(result.message);
@@ -70,31 +69,32 @@
         }
 
         function deleteSelectedFiles() {
-            var selectedInodes = [];
-            $('.file-checkbox:checked').each(function() {
-                selectedInodes.push($(this).data('inode'));
-            });
+          var selectedIds = [];
+          $('.file-checkbox:checked').each(function() {
+            var fileId = $(this).closest('tr').find('.file-id').val(); 
+            selectedIds.push(fileId);
+          });
 
-            if (selectedInodes.length === 0) {
-                alert('Select at least one file to delete.');
-                return;
-            }
+          if (selectedIds.length === 0) {
+              alert('Select at least one file to delete.');
+              return;
+          }
 
-            if (confirm('Are you sure you want to delete the selected files?')) {
-                $.ajax({
-                    url: '/files',
-                    type: 'DELETE',
-                    data: JSON.stringify({inodes: selectedInodes}),
-                    contentType: 'application/json',
-                    success: function(result) {
-                        alert(result.message);
-                        refreshFileList();
-                    },
-                    error: function(result) {
-                        alert(result.responseJSON.error);
-                    }
-                });
-            }
+          if (confirm('Are you sure you want to delete the selected files?')) {
+              $.ajax({
+                  url: '/files',
+                  type: 'DELETE',
+                  data: JSON.stringify({id: selectedIds}),
+                  contentType: 'application/json',
+                  success: function(result) {
+                      alert(result.message);
+                      refreshFileList();
+                  },
+                  error: function(result) {
+                      alert(result.responseJSON.error);
+                  }
+              });
+          }
         }
 
         var selectAllToggle = false;
@@ -117,5 +117,4 @@
 </script>
 </body>
 </html>
-
 
