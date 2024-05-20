@@ -6,6 +6,10 @@ services:
     environment:
       - PUID=1030
       - PGID=100
+      - TR_IP=${TR_IP}
+      - TR_PORT=${TR_PORT}
+      - TR_USERNAME=${TR_USERNAME}
+      - TR_PASSWORD=${TR_PASWWORD}
     volumes:
       - '/your/path/completed/:/data/completed'
       - '/your/path/medias/:/data/medias'
