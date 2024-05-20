@@ -2,15 +2,9 @@
 
 *build status:* ![build check](https://github.com/garnajee/removarr/actions/workflows/publish-image.yml/badge.svg)
 
-> [!IMPORTANT]
-> This application is about to change!
-> I'm working on using the `transmission-rpc` api instead of `os.remove`
-> This will also allow to delete `<hash>.torrent` files
-> It'll be soon, stay tuned!
+This is a web application, created to help you manually delete files present in the (Transmission `completed/`) downloads folder but not in the (Jellyfin) `medias/` folder. If you have separated folders it'll also works.
 
-This is a web application, created to help you manually delete files present in the (Transmission `completed/`) download folder but not in the (Jellyfin) `medias/` folder. If you have separated folders it'll also works.
-
-Take a look at the screenshot of the web-app [here](https://zupimages.net/up/23/37/0wll.png).
+Take a look at the screenshot of the web-app ![screenshot-example](./screenshot-example.png).
 
 # Table of Content
 
@@ -109,12 +103,18 @@ Nothing more simple than to use the [docker-compose](docker-compose.yml) file.
 * First option: (like the example above) you have **one** folder for all your media, use [this file](docker-compose.yml):
 
 ```yaml
-version: '3.9'
 services:
   removarr:
     image: ghcr.io/garnajee/removarr:latest
     container_name: removarr
     restart: always
+    environment:
+      - PUID=1030
+      - PGID=100
+      - TR_IP=${TR_IP}
+      - TR_PORT=${TR_PORT}
+      - TR_USERNAME=${TR_USERNAME}
+      - TR_PASSWORD=${TR_PASWWORD}
     volumes:
       - '/your/path/completed/:/data/completed'
       - '/your/path/medias/:/data/medias'
@@ -125,12 +125,18 @@ services:
 * Second option: you have several folders not in the same place, use [this file](docker-compose-2.yml):
 
 ```yaml
-version: '3.9'
 services:
   removarr:
     image: ghcr.io/garnajee/removarr:latest
     container_name: removarr
     restart: always
+    environment:
+      - PUID=1030
+      - PGID=100
+      - TR_IP=${TR_IP}
+      - TR_PORT=${TR_PORT}
+      - TR_USERNAME=${TR_USERNAME}
+      - TR_PASSWORD=${TR_PASWWORD}
     volumes:
       - '/your/path/completed/:/data/completed'
       - '/your/path/movies/:/data/movies'
@@ -153,13 +159,8 @@ The application will be available at `<you_ip>:8012`.
 
 ## Todo
 
-- [x] modify README (setup installation, how to use, how to build, screenshot,...) - needs to be improved
-- [ ] get hash of torrent file to delete it (need to mount one more volume)
-- [x] delete empty folder (ignore other files different than .mkv/avi/...)
-- [x] add total size of all files
-- [x] add size of each file in a column
-- [x] create a checkbox to delete multiples files at once
-- [x] create a button to delete all files at once => use the "Select All" button
+- [ ] add total size of all files
+- [ ] add size of each file in a column
 - [ ] sort table by alphabetic order and file size
 - [ ] add an "unwanted" button, hide files to avoid deleting them by mistake
 - [ ] make the app more responsive
@@ -173,17 +174,13 @@ To build this application, follow these steps:
 
 If you want to use a docker-compose.yml instead of the Dockerfile, then use this example:
 
-```yml
-services:
+```diff
   removarr:
-    build: .
-    container_name: removarr
-    restart: always
-    volumes:
-      - '/your/path/completed/:/data/completed'
-      - '/your/path/medias/:/data/medias'
-    ports:
-      - '127.0.0.1:8012:5000'
+-   image: ghcr.io/garnajee/removarr:latest
+    ...
+  removarr:
++   build: .
+    ...
 ```
 
 * you can now build this docker-compose.yml: `$ docker-compose build`
