@@ -9,7 +9,7 @@ services:
       - TR_IP=${TR_IP}
       - TR_PORT=${TR_PORT}
       - TR_USERNAME=${TR_USERNAME}
-      - TR_PASSWORD=${TR_PASWWORD}
+      - TR_PASSWORD=${TR_PASSWORD}
     volumes:
       - '/your/path/completed/:/data/completed'
       - '/your/path/movies/:/data/movies'
