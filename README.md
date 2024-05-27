@@ -6,6 +6,7 @@
 [![License](https://img.shields.io/badge/License-MIT-blue)](#license)
 [![issues](https://img.shields.io/github/issues/garnajee/removarr)](https://github.com/garnajee/removarr/issues)
 
+![deploy & build status](https://github.com/garnajee/removarr/actions/workflows/publish-image.yml/badge.svg)
 
 This is a web application, created to help you manually delete files present in the (Transmission `completed/`) downloads folder but not in the (Jellyfin) `medias/` folder. If you have separated folders it'll also works.
 
