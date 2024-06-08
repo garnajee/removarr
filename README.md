@@ -28,7 +28,9 @@ This is a web application, created to help you manually delete files present in 
 
 Removarr is a web application designed to assist the \*arr apps like Radarr and Sonarr by helping you automatically identify and manually delete duplicate files from your Transmission download folder that are already present in your Jellyfin library. 
 
-Take a look at the screenshot of the web-app ![screenshot-example](./screenshot-example.png).
+Take a look at the screenshot of the web-app:
+
+![screenshot-example](./screenshot-example.png)
 
 # Table of Content
 
