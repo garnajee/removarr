@@ -18,19 +18,11 @@
   <img src="https://img.shields.io/github/contributors/garnajee/removarr?color=dark-green" alt="Contributors">
   <img src="https://img.shields.io/github/issues/garnajee/removarr" alt="Issues">
   <img src="https://img.shields.io/github/license/garnajee/removarr?color=blue" alt="License">
+  <br/>
+  <img src="https://github.com/garnajee/removarr/actions/workflows/publish-image.yml/badge.svg" alt="Deploy and build status">
 </p>
 
 ---
-
-# removarr
-
-[![garnajee](https://img.shields.io/static/v1?label=garnajee&message=removarr&color=blue&logo=github)](https://github.com/garnajee/removarr "Go to GitHub repo")
-[![stars](https://img.shields.io/github/stars/garnajee/removarr?style=social)](https://github.com/garnajee/removarr)
-[![forks](https://img.shields.io/github/forks/garnajee/removarr?style=social)](https://github.com/garnajee/removarr)
-[![License](https://img.shields.io/badge/License-MIT-blue)](#license)
-[![issues](https://img.shields.io/github/issues/garnajee/removarr)](https://github.com/garnajee/removarr/issues)
-
-![deploy & build status](https://github.com/garnajee/removarr/actions/workflows/publish-image.yml/badge.svg)
 
 This is a web application, created to help you manually delete files present in the (Transmission `completed/`) downloads folder but not in the (Jellyfin) `medias/` folder. If you have separated folders it'll also works.
 
