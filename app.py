@@ -8,7 +8,7 @@ app = Flask(__name__)
 completed_dir = "/data/completed"
 medias_dir = "/data/medias"
 series_dir = "/data/series"
-extensions = [".mkv", ".avi", ".mp4"]   # for list_files()
+extensions = [".mkv", ".avi", ".mp4", ".mov"]   # for list_files()
 
 # Initialize TransmissionClientManager
 tr_manager = TransmissionClientManager()
