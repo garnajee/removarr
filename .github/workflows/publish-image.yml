@@ -5,6 +5,7 @@ on:
     paths-ignore:
       - "README.md"
       - "**.yml"
+      - "**.png"
       - "tests/"
 
 env:
