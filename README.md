@@ -1,3 +1,27 @@
+<br/>
+<p align="center">
+  <img src="logo.png" alt="Removarr Logo" width="250px" height="250px"/>
+  <h2 align="center">Removarr</h2>
+</p>
+<p align="center">
+  <a href="https://github.com/garnajee/removarr/issues/new?template=bug_report.md"><img src="https://img.shields.io/badge/report-issue-red" alt="Report Issue"></a> 
+  <a href="https://github.com/garnajee/removarr/issues/new?template=feature_request.md">
+  <img src="https://img.shields.io/badge/request-feature-fuchsia" alt="Request Feature"></a>
+  <br/>
+  <a href="https://github.com/garnajee/removarr/stargazers">
+    <img src="https://img.shields.io/github/stars/garnajee/removarr?style=social" alt="GitHub stars">
+  </a>
+  <a href="https://github.com/garnajee/removarr/forks">
+    <img src="https://img.shields.io/github/forks/garnajee/removarr?style=social" alt="GitHub forks">
+  </a>
+  <br/>
+  <img src="https://img.shields.io/github/contributors/garnajee/removarr?color=dark-green" alt="Contributors">
+  <img src="https://img.shields.io/github/issues/garnajee/removarr" alt="Issues">
+  <img src="https://img.shields.io/github/license/garnajee/removarr?color=blue" alt="License">
+</p>
+
+---
+
 # removarr
 
 [![garnajee](https://img.shields.io/static/v1?label=garnajee&message=removarr&color=blue&logo=github)](https://github.com/garnajee/removarr "Go to GitHub repo")
@@ -10,17 +34,27 @@
 
 This is a web application, created to help you manually delete files present in the (Transmission `completed/`) downloads folder but not in the (Jellyfin) `medias/` folder. If you have separated folders it'll also works.
 
+Removarr is a web application designed to assist the \*arr apps like Radarr and Sonarr by helping you automatically identify and manually delete duplicate files from your Transmission download folder that are already present in your Jellyfin library. 
+
 Take a look at the screenshot of the web-app ![screenshot-example](./screenshot-example.png).
 
 # Table of Content
 
 - [removarr](#removarr)
+  * [Use case example](#use-case-example)
   *  [How it works](#how-it-works)
       + [Proof it works](#proof-it-works)
   * [How to install](#how-to-install)
   * [Todo](#todo)
   * [Build](#build)
 - [License](#license)
+
+## Use case example
+
+Imagine you've downloaded a movie through Radarr. It's stored in your torrent client download folder and automatically hardlink to your Jellyfin library.
+Later, Radarr finds a better version, which also downloaded and hardlinked to Jellyfin, replacing the older one.
+Howerver, both versions remain in your torrent client download folder.
+So here comes Removarr. It will automatically identifies these duplicates, allowing you to delete them easily.
 
 ## How it works
 
