@@ -194,6 +194,7 @@ The application will be available at `<you_ip>:8012`.
 ## Todo
 
 - [x] add `.mov` extension
+- [ ] add "(folder)" before name in table if it's a folder
 - [ ] add `user: "${PUID}:${PGID}` in docker compose files
 - [ ] update README to specify how to use the .env file
 - [ ] update tests/README to explain how to source .env file when not using the removarr docker (`set -/+ a`...)
