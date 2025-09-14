@@ -29,53 +29,44 @@ class TransmissionClientManager:
         """
         self.transmission_client.remove_torrent(ids=torrent_id, delete_data=True)
 
-    @staticmethod
-    def check_torrents_existence(rpc_list, my_list, root_dir):
-        """
-        Checks if all elements of torrents_list are present in the list of torrents returned by get_torrents_list(client).
-
-        Args:
-            torrents_list (list): List of torrents to check.
-            root_dir (str): Root directory to be removed from the paths in torrents_list.
-
-        Returns:
-            bool: True if all elements are present, False otherwise.
-        """
-
-        # Extract torrent names from the Transmission list
-        transmission_names = [torrent.name for torrent in rpc_list]
-
-        # Extract torrent names from file_sweeper.main list by deleting root_dir
-        cleaned_torrents = [path.replace(root_dir+'/', '') for path in my_list]
-
-        # Checks whether all the elements in cleaned_torrents are present in transmission_names
-        return all(torrent_name in transmission_names for torrent_name in cleaned_torrents)
-
     def main(self, root_dir, extensions):
         """
-        Main function to call other functions and return the final list.
+        Main function to find unlinked torrents and return them with their IDs.
 
         Args:
-            root_dir (str): Root directory.
-            extensions (list): List of file extensions.
+            root_dir (str): Root directory where completed torrents are.
+            extensions (list): List of file extensions to consider.
 
         Returns:
-            list: Final list of elements from my_list with their IDs if check_torrents_existence is True.
+            list: A list of tuples (id, name) for torrents found in `root_dir` that are not hardlinked.
         """
 
+        # 1. Obtenir la liste de tous les torrents de Transmission
         rpc_list = self.get_torrents_list()
-        my_list = file_sweeper.main(root_dir, extensions)
+        
+        # 2. Créer un dictionnaire pour un accès rapide aux torrents par leur nom
+        # C'est beaucoup plus efficace que de parcourir la liste à chaque fois.
+        torrents_map = {torrent.name: torrent.id for torrent in rpc_list}
+
+        # 3. Obtenir la liste des fichiers/dossiers non-hardlinkés depuis le disque
+        unlinked_items = file_sweeper.main(root_dir, extensions)
 
         final_list = []
-
-        if self.check_torrents_existence(rpc_list, my_list, root_dir):
-            for torrent in rpc_list:
-                torrent_name = torrent.name.replace(root_dir+'/', '')
-                if any(item.endswith(torrent_name) for item in my_list):
-                    final_list.append((torrent.id, torrent.name))
+        
+        # 4. Pour chaque élément trouvé sur le disque, chercher un torrent correspondant
+        for item_path in unlinked_items:
+            # Nettoyer le chemin pour obtenir le nom tel qu'il apparaîtrait dans Transmission
+            # ex: "/data/completed/Mon.Film.2023" -> "Mon.Film.2023"
+            item_name = item_path.replace(root_dir, '').lstrip('/')
+            
+            # Vérifier si ce nom existe dans notre dictionnaire de torrents
+            if item_name in torrents_map:
+                # Si oui, on a trouvé une correspondance !
+                torrent_id = torrents_map[item_name]
+                final_list.append((torrent_id, item_name))
 
         return final_list
-##############################
+
 if __name__ == "__main__":
     ip = "localhost"
     port = 9091
