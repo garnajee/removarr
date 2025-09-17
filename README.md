@@ -208,6 +208,16 @@ The application will be available at `<you_ip>:8012`.
 
 To build this application, follow these steps:
 
+* clone the repository:
+  * using `git`: `git clone https://github.com/garnajee/removarr.git`
+  * or using `curl`:
+```bash
+curl -L https://github.com/garnajee/removarr/archive/master.tar.gz -o removarr.tar.gz
+tar xzf removarr.tar.gz
+rm removarr.tar.gz
+mv removarr-master removarr
+```
+* `cd removarr`
 * build the Dockerfile: `$ docker build -t <your_image_name> .`
 * run the image: `$ docker run -p 5000:5000 -v /your/path/completed:/data/completed -v /your/path/medias:/data/medias <your_image_name>`
 
