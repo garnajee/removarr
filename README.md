@@ -24,9 +24,13 @@
 
 ---
 
-This is a web application, created to help you manually delete files present in the (Transmission `completed/`) downloads folder but not in the (Jellyfin) `medias/` folder. If you have separated folders it'll also works.
+This is a web application, created to help you manually delete files present in the torrent client (`completed/`) downloads folder but not in the (Jellyfin) `medias/` folder. If you have separated folders it'll also works.
 
-Removarr is a web application designed to assist the \*arr apps like Radarr and Sonarr by helping you automatically identify and manually delete duplicate files from your Transmission download folder that are already present in your Jellyfin library. 
+Removarr is a web application designed to assist the \*arr apps like Radarr and Sonarr by helping you automatically identify and manually delete duplicate files from your torrent client download folder that are already present in your Jellyfin library.
+
+**Supported torrent clients:**
+- Transmission
+- qBittorrent
 
 Take a look at the screenshot of the web-app:
 
@@ -52,7 +56,7 @@ So here comes Removarr. It will automatically identifies these duplicates, allow
 
 ## How it works
 
-A recursive comparison according to the inodes of the files is made between the `completed/` folder (on the Transmission side) and the folders where the media are stored (on the Jellyfin side).
+A recursive comparison according to the inodes of the files is made between the `completed/` folder (on the torrent client side) and the folders where the media are stored (on the Jellyfin side).
 
 Example 1:
 
@@ -134,6 +138,13 @@ Overall:
 
 Nothing more simple than to use the [docker-compose](docker-compose.yml) file.
 
+**Environment Variables:**
+
+Set `CLIENT_TYPE` to either `transmission` (default) or `qbittorrent`:
+
+- For **Transmission**: Set `TR_IP`, `TR_PORT`, `TR_USERNAME`, `TR_PASSWORD`
+- For **qBittorrent**: Set `QBIT_HOST`, `QBIT_PORT`, `QBIT_USERNAME`, `QBIT_PASSWORD`
+
 * First option: (like the example above) you have **one** folder for all your media, use [this file](docker-compose.yml):
 
 ```yaml
@@ -145,10 +156,18 @@ services:
     environment:
       - PUID=1030
       - PGID=100
+      # Set CLIENT_TYPE to "transmission" or "qbittorrent"
+      - CLIENT_TYPE=${CLIENT_TYPE:-transmission}
+      # Transmission settings
       - TR_IP=${TR_IP}
       - TR_PORT=${TR_PORT}
       - TR_USERNAME=${TR_USERNAME}
-      - TR_PASSWORD=${TR_PASWWORD}
+      - TR_PASSWORD=${TR_PASSWORD}
+      # qBittorrent settings
+      - QBIT_HOST=${QBIT_HOST}
+      - QBIT_PORT=${QBIT_PORT:-8080}
+      - QBIT_USERNAME=${QBIT_USERNAME}
+      - QBIT_PASSWORD=${QBIT_PASSWORD}
     volumes:
       - '/your/path/completed/:/data/completed'
       - '/your/path/medias/:/data/medias'
@@ -167,10 +186,18 @@ services:
     environment:
       - PUID=1030
       - PGID=100
+      # Set CLIENT_TYPE to "transmission" or "qbittorrent"
+      - CLIENT_TYPE=${CLIENT_TYPE:-transmission}
+      # Transmission settings
       - TR_IP=${TR_IP}
       - TR_PORT=${TR_PORT}
       - TR_USERNAME=${TR_USERNAME}
-      - TR_PASSWORD=${TR_PASWWORD}
+      - TR_PASSWORD=${TR_PASSWORD}
+      # qBittorrent settings
+      - QBIT_HOST=${QBIT_HOST}
+      - QBIT_PORT=${QBIT_PORT:-8080}
+      - QBIT_USERNAME=${QBIT_USERNAME}
+      - QBIT_PASSWORD=${QBIT_PASSWORD}
     volumes:
       - '/your/path/completed/:/data/completed'
       - '/your/path/movies/:/data/movies'

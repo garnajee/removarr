@@ -1,5 +1,6 @@
 import file_sweeper
 from transmission_rpc import Client
+from qbittorrentapi import Client as QbitClient
 import os
 
 class TransmissionClientManager:
@@ -65,6 +66,51 @@ class TransmissionClientManager:
                 torrent_id = torrents_map[item_name]
                 final_list.append((torrent_id, item_name))
 
+        return final_list
+
+class QbitClientManager:
+    def __init__(self, host=os.getenv("QBIT_HOST"), port=os.getenv("QBIT_PORT"), 
+                 username=os.getenv("QBIT_USERNAME"), password=os.getenv("QBIT_PASSWORD")):
+        self.host = host
+        self.port = port or 8080
+        self.username = username
+        self.password = password
+        self.qbit_client = self.connect_to_qbittorrent()
+
+    def connect_to_qbittorrent(self):
+        """Connects to the qBittorrent Web API."""
+        return QbitClient(host=self.host, port=self.port, username=self.username, password=self.password)
+
+    def get_torrents_list(self):
+        """Gets the list of torrents from qBittorrent."""
+        return self.qbit_client.torrents_info()
+
+    def delete_torrent_and_data(self, torrent_hash):
+        """Deletes a torrent and its associated data from qBittorrent."""
+        hashes = torrent_hash if isinstance(torrent_hash, list) else [torrent_hash]
+        self.qbit_client.torrents_delete(delete_files=True, torrent_hashes=hashes)
+
+    def main(self, root_dir, extensions):
+        """
+        Main function to find unlinked torrents and return them with their hashes.
+
+        Args:
+            root_dir (str): Root directory where completed torrents are.
+            extensions (list): List of file extensions to consider.
+
+        Returns:
+            list: A list of tuples (hash, name) for torrents found in `root_dir` that are not hardlinked.
+        """
+        torrents = self.get_torrents_list()
+        torrents_map = {t.name: t.hash for t in torrents}
+        unlinked_items = file_sweeper.main(root_dir, extensions)
+        final_list = []
+        
+        for item_path in unlinked_items:
+            item_name = item_path.replace(root_dir, '').lstrip('/')
+            if item_name in torrents_map:
+                final_list.append((torrents_map[item_name], item_name))
+        
         return final_list
 
 if __name__ == "__main__":

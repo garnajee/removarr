@@ -6,10 +6,18 @@ services:
     environment:
       - PUID=1030
       - PGID=100
+      # Torrent client type: "transmission" or "qbittorrent"
+      - CLIENT_TYPE=${CLIENT_TYPE:-transmission}
+      # Transmission settings
       - TR_IP=${TR_IP}
       - TR_PORT=${TR_PORT}
       - TR_USERNAME=${TR_USERNAME}
       - TR_PASSWORD=${TR_PASSWORD}
+      # qBittorrent settings
+      - QBIT_HOST=${QBIT_HOST}
+      - QBIT_PORT=${QBIT_PORT:-8080}
+      - QBIT_USERNAME=${QBIT_USERNAME}
+      - QBIT_PASSWORD=${QBIT_PASSWORD}
     volumes:
       - '/your/path/completed/:/data/completed'
       - '/your/path/medias/:/data/medias'
