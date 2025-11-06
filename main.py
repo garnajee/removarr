@@ -121,14 +121,25 @@ class QbitClientManager:
             list: A list of tuples (hash, name) for torrents found in `root_dir` that are not hardlinked.
         """
         torrents = self.get_torrents_list()
-        torrents_map = {t.name: t.hash for t in torrents}
+        
+        # Map by content_path (actual location on disk) instead of torrent name
+        # This handles cases where torrent name != actual file/folder name
+        torrents_map = {}
+        for t in torrents:
+            # Get the actual path where content is saved
+            content_path = os.path.join(t.save_path, t.name)
+            # Extract just the filename/folder from the path
+            content_name = os.path.basename(content_path.rstrip('/'))
+            torrents_map[content_name] = (t.hash, t.name)
+        
         unlinked_items = file_sweeper.main(root_dir, extensions)
         final_list = []
 
         for item_path in unlinked_items:
             item_name = item_path.replace(root_dir, "").lstrip("/")
             if item_name in torrents_map:
-                final_list.append((torrents_map[item_name], item_name))
+                torrent_hash, torrent_name = torrents_map[item_name]
+                final_list.append((torrent_hash, torrent_name))
 
         return final_list
 

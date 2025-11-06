@@ -49,9 +49,11 @@ def list_files():
 
 
 # define route for deleting a file
-@app.route("/files/<int:id>", methods=["DELETE"])
+@app.route("/files/<id>", methods=["DELETE"])
 def delete_file(id):
-    client.delete_torrent_and_data(int(id) if client_type != "qbittorrent" else str(id))
+    # Convert to appropriate type based on client
+    torrent_id = int(id) if client_type != "qbittorrent" else str(id)
+    client.delete_torrent_and_data(torrent_id)
     return jsonify({"message": "File deleted successfully"}), 200
 
 
