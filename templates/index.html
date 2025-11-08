@@ -45,7 +45,7 @@
             $.getJSON('/files', function(data) {
               $('#file-list').empty();
               $.each(data, function(index, file) {
-                var row = '<tr><td><input type="checkbox" class="file-checkbox"></td><td>' + file[1] + '</td><td style="display: none;"><input type="hidden" class="file-id" value="' + file[0] + '"></td><td><button type="button" class="btn btn-danger" onclick="deleteFile(' + file[0] + ')">Delete</button></td></tr>';
+                var row = '<tr><td><input type="checkbox" class="file-checkbox"></td><td>' + file[1] + '</td><td style="display: none;"><input type="hidden" class="file-id" value="' + file[0] + '"></td><td><button type="button" class="btn btn-danger" onclick="deleteFile(\'' + file[0] + '\')">Delete</button></td></tr>';
 
                 $('#file-list').append(row);
               });

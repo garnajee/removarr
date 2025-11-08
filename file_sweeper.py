@@ -2,6 +2,7 @@
 
 import os
 
+
 def list_files_recursively(root_dir, extensions):
     """
     Retrieves the list of affected files in the root and the directories containing them.
@@ -13,19 +14,43 @@ def list_files_recursively(root_dir, extensions):
     Returns:
         tuple: A tuple containing the list of files in the root and the list of directories that contain the relevant files.
     """
-    root_files = []
-    parent_dirs = []
-    
+    items_to_remove = []
+
     for dirpath, dirnames, filenames in os.walk(root_dir):
-        contains_files = any(file.endswith(tuple(extensions)) and os.stat(os.path.join(dirpath, file)).st_nlink == 1 for file in filenames)
-        if contains_files:
-            parent_dirs.append(dirpath)
-        for filename in filenames:
-            file_path = os.path.join(dirpath, filename)
-            if os.path.isfile(file_path) and os.stat(file_path).st_nlink == 1 and os.path.dirname(file_path) == root_dir and file_path.endswith(tuple(extensions)):
-                root_files.append(file_path)
-    
-    return root_files, parent_dirs
+        # Check for video files with st_nlink == 1
+        video_files = [f for f in filenames if f.endswith(tuple(extensions))]
+        non_hardlinked_videos = [
+            f for f in video_files 
+            if os.stat(os.path.join(dirpath, f)).st_nlink == 1
+        ]
+        
+        if not non_hardlinked_videos:
+            continue
+            
+        # Torrent folder detection:
+        # 1. Has Sample/Subs subdirectories = torrent folder (don't descend)
+        # 2. Has multiple video files = torrent folder (don't descend)
+        # 3. Otherwise add individual video files and continue descending
+        
+        has_sample_or_subs = any(
+            subdir.lower() in ['sample', 'subs', 'subtitles', 'extras']
+            for subdir in dirnames
+        )
+        
+        if has_sample_or_subs:
+            # Torrent folder with Sample/Subs - add whole directory
+            items_to_remove.append(dirpath)
+            dirnames.clear()
+        elif len(video_files) > 1 and not dirnames:
+            # Multiple video files in a leaf directory = torrent folder
+            items_to_remove.append(dirpath)
+        else:
+            # Add individual video files (whether or not there are subdirectories)
+            for video in non_hardlinked_videos:
+                items_to_remove.append(os.path.join(dirpath, video))
+
+    return [], items_to_remove
+
 
 def list_hardlinked_files(root_dir, extensions):
     """
@@ -39,14 +64,19 @@ def list_hardlinked_files(root_dir, extensions):
         list: The list of hardlinked files with the specified extensions.
     """
     hardlinked_files = []
-    
+
     for dirpath, dirnames, filenames in os.walk(root_dir):
         for filename in filenames:
             file_path = os.path.join(dirpath, filename)
-            if os.path.isfile(file_path) and os.stat(file_path).st_nlink != 1 and os.path.splitext(file_path)[1] in extensions:
+            if (
+                os.path.isfile(file_path)
+                and os.stat(file_path).st_nlink != 1
+                and os.path.splitext(file_path)[1] in extensions
+            ):
                 hardlinked_files.append(file_path)
-    
+
     return hardlinked_files
+
 
 def clean_parent_dirs_list(root_dir, parent_dirs_list):
     """
@@ -59,12 +89,13 @@ def clean_parent_dirs_list(root_dir, parent_dirs_list):
     Returns:
         set: A set containing the names of the cleaned parent directories.
     """
-    dirs_list = [dir_path.replace(root_dir+"/", '') for dir_path in parent_dirs_list]
-    unique_dirs = set([i.split('/')[0] for i in dirs_list])
-    unique_dirs.discard('') # discard remove only if element exists
-    unique_dirs.discard('.')
+    dirs_list = [dir_path.replace(root_dir + "/", "") for dir_path in parent_dirs_list]
+    unique_dirs = set(dirs_list)
+    unique_dirs.discard("")  # discard remove only if element exists
+    unique_dirs.discard(".")
     unique_dirs.discard("..")
     return unique_dirs
+
 
 def clean_hardlinked_list(root_dir, hardlinked_lists, extensions):
     """
@@ -78,10 +109,12 @@ def clean_hardlinked_list(root_dir, hardlinked_lists, extensions):
     Returns:
         set: A set containing the names of the cleaned hardlinked directories.
     """
-    dirs_list = [dir_path.replace(root_dir + "/", '') for dir_path in hardlinked_lists]
-    first_dirs = [dir_path.split('/')[0] for dir_path in dirs_list]
-    unique_dirs = set(first_dirs) - {'.'} 
-    return {dir_name for dir_name in unique_dirs if not dir_name.endswith(tuple(extensions))}
+    dirs_list = [os.path.dirname(dir_path.replace(root_dir + "/", "")) for dir_path in hardlinked_lists]
+    unique_dirs = set(dirs_list) - {"."}
+    return {
+        dir_name for dir_name in unique_dirs if not dir_name.endswith(tuple(extensions))
+    }
+
 
 def main(root_dir, extensions):
     """
@@ -94,21 +127,30 @@ def main(root_dir, extensions):
     Returns:
         list: A list containing the files to be deleted and the directories to be deleted.
     """
-    root_files_list, parent_dirs_list = list_files_recursively(root_dir, extensions)
-    set_uniq_folders = clean_parent_dirs_list(root_dir, parent_dirs_list)
-
+    _, items_to_remove = list_files_recursively(root_dir, extensions)
+    
+    # Get directories that contain hardlinked files - exclude these
     hardlinked_files_list = list_hardlinked_files(root_dir, extensions)
-    set_uniq_folders_to_remove = clean_hardlinked_list(root_dir, hardlinked_files_list, extensions)
+    hardlinked_dirs = set(os.path.dirname(f) for f in hardlinked_files_list)
+    
+    # Filter out items that are in directories containing ONLY hardlinked files
+    # But keep individual files and folders that have non-hardlinked content
+    filtered_items = []
+    for item in items_to_remove:
+        # If it's a file, check if it has st_nlink == 1
+        if os.path.isfile(item):
+            if os.stat(item).st_nlink == 1:
+                filtered_items.append(item)
+        # If it's a directory, check if it's not in hardlinked_dirs
+        elif os.path.isdir(item):
+            if item not in hardlinked_dirs:
+                filtered_items.append(item)
+    
+    return filtered_items
 
-    files_to_remove = root_files_list
-    folders_to_remove = list(root_dir+"/"+i for i in (set_uniq_folders - set_uniq_folders_to_remove))
-
-    return files_to_remove + folders_to_remove
 
 if __name__ == "__main__":
     root_dir = "./tests/data/complete"
     extensions = [".mkv", ".mp4", ".avi"]
     to_remove = main(root_dir, extensions)
     print("Elements to delete:", to_remove)
-
-
