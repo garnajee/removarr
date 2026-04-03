@@ -2,6 +2,7 @@ import file_sweeper
 from transmission_rpc import Client
 from qbittorrentapi import Client as QbitClient
 import os
+import time
 
 
 class TransmissionClientManager:
@@ -30,7 +31,7 @@ class TransmissionClientManager:
         """
         Gets the list of torrents from the Transmission RPC server.
         """
-        return self.transmission_client.get_torrents(arguments=["id", "name"])
+        return self.transmission_client.get_torrents(arguments=["id", "name", "totalSize", "addedDate"])
 
     def delete_torrent_and_data(self, torrent_id):
         """
@@ -53,26 +54,42 @@ class TransmissionClientManager:
         # 1. Obtenir la liste de tous les torrents de Transmission
         rpc_list = self.get_torrents_list()
 
-        # 2. Créer un dictionnaire pour un accès rapide aux torrents par leur nom
-        # C'est beaucoup plus efficace que de parcourir la liste à chaque fois.
-        torrents_map = {torrent.name: torrent.id for torrent in rpc_list}
+        # Regrouper par nom pour gérer le cross-seeding
+        torrents_map = {}
+        for t in rpc_list:
+            if t.name not in torrents_map:
+                torrents_map[t.name] = []
+            
+            added_timestamp = t.added_date.timestamp() if getattr(t, 'added_date', None) else 0
+            torrents_map[t.name].append({
+                "id": t.id,
+                "name": t.name,
+                "size": getattr(t, 'total_size', 0),
+                "added_on": added_timestamp
+            })
 
-        # 3. Obtenir la liste des fichiers/dossiers non-hardlinkés depuis le disque
         unlinked_items = file_sweeper.main(root_dir, extensions)
-
         final_list = []
+        current_time = time.time()
 
-        # 4. Pour chaque élément trouvé sur le disque, chercher un torrent correspondant
         for item_path in unlinked_items:
-            # Nettoyer le chemin pour obtenir le nom tel qu'il apparaîtrait dans Transmission
-            # ex: "/data/completed/Mon.Film.2023" -> "Mon.Film.2023"
             item_name = item_path.replace(root_dir, "").lstrip("/")
-
-            # Vérifier si ce nom existe dans notre dictionnaire de torrents
             if item_name in torrents_map:
-                # Si oui, on a trouvé une correspondance !
-                torrent_id = torrents_map[item_name]
-                final_list.append((torrent_id, item_name))
+                matched_torrents = torrents_map[item_name]
+                
+                # S'il y a du cross-seed, on prend tous les IDs
+                ids = [t["id"] for t in matched_torrents]
+                size = max([t["size"] for t in matched_torrents]) # La taille des fichiers sur le disque
+                added_on = min([t["added_on"] for t in matched_torrents]) # Le plus vieux
+                age_days = (current_time - added_on) / (24 * 3600) if added_on > 0 else 0
+
+                final_list.append({
+                    "ids": ids,
+                    "name": item_name,
+                    "size": size,
+                    "age_days": age_days,
+                    "cross_seeds_count": len(matched_torrents)
+                })
 
         return final_list
 
@@ -130,16 +147,37 @@ class QbitClientManager:
             content_path = os.path.join(t.save_path, t.name)
             # Extract just the filename/folder from the path
             content_name = os.path.basename(content_path.rstrip('/'))
-            torrents_map[content_name] = (t.hash, t.name)
+            #torrents_map[content_name] = (t.hash, t.name)
+            if content_name not in torrents_map:
+                torrents_map[content_name] = []
+            torrents_map[content_name].append({
+                "hash": t.hash,
+                "name": t.name,
+                "size": getattr(t, 'size', getattr(t, 'total_size', 0)),
+                "added_on": getattr(t, 'added_on', 0)
+            })
         
         unlinked_items = file_sweeper.main(root_dir, extensions)
         final_list = []
+        current_time = time.time()
 
         for item_path in unlinked_items:
             item_name = item_path.replace(root_dir, "").lstrip("/")
             if item_name in torrents_map:
-                torrent_hash, torrent_name = torrents_map[item_name]
-                final_list.append((torrent_hash, torrent_name))
+                matched_torrents = torrents_map[item_name]
+                
+                hashes = [t["hash"] for t in matched_torrents]
+                size = max([t["size"] for t in matched_torrents])
+                added_on = min([t["added_on"] for t in matched_torrents])
+                age_days = (current_time - added_on) / (24 * 3600) if added_on > 0 else 0
+
+                final_list.append({
+                    "ids": hashes,
+                    "name": item_name,
+                    "size": size,
+                    "age_days": age_days,
+                    "cross_seeds_count": len(matched_torrents)
+                })
 
         return final_list
 
