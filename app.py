@@ -1,6 +1,6 @@
 import os
 from flask import Flask, jsonify, request, render_template
-from main import TransmissionClientManager, QbitClientManager  # import both classes
+from main import TransmissionClientManager, QbitClientManager
 
 # create Flask app instance
 app = Flask(__name__)
@@ -49,30 +49,28 @@ def list_files():
 
 
 # define route for deleting a file
-@app.route("/files/<id>", methods=["DELETE"])
-def delete_file(id):
-    # Convert to appropriate type based on client
-    torrent_id = int(id) if client_type != "qbittorrent" else str(id)
-    client.delete_torrent_and_data(torrent_id)
-    return jsonify({"message": "File deleted successfully"}), 200
-
-
-# define route for deleting selected files
-@app.route("/files/", methods=["DELETE"])
+@app.route("/files", methods=["DELETE"])
 def delete_selected_files():
-    # get the selected id from the javascript function
-    selected_ids = request.json.get("id", [])
+    # request.json.get("ids") reçoit une liste de listes (ex: [[id1, id2], [id3]])
+    selected_ids_groups = request.json.get("ids", [])
+    
+    # On aplatit la liste (au cas où il y a des cross-seeds)
+    flat_ids = []
+    for group in selected_ids_groups:
+        if isinstance(group, list):
+            flat_ids.extend(group)
+        else:
+            flat_ids.append(group)
 
-    # converts IDs to appropriate type based on client
     if client_type == "qbittorrent":
-        selected_ids = [str(tid) for tid in selected_ids]
+        flat_ids = [str(tid) for tid in flat_ids]
     else:
-        selected_ids = [int(tid) for tid in selected_ids]
+        flat_ids = [int(tid) for tid in flat_ids]
 
-    if not selected_ids:
+    if not flat_ids:
         return jsonify({"error": "No files selected"}), 400
 
-    client.delete_torrent_and_data(list(selected_ids))
+    client.delete_torrent_and_data(flat_ids)
 
     return jsonify({"message": "Selected files deleted successfully"}), 200
 

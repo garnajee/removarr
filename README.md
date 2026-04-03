@@ -225,11 +225,11 @@ The application will be available at `<you_ip>:8012`.
 - [ ] add `user: "${PUID}:${PGID}` in docker compose files
 - [ ] update README to specify how to use the .env file
 - [ ] update tests/README to explain how to source .env file when not using the removarr docker (`set -/+ a`...)
-- [ ] add total size of all files
-- [ ] add size of each file in a column
-- [ ] sort table by alphabetic order and file size
-- [ ] add an "unwanted" button, hide files to avoid deleting them by mistake
-- [ ] make the app more responsive
+- [x] add total size of all files
+- [x] add size of each file in a column
+- [x] sort table by alphabetic order and file size
+- [x] add an "unwanted" button, hide files to avoid deleting them by mistake
+- [x] make the app more responsive
 
 ## Build
 
