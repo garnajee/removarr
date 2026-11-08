@@ -36,8 +36,8 @@ Tests:
 Handoff with the complete configuration contract for all connector agents.
 
 Coordination:
-- Before starting, read `docs/agents-dag.md` and the handoffs of your dependencies
-  in `docs/handoffs/`.
+- Before starting, read section 10 (orchestration) of `MASTER-PROMPT.md` and the
+  handoffs of your dependencies in `docs/handoffs/`.
 - Ship unit tests with your code; `unit-tests` owns the legacy parity matrix.
 - When done, write `docs/handoffs/05-config-secrets.md`: delivered scope, public contracts,
   deviations from the architecture, open TODOs, and commands run with results.

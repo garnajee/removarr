@@ -33,8 +33,8 @@ Test every crash boundary and compensation path with fakes and temporary files.
 Handoff action events and progress interfaces to jobs, web, and reporting.
 
 Coordination:
-- Before starting, read `docs/agents-dag.md` and the handoffs of your dependencies
-  in `docs/handoffs/`.
+- Before starting, read section 10 (orchestration) of `MASTER-PROMPT.md` and the
+  handoffs of your dependencies in `docs/handoffs/`.
 - Ship unit tests with your code; `unit-tests` owns the legacy parity matrix.
 - When done, write `docs/handoffs/13-action-runner.md`: delivered scope, public contracts,
   deviations from the architecture, open TODOs, and commands run with results.

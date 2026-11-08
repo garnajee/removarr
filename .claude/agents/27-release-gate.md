@@ -31,7 +31,7 @@ Do not publish images, create tags, push commits, or contact live services.
 Report commands run, source revision, dirty state, and residual assumptions.
 
 Coordination:
-- Before starting, read `docs/agents-dag.md` and the handoffs of your dependencies
-  in `docs/handoffs/`.
+- Before starting, read section 10 (orchestration) of `MASTER-PROMPT.md` and the
+  handoffs of your dependencies in `docs/handoffs/`.
 - When done, write `docs/handoffs/27-release-gate.md`: delivered scope, public contracts,
   deviations from the architecture, open TODOs, and commands run with results.

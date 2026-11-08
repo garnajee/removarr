@@ -13,7 +13,8 @@ Tasks:
 1. Implement login, version discovery, torrent listing, and file listing.
 2. Accept documented empty and HTTP 204 authentication success responses.
 3. Support pause/resume semantics for 4.x and stop/start semantics for 5.x.
-4. Map torrent paths through validated configured mappings.
+4. Map torrent paths through validated configured mappings. Match torrents to disk
+   content by content path (`save_path` + `content_path`), never by torrent name.
 5. Index host paths to all associated hashes and preserve cross-seed relations.
 6. Implement recheck, polling with timeout, resume, and safe task removal.
 7. Always send `deleteFiles=false`; expose no API that permits true.
@@ -35,8 +36,8 @@ Cover 4.x, 5.x, 204 login, mapping escape, timeout, interruption, and safe delet
 Handoff adapter capabilities and compatibility assumptions to workflow agents.
 
 Coordination:
-- Before starting, read `docs/agents-dag.md` and the handoffs of your dependencies
-  in `docs/handoffs/`.
+- Before starting, read section 10 (orchestration) of `MASTER-PROMPT.md` and the
+  handoffs of your dependencies in `docs/handoffs/`.
 - Ship unit tests with your code; `unit-tests` owns the legacy parity matrix.
 - When done, write `docs/handoffs/08-qbit-api.md`: delivered scope, public contracts,
   deviations from the architecture, open TODOs, and commands run with results.

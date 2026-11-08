@@ -13,7 +13,10 @@ Tasks:
 1. Build Askama layouts, components, pages, and HTMX fragments.
 2. Implement login, dashboard, issue tabs, detail views, history, statistics, and logs.
    Render charts as server-side SVG; no JavaScript charting library.
-3. Implement filters, search, pagination, one-item actions, and bulk selection.
+3. Implement filters, search, pagination, one-item actions, and bulk selection:
+   name/age/size/torrent-count columns, sorting, list and selection totals, select-all
+   without preselection, a "hide recent items" filter, folder vs file marker, and an
+   "Ignored" tab to ignore and restore items (persisted server-side, never `localStorage`).
 4. Render dry-run previews and explicit destructive confirmation modals.
 5. Show stale scans, incomplete evidence, blockers, job progress, and cancellations.
 6. Add externalized `locales/en.json` and `locales/fr.json` with English fallback.
@@ -33,8 +36,8 @@ Verify critical flows work without custom JavaScript.
 Handoff routes/assets and known visual limitations to `e2e-perf`.
 
 Coordination:
-- Before starting, read `docs/agents-dag.md` and the handoffs of your dependencies
-  in `docs/handoffs/`.
+- Before starting, read section 10 (orchestration) of `MASTER-PROMPT.md` and the
+  handoffs of your dependencies in `docs/handoffs/`.
 - Ship unit tests with your code; `unit-tests` owns the legacy parity matrix.
 - When done, write `docs/handoffs/19-web-ui.md`: delivered scope, public contracts,
   deviations from the architecture, open TODOs, and commands run with results.

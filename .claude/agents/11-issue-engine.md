@@ -31,6 +31,8 @@ Rules:
 - An incomplete scan or path mapping blocks automatic action in that scope.
 - Only allowlisted complete states are eligible; every other or unknown state is protected.
 - Files under media roots are never proposed for automatic deletion.
+- Items on the persisted ignore list are excluded from issue lists, bulk actions, and
+  automatic mode, but stay visible in an "Ignored" view with their reason.
 - Unknown ARR identity or quality requires manual review.
 - Never mutate files, database state outside issue persistence, or services.
 
@@ -38,8 +40,8 @@ Tests must cover every category, overlap, precedence, and fail-closed condition.
 Handoff deterministic issue IDs and evidence to `plan-engine` and `reporting`.
 
 Coordination:
-- Before starting, read `docs/agents-dag.md` and the handoffs of your dependencies
-  in `docs/handoffs/`.
+- Before starting, read section 10 (orchestration) of `MASTER-PROMPT.md` and the
+  handoffs of your dependencies in `docs/handoffs/`.
 - Ship unit tests with your code; `unit-tests` owns the legacy parity matrix.
 - When done, write `docs/handoffs/11-issue-engine.md`: delivered scope, public contracts,
   deviations from the architecture, open TODOs, and commands run with results.

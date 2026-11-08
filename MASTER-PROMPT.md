@@ -1,4 +1,9 @@
-Act en tant qu'Architecte Logiciel Senior, Développeur Rust Expert et Spécialiste DevOps/Docker.
+# MASTER PROMPT — removarr-v2
+
+> **Fichier maître.** C'est l'unique point d'entrée pour créer l'application. Pour lancer la construction, demande à Claude Code : « Lis `MASTER-PROMPT.md` et exécute-le ».
+> Il définit le besoin (sections 1 à 9) et **l'ordre précis de lancement des agents** de `.claude/agents/` (section 10). En cas de conflit entre un agent et ce fichier, ce fichier l'emporte. Le détail métier vient de `old/CONTEXTE_RACINE_APP_NAS.md`.
+
+Act en tant qu'Architecte Logiciel Senior, Développeur Rust Expert et Spécialiste DevOps/Docker, et en tant qu'**orchestrateur** des agents.
 
 Contexte & Objectif :
 Après avoir effectué de nombreuses analyses, corrections et suppressions massives de fichiers sur mon infrastructure multimédia, je souhaite disposer d'un outil automatisé et pérenne pour tout gérer sans dépendre de sessions IA manuelles.
@@ -10,15 +15,13 @@ Le produit suit toujours le cycle : **observer → proposer → planifier → ap
 
 1. ÉTAPE PRÉALABLE : SOURCES DE VÉRITÉ ET ANALYSE DE L'EXISTANT
 
-Avant d'écrire la moindre ligne de code ou de proposer une architecture finale, analyse les sources suivantes, dans cet ordre de priorité :
+Avant d'écrire la moindre ligne de code ou de proposer une architecture finale, analyse **`old/` dans ce dépôt — source de vérité métier** :
 
-1. **`old/` dans ce dépôt — source de vérité métier.**
-   - `old/CONTEXTE_RACINE_APP_NAS.md` : cahier des charges complet (invariants, choix rejetés, workflows, modèle de domaine, tests d'acceptation). En cas de contradiction avec ce prompt, **le CONTEXTE l'emporte** et la contradiction doit être signalée.
-   - `old/doublon_checker.py` puis `old/test_doublon_checker.py` (32 tests) : comportement logiciel de référence.
-   - `old/generate_final_audit.py` et `old/rapport-final.md` : dernier audit et corrélation fichiers/qBittorrent/ARR.
-2. **`/Users/jean/Documents/projets/mon-github/removarr` — ancienne application web (Python/Flask).**
-   - À utiliser uniquement comme inspiration pour l'UX et le déploiement (Docker, compose, GHCR).
-   - Sa logique métier est un **anti-pattern à ne pas reproduire** : elle détecte les non-hardlinkés via `st_nlink == 1` et supprime via qBittorrent `delete_files=True` / Transmission `delete_data=True`. Ces deux approches sont explicitement rejetées (CONTEXTE §2.12).
+- `old/CONTEXTE_RACINE_APP_NAS.md` : cahier des charges complet (invariants, choix rejetés, workflows, modèle de domaine, tests d'acceptation). En cas de contradiction avec ce prompt, **le CONTEXTE l'emporte** et la contradiction doit être signalée.
+- `old/doublon_checker.py` puis `old/test_doublon_checker.py` (32 tests) : comportement logiciel de référence.
+- `old/generate_final_audit.py` et `old/rapport-final.md` : dernier audit et corrélation fichiers/qBittorrent/ARR.
+
+Aucune autre base de code n'est à consulter. Les leçons des outils précédents sont déjà intégrées dans ce fichier (sections 2, 5, 6 et 8).
 
 Tu vas concevoir et réécrire l'ensemble du projet from scratch en Rust (et non en Python).
 
@@ -40,6 +43,14 @@ Ces règles priment sur toute fonctionnalité, option ou action en masse (détai
 - **Fail-closed** : scan incomplet, mapping ambigu, API indisponible, permission refusée ou erreur `ENOENT` dans un périmètre = aucune mutation automatique dans ce périmètre.
 - **Un seul importeur par média** : ne jamais créer de hardlinks pendant que Sonarr/Radarr importe le même média.
 - **Une action n'est réussie qu'après vérification** (rescan, inode, recheck). Sinon : « exécutée, non vérifiée ».
+
+Anti-patterns interdits (déjà rencontrés, à ne jamais reproduire) :
+- détecter un fichier « non hardlinké » via `st_nlink == 1` ;
+- supprimer des données en demandant au client torrent de le faire (`delete_files=True`, `delete_data=True`) ;
+- route HTTP destructive sans authentification, sans CSRF et sans plan approuvé ;
+- liste d'exclusions stockée seulement dans le navigateur (`localStorage`) : elle doit être en base, avec motif et date ;
+- chemins de racines codés en dur, serveur en mode debug, conteneur exécuté en root ;
+- image publiée à chaque push sur la branche principale, actions CI non épinglées.
 
 ---
 
@@ -95,6 +106,12 @@ Chaque souci stocke : catégorie, sévérité, preuve et niveau de preuve, prove
 6. **Fichiers inutiles / junk** : `.rar`, `.zip`, `.nfo`, `.txt`, sous-titres orphelins (sous-titre dont aucune vidéo du même dossier ne partage le nom de base), etc. **Uniquement s'ils n'appartiennent à aucun torrent qBittorrent** (sinon les supprimer casse le seed). Les samples sont exclus du junk.
 7. **Protection stricte de qBittorrent (allowlist, fail-closed)** : un torrent n'est éligible à une action destructive que si `progress == 1` **et** son état est dans { `uploading`, `stalledUP`, `queuedUP`, `forcedUP`, `pausedUP` / `stoppedUP` }. Tout autre état est protégé, notamment `downloading`, `metaDL`, `forcedDL`, `queuedDL`, `stalledDL`, `checkingDL`, `checkingUP`, `checkingResumeData`, `allocating`, `moving`, `pausedDL` / `stoppedDL`, `error`, `missingFiles`, `unknown`. Gérer les noms qBittorrent 4.x (`paused*`) et 5.x (`stopped*`).
 
+**Rapprochement et unités de traitement** :
+- Un élément de `completed` est rattaché à ses torrents par **chemin de contenu** (`save_path` + `content_path`, après path mapping), jamais par le nom du torrent, qui peut différer du dossier réel.
+- **Cross-seed** : un même contenu peut correspondre à plusieurs torrents. L'UI affiche une ligne par contenu, avec le nombre de torrents associés. Toute action traite tous les hashes concernés.
+- **Dossier de release** : un dossier qui contient des sous-dossiers `Sample`/`Subs`/`Extras`, ou plusieurs vidéos, est proposé comme une unité (plus petit dossier entièrement admissible, tout ou rien, avec l'aperçu des annexes). L'UI distingue visuellement dossier et fichier.
+- Après suppression, un dossier parent devenu vide, ou ne contenant plus que des annexes déjà listées dans le plan, est retiré dans la même transaction, uniquement sous `completed`.
+
 **Remplacement de release (qualité ARR)** : pour deux versions différentes d'un même média, la décision vient exclusivement de Sonarr/Radarr (profil, Custom Formats, scores, cutoff, motifs). L'instantané ARR est enregistré dans le plan et l'invalide s'il change. ffprobe (durée, pistes, langue audio réelle) complète l'explication et peut bloquer un remplacement. Numérotation absolue/aired/TVDB et specials gérés par mapping explicite. Un remplacement de saison n'est exécuté qu'après preuve de couverture complète, inode par inode.
 
 ---
@@ -105,6 +122,14 @@ Chaque souci stocke : catégorie, sévérité, preuve et niveau de preuve, prove
   - Parfaite visibilité et utilisabilité complète sur smartphone (listes adaptées plutôt que tableaux compressés, boutons tactiles clairs, modales fluides).
   - Dashboard de Synthèse : métriques clés (nombre de soucis par catégorie, espace potentiellement récupérable, espace partagé par hardlinks, santé et version des services, fraîcheur du dernier scan, tâches en cours) avec code couleur d'urgence (Vert, Orange, Rouge), jamais la couleur seule.
   - Vues détaillées par Onglets : un onglet par type de souci, avec filtres, recherche, preuves et éléments bloquants.
+  - Dans chaque liste :
+    - colonnes nom, âge (jours), taille, nombre de torrents ;
+    - tri par nom, taille et âge ;
+    - total de la liste et total de la sélection ;
+    - bouton « tout sélectionner » (sans présélection par défaut) ;
+    - filtre « masquer les éléments récents » (seuil d'âge configurable) ;
+    - bouton de rafraîchissement.
+  - **Liste d'exclusions (« ignorés »)** : chaque élément peut être marqué « ignoré » (motif optionnel). Il disparaît alors des listes et des actions en masse, et apparaît dans un onglet « Ignorés » d'où il peut être restauré. Ces exclusions sont stockées en base et respectées par le mode automatique.
   - Onglet Historique & Statistiques : toutes les actions (horodatage exact, cible, motif, taille libérée) et graphiques SVG des gains dans le temps, en distinguant gain potentiel, attendu, attribuable et observé (les snapshots Btrfs peuvent retenir l'espace).
   - Onglet de Logs : journaux clairs dans l'UI et émis vers `stdout` (Docker), niveau configurable (`DEBUG`, `INFO`, `WARN`, `ERROR`), sans aucun secret.
 
@@ -147,6 +172,8 @@ Chaque souci stocke : catégorie, sévérité, preuve et niveau de preuve, prove
   - Volume séparé (SSD) pour la configuration et la base SQLite.
   - L'utilisateur final ne modifie qu'un `docker-compose.yml` template (volumes, `user:`, path mappings, URLs et clés API) et un `.env`.
   - Healthcheck léger qui ne réveille pas les disques.
+  - Port publié par défaut sur `127.0.0.1` uniquement dans le compose (exemple `127.0.0.1:8012:8080`). Exposition sur le réseau = choix explicite de l'utilisateur, idéalement derrière un reverse proxy.
+  - Livrer un `.env.example` (sans valeur réelle), un `docker-compose.yml` commenté, un `README.md` (installation, volumes, path mapping, capture d'écran) et des modèles d'issue GitHub (bug, feature).
 
 - GitHub Actions & GHCR (CI/CD) :
   - Sur PR et push sur `main` : `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test`, build.
@@ -157,7 +184,7 @@ Chaque souci stocke : catégorie, sévérité, preuve et niveau de preuve, prove
 
 9. HORS PÉRIMÈTRE
 
-- Transmission (supporté par l'ancien removarr) : non supporté.
+- Transmission et tout autre client torrent que qBittorrent : non supportés.
 - Prowlarr et indexeurs : aucune intégration directe.
 - cross-seed : lecture des relations (plusieurs hashes par inode) uniquement ; aucune modification de sa configuration.
 - Grab de release ARR sans approbation explicite.
@@ -166,4 +193,56 @@ Chaque souci stocke : catégorie, sévérité, preuve et niveau de preuve, prove
 
 ---
 
-Commence par me présenter ton analyse des sources (section 1) et le plan d'architecture technique du projet Rust, en signalant toute contradiction entre ce prompt et `old/CONTEXTE_RACINE_APP_NAS.md`.
+10. ORCHESTRATION — ORDRE DE LANCEMENT DES AGENTS
+
+Les 28 agents de `.claude/agents/` construisent l'application. Leur numéro est un identifiant, **pas** l'ordre d'exécution. Tu (session principale) es l'orchestrateur : tu lances les agents, tu contrôles les portes de qualité et tu ne codes pas toi-même à leur place.
+
+Règles :
+1. Exécuter **vague par vague**, dans l'ordre du tableau. Les agents d'une même vague sont lancés **en parallèle** (ils possèdent des modules disjoints, définis par `system-arch` dans `docs/architecture.md`). Ne jamais démarrer une vague avant que la précédente soit terminée et validée.
+2. Chaque agent lit les handoffs de ses dépendances dans `docs/handoffs/` avant de commencer, et écrit le sien (`docs/handoffs/<nom-du-fichier-agent>.md`) en fin de tâche.
+3. **Porte de qualité** après chaque vague qui produit du code : `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`. En cas d'échec, relancer l'agent propriétaire du module avec l'erreur. Ne jamais affaiblir un test pour passer.
+4. `21-unit-tests` tourne en continu à partir de la vague 3 : après chaque vague, il met à jour la matrice de parité legacy et comble les trous. Les agents de feature livrent leurs propres tests unitaires.
+5. **Points d'arrêt utilisateur (obligatoires)** : tu t'arrêtes et attends ma validation :
+   - après la vague 1 : présente l'analyse des sources (`docs/legacy-parity.md`), l'architecture (`docs/architecture.md`) et toute contradiction entre ce fichier et le CONTEXTE ;
+   - avant d'activer chaque palier de risque 3, 4 et 5 (voir plus bas) ;
+   - à la fin, avec le verdict de `27-release-gate`.
+6. À la fin de chaque vague, propose-moi un commit. Le commit se fait sous mon identité git, sans aucune mention ni trailer Claude. Jamais de push, de tag ou de publication sans demande explicite.
+
+| Vague | Agents (en parallèle) | Dépend de |
+|---|---|---|
+| 0 | `00-legacy-audit` | — |
+| 1 | `01-system-arch` | 00 |
+| — | **Point d'arrêt utilisateur** | |
+| 2 | `02-rust-scaffold` | 01 |
+| 3 | `03-domain-model` | 00, 01, 02 |
+| 4 | `04-db-layer`, `05-config-secrets` | 03 (05 aussi 02) |
+| 5 | `06-fs-engine`, `08-qbit-api`, `09-arr-api`, `10-jellyfin-api` | 03, 05 (06 aussi contrats de 04) |
+| 6 | `07-media-match` | 03, 06, interfaces de 09 |
+| 7 | `11-issue-engine` | 04, 06, 07, 08, 09, 10 |
+| 8 | `12-plan-engine` | 03, 04, 11 |
+| 9 | `13-action-runner` | 04, 07, 08, 09, 10, 12 |
+| 10 | `14-job-runner` | 04, 11, 13 |
+| 11 | `15-reporting` | 04, 11, 13, schémas d'événements de 14 |
+| 12 | `16-backend-api` | 13, 14, 15 |
+| 13 | `17-auth-guard`, `18-ux-design`, `20-devops` | 16 (17 aussi 04, 05 ; 20 a besoin des routes de santé) |
+| 14 | `19-web-ui` | 15, 16, 17, 18 |
+| 15 | `22-integration-tests` | 04 à 16 |
+| 16 | `23-e2e-perf` | 17, 19, 20, 22 |
+| 17 | `24-sec-setup` | tous les tests au vert |
+| 18 | `25-sec-audit` | 24 (ou repli explicite sur `/security-review`) |
+| 19 | `26-sec-fix`, puis ré-audit ciblé par `25-sec-audit` | 25 |
+| 20 | `27-release-gate` | tout ce qui précède |
+| — | **Point d'arrêt utilisateur : verdict final** | |
+
+**Paliers de risque (dans le périmètre complet de la V1).** Toutes les fonctionnalités sont en V1, mais les capacités destructives sont construites et validées par risque croissant (CONTEXTE §7.2). `12-plan-engine`, `13-action-runner` et `22-integration-tests` terminent un palier avant d'entamer le suivant :
+1. **Lecture seule** : scan, soucis, rapports, chemin dry-run complet.
+2. **Consolidation de copie exacte** : test de permission, comparaison intégrale, hardlink temporaire, remplacement atomique, stop/recheck/reprise qBittorrent.
+3. **Suppressions sous `completed`** : fichiers non hardlinkés, junk hors torrent, torrents incomplets stagnants, retrait de tâche avec `deleteFiles=false`.
+4. **Remplacement de release ARR** : instantanés qualité, preuve de couverture, contrôles ffprobe, mapping de numérotation.
+5. **Mode automatique** : uniquement les plans qui satisfont toutes les règles automatiques ; désactivé par défaut.
+
+Un palier n'est terminé que si ses tests de points de crash et de « dry-run sans mutation » passent.
+
+---
+
+**Démarrage :** lance la vague 0 (`00-legacy-audit`), puis la vague 1 (`01-system-arch`), puis arrête-toi au premier point d'arrêt utilisateur.

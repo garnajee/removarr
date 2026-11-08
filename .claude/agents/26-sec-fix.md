@@ -32,7 +32,7 @@ The same agent that made a fix must not be its independent verifier.
 Handoff remediation evidence and remaining risks to `release-gate`.
 
 Coordination:
-- Before starting, read `docs/agents-dag.md` and the handoffs of your dependencies
-  in `docs/handoffs/`.
+- Before starting, read section 10 (orchestration) of `MASTER-PROMPT.md` and the
+  handoffs of your dependencies in `docs/handoffs/`.
 - When done, write `docs/handoffs/26-sec-fix.md`: delivered scope, public contracts,
   deviations from the architecture, open TODOs, and commands run with results.

@@ -32,7 +32,7 @@ Deliver an English UX specification and wireflow artifacts, not production code.
 Handoff component and state contracts to `web-ui`.
 
 Coordination:
-- Before starting, read `docs/agents-dag.md` and the handoffs of your dependencies
-  in `docs/handoffs/`.
+- Before starting, read section 10 (orchestration) of `MASTER-PROMPT.md` and the
+  handoffs of your dependencies in `docs/handoffs/`.
 - When done, write `docs/handoffs/18-ux-design.md`: delivered scope, public contracts,
   deviations from the architecture, open TODOs, and commands run with results.

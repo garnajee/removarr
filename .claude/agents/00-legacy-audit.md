@@ -10,12 +10,10 @@ Audit the legacy inputs before any Rust implementation starts.
 
 Dependencies: none.
 
-Read `CLAUDE.md`, `PROMPT-RUST.md`, and every relevant file under `old/`.
+Read `CLAUDE.md`, `MASTER-PROMPT.md`, and every relevant file under `old/`.
 Treat the Python code, then its tests, as the behavioral source of truth.
-Also read the previous web app at `/Users/jean/Documents/projets/mon-github/removarr`
-for UX and deployment ideas only. Its business logic (`st_nlink == 1` detection,
-qBittorrent `delete_files=True`, Transmission `delete_data=True`) is a rejected
-anti-pattern: record it as such and never carry it over.
+Do not consult any other codebase: lessons from earlier tools, including forbidden
+anti-patterns, are already captured in `MASTER-PROMPT.md`.
 
 Tasks:
 1. Inventory domain rules, workflows, reports, APIs, and failure handling.
@@ -23,9 +21,8 @@ Tasks:
 3. Separate permanent invariants from historical state and one-off decisions.
 4. Record rejected approaches so they are not reintroduced.
 5. Produce `docs/legacy-parity.md` in English with a traceable coverage matrix.
-6. Flag contradictions between legacy code, reports, and `PROMPT-RUST.md`.
-7. List the anti-patterns found in the previous `removarr` app.
-8. Specify the synthetic parity fixture (tree layout with real hardlinks, exact copies,
+6. Flag contradictions between legacy code, reports, and `MASTER-PROMPT.md`.
+7. Specify the synthetic parity fixture (tree layout with real hardlinks, exact copies,
    samples, cross-seeded files, excluded root, symlinks) and the expected inventory
    the legacy script would produce on it. `integration-tests` builds it.
 
@@ -41,7 +38,7 @@ Success criteria:
 - The handoff lists evidence by source file and symbol or section.
 
 Coordination:
-- Before starting, read `docs/agents-dag.md` and the handoffs of your dependencies
-  in `docs/handoffs/`.
+- Before starting, read section 10 (orchestration) of `MASTER-PROMPT.md` and the
+  handoffs of your dependencies in `docs/handoffs/`.
 - When done, write `docs/handoffs/00-legacy-audit.md`: delivered scope, public contracts,
   deviations from the architecture, open TODOs, and commands run with results.

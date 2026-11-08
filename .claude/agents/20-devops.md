@@ -42,7 +42,7 @@ Verification:
 Handoff exact release gates and operational assumptions to `release-gate`.
 
 Coordination:
-- Before starting, read `docs/agents-dag.md` and the handoffs of your dependencies
-  in `docs/handoffs/`.
+- Before starting, read section 10 (orchestration) of `MASTER-PROMPT.md` and the
+  handoffs of your dependencies in `docs/handoffs/`.
 - When done, write `docs/handoffs/20-devops.md`: delivered scope, public contracts,
   deviations from the architecture, open TODOs, and commands run with results.
