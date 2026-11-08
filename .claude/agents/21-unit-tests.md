@@ -14,7 +14,7 @@ Dependencies: implemented domain and subsystem modules; may start incrementally.
 Tasks:
 1. Map all 32 legacy Python tests to named Rust tests or justified replacements.
 2. Test domain transitions, plan hashes, gain accounting, and policy evaluation.
-3. Test scanning, inode identity, exclusions, path confinement, and symlink refusal.
+3. Test scanning, inode identity, root confinement, path confinement, and symlink refusal.
 4. Test parsing, matching, editions, language, duration, and full comparison.
 5. Test connector request construction and response parsing with pure fixtures.
 6. Test issue classification, plan eligibility, and fail-closed behavior.

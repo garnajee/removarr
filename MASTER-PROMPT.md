@@ -33,13 +33,13 @@ Ces règles priment sur toute fonctionnalité, option ou action en masse (détai
 
 - **Preuve de hardlink = même `(st_dev, st_ino)` présent dans les deux arbres.** Jamais `st_nlink` seul, jamais le nom seul.
 - **Égalité de contenu = comparaison intégrale octet par octet**, obtenue par entonnoir : index inode → index nom normalisé + taille → parsing scene/P2P → échantillons (pour éliminer seulement) → comparaison intégrale de la seule paire retenue. **Pas de hash SHA-256 de tout le NAS.**
-- **qBittorrent ne supprime jamais de données** : retrait de tâche toujours avec `deleteFiles=false` ; aucune API interne ne doit permettre `true`. Ne jamais toucher `BT_backup/`.
-- **Racines exclues** (ex. `/volume3/chill/vrac`) : jamais parcourues, jamais normalisées dans le périmètre, même par un audit global. Exclusion lexicale ET physique, validée au démarrage.
+- **qBittorrent ne supprime jamais de données** : retrait de tâche toujours avec `deleteFiles=false` ; aucune API interne ne doit permettre `true`. Ne jamais toucher aux fichiers internes de qBittorrent (dossier `BT_backup/` : `.torrent` et `.fastresume`).
+- **Périmètre = chemins configurés uniquement** : l'application ne parcourt, ne lit et ne modifie que les racines déclarées dans `download_roots` / `media_roots` (compose ou `.env`). Aucun chemin n'est supposé par défaut ; un chemin non déclaré n'est jamais analysé. Les racines sont validées au démarrage (existantes, distinctes, sans chevauchement ambigu, sans symlink d'évasion) et tout accès est confiné sous elles.
 - **Samples protégés par défaut** (jamais traités comme junk ou orphelins).
 - **Sonarr/Radarr = seule autorité qualité** (profils, Custom Formats, scores, cutoff, motifs de rejet). Aucune hiérarchie codec/groupe codée en dur (pas de `AV1 > H265 > H264`). Absence d'ARR ou données ambiguës = décision manuelle.
 - **Direction des réparations** : la source canonique est le fichier de `completed` ; la copie physique dans `medias` est remplacée par un hardlink vers cet inode (lien temporaire puis remplacement atomique).
 - **Journal d'intention avant mutation** (écrit + `fsync`), puis résultat ou erreur. Plans immuables (hash), revalidés juste avant exécution (existence, type, symlink, confinement, dev, inode, taille, `mtime_ns`, mode, état des services). Toute différence invalide l'action.
-- **Transaction qBittorrent** : identifier tous les hashes touchés (cross-seed = plusieurs hashes par inode), arrêter, muter, rechecker avec timeout, reprendre les torrents intacts, laisser arrêtés et visibles ceux dont l'état est incertain.
+- **Transaction qBittorrent** : identifier tous les hashes touchés (plusieurs torrents peuvent partager les mêmes fichiers : plusieurs hashes pour un même inode), arrêter, muter, rechecker avec timeout, reprendre les torrents intacts, laisser arrêtés et visibles ceux dont l'état est incertain.
 - **Fail-closed** : scan incomplet, mapping ambigu, API indisponible, permission refusée ou erreur `ENOENT` dans un périmètre = aucune mutation automatique dans ce périmètre.
 - **Un seul importeur par média** : ne jamais créer de hardlinks pendant que Sonarr/Radarr importe le même média.
 - **Une action n'est réussie qu'après vérification** (rescan, inode, recheck). Sinon : « exécutée, non vérifiée ».
@@ -61,7 +61,7 @@ Anti-patterns interdits (déjà rencontrés, à ne jamais reproduire) :
   - Frontend : rendu HTML côté serveur via Askama, couplé à HTMX pour la réactivité sans SPA (seul JavaScript embarqué : HTMX). Rendu instantané, RAM/CPU minimes, compatibilité mobile parfaite.
   - Graphiques : générés en **SVG côté serveur** (aucune librairie de graphiques JS).
 - Base de données : SQLite embarquée via sqlx.
-  - Scalable pour 20 000+ fichiers et 3 000+ torrents (cross-seed inclus).
+  - Scalable pour 20 000+ fichiers et 3 000+ torrents.
   - Stocke le suivi temporel (date de première apparition, statut, état des hardlinks), les sessions d'audit, les preuves, les plans, le journal d'actions et les instantanés ARR/qBittorrent.
   - Historique complet des actions (horodatage, cible, motif, résultat, gain attribuable avec **identifiant de gain unique** pour empêcher tout double comptage).
   - Fichier SQLite placé sur le volume de configuration Docker (SSD), pas sur les disques médias. WAL, commits par lot.
@@ -80,9 +80,8 @@ L'application raisonne sur des racines typées, configurées dans un fichier de 
 
 - `download_roots` : `completed`, `incomplete` (qBittorrent).
 - `media_roots` : bibliothèque organisée par Radarr/Sonarr et lue par Jellyfin (souvent un seul arbre `medias`).
-- `excluded_roots` : racines interdites (ex. `vrac`).
-- `path_mappings` : correspondance chemins conteneur qBittorrent/Sonarr/Radarr/Jellyfin ↔ chemins vus par l'application (ex. `/data` → `/volume3/chill`, `/downloads` → `/volume3/chill`). Préfixe validé lexicalement, résultat confiné sous sa racine après résolution, sans remplacement non borné.
-- `expected_owner` : UID/GID attendus des services (ex. `1030:100`).
+- `path_mappings` : correspondance chemins conteneur qBittorrent/Sonarr/Radarr/Jellyfin ↔ chemins vus par l'application (exemple : qBittorrent voit `/downloads`, l'application voit `/data/completed` ; fournir un exemple par service dans le `docker-compose.yml`). Préfixe validé lexicalement, résultat confiné sous sa racine après résolution, sans remplacement non borné.
+- `expected_owner` : UID/GID attendus des services (exemple `1000:1000`).
 - Seuils : jours de stagnation dans `incomplete`, âge minimal avant action automatique (historiquement 48 h), extensions vidéo, intervalles de scan.
 - `dry_run` : **activé par défaut**. `auto_mode` : **désactivé par défaut**.
 
@@ -102,13 +101,13 @@ Chaque souci stocke : catégorie, sévérité, preuve et niveau de preuve, prove
 4. **Fichiers orphelins** :
    - fichiers de `completed` sans torrent associé, et torrents dont les fichiers sont absents (`missingFiles`) ;
    - fichiers de `media_roots` sans source dans `completed` : **catégorie informative**. C'est souvent normal (torrent retiré après le seed). **Jamais de suppression automatique dans `media_roots`.**
-5. **Permissions & propriétaire** : propriétaire/groupe différent de `expected_owner` (ex. `1026:100` au lieu de `1030:100`, ou `root`), et surtout **dossier parent non inscriptible** par l'identité du service (empêche renommage/suppression). Détection seulement pendant le scan ; correction ciblée uniquement via un plan approuvé, jamais de `chmod/chown` récursif implicite.
+5. **Permissions & propriétaire** : propriétaire/groupe différent de `expected_owner` (ex. `root` ou un autre UID au lieu de `1000:1000`), et surtout **dossier parent non inscriptible** par l'identité du service (empêche renommage/suppression). Détection seulement pendant le scan ; correction ciblée uniquement via un plan approuvé, jamais de `chmod/chown` récursif implicite.
 6. **Fichiers inutiles / junk** : `.rar`, `.zip`, `.nfo`, `.txt`, sous-titres orphelins (sous-titre dont aucune vidéo du même dossier ne partage le nom de base), etc. **Uniquement s'ils n'appartiennent à aucun torrent qBittorrent** (sinon les supprimer casse le seed). Les samples sont exclus du junk.
 7. **Protection stricte de qBittorrent (allowlist, fail-closed)** : un torrent n'est éligible à une action destructive que si `progress == 1` **et** son état est dans { `uploading`, `stalledUP`, `queuedUP`, `forcedUP`, `pausedUP` / `stoppedUP` }. Tout autre état est protégé, notamment `downloading`, `metaDL`, `forcedDL`, `queuedDL`, `stalledDL`, `checkingDL`, `checkingUP`, `checkingResumeData`, `allocating`, `moving`, `pausedDL` / `stoppedDL`, `error`, `missingFiles`, `unknown`. Gérer les noms qBittorrent 4.x (`paused*`) et 5.x (`stopped*`).
 
 **Rapprochement et unités de traitement** :
 - Un élément de `completed` est rattaché à ses torrents par **chemin de contenu** (`save_path` + `content_path`, après path mapping), jamais par le nom du torrent, qui peut différer du dossier réel.
-- **Cross-seed** : un même contenu peut correspondre à plusieurs torrents. L'UI affiche une ligne par contenu, avec le nombre de torrents associés. Toute action traite tous les hashes concernés.
+- **Plusieurs torrents, même contenu** : un même contenu peut correspondre à plusieurs torrents (même release ajoutée depuis plusieurs trackers, par exemple). L'UI affiche une ligne par contenu, avec le nombre de torrents associés. Toute action traite tous les hashes concernés.
 - **Dossier de release** : un dossier qui contient des sous-dossiers `Sample`/`Subs`/`Extras`, ou plusieurs vidéos, est proposé comme une unité (plus petit dossier entièrement admissible, tout ou rien, avec l'aperçu des annexes). L'UI distingue visuellement dossier et fichier.
 - Après suppression, un dossier parent devenu vide, ou ne contenant plus que des annexes déjà listées dans le plan, est retiré dans la même transaction, uniquement sous `completed`.
 
@@ -165,10 +164,10 @@ Chaque souci stocke : catégorie, sévérité, preuve et niveau de preuve, prove
   - Aucun secret (mot de passe, clé API, passkey, URL de tracker) dans les logs, rapports, pages HTML ou base.
 
 - Conteneurisation Docker Rootless :
-  - Aucun processus root, y compris au démarrage : l'identité est fixée par `user: "${UID}:${GID}"` dans le compose (exemple `1030:100`, identique à qBittorrent/Sonarr). Pas de variables PUID/PGID ni d'entrypoint qui abaisse ses privilèges.
+  - Aucun processus root, y compris au démarrage : l'identité est fixée par `user: "${UID}:${GID}"` dans le compose (exemple `1000:1000`, à aligner sur l'identité de qBittorrent/Sonarr/Radarr). Pas de variables PUID/PGID ni d'entrypoint qui abaisse ses privilèges.
   - Image multi-stage minimale : binaire Rust release statique (musl) + runtime minimal **contenant `ffprobe`** (donc pas `scratch`).
   - Image **multi-arch `linux/amd64` + `linux/arm64`**.
-  - **Topologie des volumes (critique pour les hardlinks)** : monter le **parent commun** de `completed`, `incomplete` et `medias` en un seul volume (ex. `/volume3/chill:/data`). Deux bind mounts séparés font échouer `link()` avec `EXDEV`, même sur le même système de fichiers. Conséquence : les racines exclues (ex. `/data/vrac`) sont visibles dans le conteneur et leur exclusion est appliquée et vérifiée par l'application.
+  - **Topologie des volumes (critique pour les hardlinks)** : monter le **parent commun** de `completed`, `incomplete` et `medias` en un seul volume (exemple `/srv/media:/data`). Deux bind mounts séparés font échouer `link()` avec `EXDEV`, même sur le même système de fichiers. Conséquence : le conteneur voit tout le parent monté ; seules les racines déclarées sont analysées.
   - Volume séparé (SSD) pour la configuration et la base SQLite.
   - L'utilisateur final ne modifie qu'un `docker-compose.yml` template (volumes, `user:`, path mappings, URLs et clés API) et un `.env`.
   - Healthcheck léger qui ne réveille pas les disques.
@@ -185,8 +184,7 @@ Chaque souci stocke : catégorie, sévérité, preuve et niveau de preuve, prove
 9. HORS PÉRIMÈTRE
 
 - Transmission et tout autre client torrent que qBittorrent : non supportés.
-- Prowlarr et indexeurs : aucune intégration directe.
-- cross-seed : lecture des relations (plusieurs hashes par inode) uniquement ; aucune modification de sa configuration.
+- Prowlarr, cross-seed et autres outils tiers : aucune intégration (seule la présence de plusieurs torrents pour un même contenu est gérée, côté qBittorrent).
 - Grab de release ARR sans approbation explicite.
 - Import des anciens rapports JSON/CSV comme état courant.
 - Lecture directe des bases SQLite de Sonarr/Radarr (utiliser leurs APIs).

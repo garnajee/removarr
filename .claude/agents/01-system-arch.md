@@ -24,7 +24,7 @@ Non-negotiable invariants:
 - Observing, proposing, planning, approving, executing, and verifying stay separate.
 - ARR owns quality decisions; names and codecs never replace ARR evidence.
 - Dry-run follows the real workflow but cannot reach mutation adapters.
-- Exclusions, samples, incomplete scans, and ambiguous mappings fail closed.
+- Unconfigured paths, samples, incomplete scans, and ambiguous mappings fail closed.
 
 Do not implement feature logic beyond minimal interface skeletons.
 Do not access live storage or services.

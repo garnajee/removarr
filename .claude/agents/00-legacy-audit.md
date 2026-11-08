@@ -23,7 +23,7 @@ Tasks:
 5. Produce `docs/legacy-parity.md` in English with a traceable coverage matrix.
 6. Flag contradictions between legacy code, reports, and `MASTER-PROMPT.md`.
 7. Specify the synthetic parity fixture (tree layout with real hardlinks, exact copies,
-   samples, cross-seeded files, excluded root, symlinks) and the expected inventory
+   samples, files shared by several torrents, a sibling directory outside the configured roots, symlinks) and the expected inventory
    the legacy script would produce on it. `integration-tests` builds it.
 
 Safety:

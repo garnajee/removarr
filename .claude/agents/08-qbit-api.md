@@ -15,7 +15,7 @@ Tasks:
 3. Support pause/resume semantics for 4.x and stop/start semantics for 5.x.
 4. Map torrent paths through validated configured mappings. Match torrents to disk
    content by content path (`save_path` + `content_path`), never by torrent name.
-5. Index host paths to all associated hashes and preserve cross-seed relations.
+5. Index host paths to all associated hashes and preserve the relation when several torrents share the same files.
 6. Implement recheck, polling with timeout, resume, and safe task removal.
 7. Always send `deleteFiles=false`; expose no API that permits true.
 8. Preserve initial state and report torrents intentionally left stopped.

@@ -15,10 +15,10 @@ Tasks:
 3. Capture path, kind, logical size, blocks, device, inode, links, times, mode, UID, and GID.
 4. Group physical identities by `(device, inode)` and count allocated blocks once.
 5. Record errors per path and mark affected subtrees incomplete.
-6. Enforce exclusions before opening a directory, lexically and physically.
+6. Open only configured roots and confine every path under them, lexically and physically.
 7. Detect ownership and permission anomalies without changing them: owner or group
-   different from the configured `expected_owner` (for example `1026:100` instead of
-   `1030:100`, or `root`), and parent directories the expected identity cannot write,
+   different from the configured `expected_owner` (for example a wrong UID instead of
+   the expected `1000:1000`, or `root`), and parent directories the expected identity cannot write,
    rename, or unlink in.
 8. Batch persistence and expose cancellation and progress checkpoints.
 
@@ -28,7 +28,7 @@ Performance rules:
 - Do not poll continuously; scheduling belongs to `job-runner`.
 
 Tests:
-- Real hardlinks, external links, symlinks, races, permission failures, and exclusions.
+- Real hardlinks, external links, symlinks, races, permission failures, and paths outside configured roots.
 - Unique block accounting and incomplete subtree propagation.
 - Synthetic large trees with bounded concurrency.
 

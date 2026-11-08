@@ -12,11 +12,11 @@ Dependencies: compilable application, configuration contract, and health routes.
 Tasks:
 1. Create a reproducible multi-stage Docker build with a minimal runtime image.
 2. Run without root at any point: the identity comes from `user: "${UID}:${GID}"` in
-   Compose (example `1030:100`). No PUID/PGID variables and no privilege-dropping entrypoint.
+   Compose (example `1000:1000`). No PUID/PGID variables and no privilege-dropping entrypoint.
 3. Mount the common parent of completed, incomplete, and media as one volume
-   (for example `/volume3/chill:/data`). Separate bind mounts make `link()` fail with
-   `EXDEV` even on the same filesystem. Document that excluded roots become visible
-   and are enforced by the application. Put configuration and SQLite on a separate
+   (for example `/srv/media:/data`). Separate bind mounts make `link()` fail with
+   `EXDEV` even on the same filesystem. Document that the container sees the whole mounted
+   parent while the application only analyzes the configured roots. Put configuration and SQLite on a separate
    (SSD) volume.
 4. Build a static musl release binary and a minimal runtime image that includes
    `ffprobe` (therefore not `scratch`).

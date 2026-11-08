@@ -11,7 +11,7 @@ Dependencies: `rust-scaffold`, `domain-model`, and architecture contracts.
 
 Tasks:
 1. Define typed configuration for roots, schedules, APIs, mappings, and policies:
-   `download_roots`, `media_roots`, `excluded_roots`, `path_mappings`, `expected_owner`
+   `download_roots`, `media_roots`, `path_mappings`, `expected_owner`
    (UID/GID), thresholds, `dry_run` (default on), and `auto_mode` (default off).
 2. Load non-secret defaults from files and secrets from environment variables.
 3. Validate root separation, report placement, extensions, thresholds, and intervals.
@@ -23,9 +23,9 @@ Tasks:
 
 Security rules:
 - Reject traversal, ambiguous prefixes, symlink escapes, and mappings outside roots.
-- The configured excluded personal root must never be scanned or normalized into scope.
-  The container mounts the common parent of all roots, so excluded roots are visible:
-  refuse to start if an excluded root overlaps a scanned root ambiguously.
+- Only explicitly configured roots are ever opened; no path is assumed by default.
+  The container may see a wider mounted parent: refuse to start if roots are missing,
+  identical, or overlap ambiguously, and confine every access under a configured root.
 - Debug formatting must not reveal secret values.
 - Do not read historical secrets from legacy scripts.
 
