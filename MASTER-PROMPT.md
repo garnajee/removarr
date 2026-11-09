@@ -1,7 +1,7 @@
 # MASTER PROMPT — removarr-v2
 
 > **Fichier maître.** C'est l'unique point d'entrée pour créer l'application. Pour lancer la construction, demande à Claude Code : « Lis `MASTER-PROMPT.md` et exécute-le ».
-> Il définit le besoin (sections 1 à 9) et **l'ordre précis de lancement des agents** de `.claude/agents/` (section 10). En cas de conflit entre un agent et ce fichier, ce fichier l'emporte. Le détail métier vient de `old/CONTEXTE_RACINE_APP_NAS.md`.
+> Il définit le besoin (sections 1 à 9) et **l'ordre précis de lancement des agents** de `.claude/agents/` (section 10), dans un **mode autonome** (revues indépendantes à la place des validations humaines, reprise via `docs/PROGRESS.md`). En cas de conflit entre un agent et ce fichier, ce fichier l'emporte. Le détail métier vient de `old/CONTEXTE_RACINE_APP_NAS.md`.
 
 Act en tant qu'Architecte Logiciel Senior, Développeur Rust Expert et Spécialiste DevOps/Docker, et en tant qu'**orchestrateur** des agents.
 
@@ -200,17 +200,20 @@ Règles :
 2. Chaque agent lit les handoffs de ses dépendances dans `docs/handoffs/` avant de commencer, et écrit le sien (`docs/handoffs/<nom-du-fichier-agent>.md`) en fin de tâche.
 3. **Porte de qualité** après chaque vague qui produit du code : `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`. En cas d'échec, relancer l'agent propriétaire du module avec l'erreur. Ne jamais affaiblir un test pour passer.
 4. `21-unit-tests` tourne en continu à partir de la vague 3 : après chaque vague, il met à jour la matrice de parité legacy et comble les trous. Les agents de feature livrent leurs propres tests unitaires.
-5. **Points d'arrêt utilisateur (obligatoires)** : tu t'arrêtes et attends ma validation :
-   - après la vague 1 : présente l'analyse des sources (`docs/legacy-parity.md`), l'architecture (`docs/architecture.md`) et toute contradiction entre ce fichier et le CONTEXTE ;
-   - avant d'activer chaque palier de risque 3, 4 et 5 (voir plus bas) ;
-   - à la fin, avec le verdict de `27-release-gate`.
-6. À la fin de chaque vague, propose-moi un commit. Le commit se fait sous mon identité git, sans aucune mention ni trailer Claude. Jamais de push, de tag ou de publication sans demande explicite.
+5. **Points de contrôle autonomes.** Il n'y a aucun arrêt pour validation humaine. Aux trois points de contrôle ci-dessous, tu lances une **revue indépendante** : un agent neuf (`general-purpose`, modèle `opus`, qui n'a écrit aucun des livrables revus) lit les livrables et écrit `docs/reviews/<point>.md` avec un verdict `PASS` ou `FAIL` et la liste des écarts. Sur `FAIL`, tu relances l'agent propriétaire avec les écarts, puis refais la revue (3 itérations maximum par point).
+   - **CP1, après la vague 1** : `docs/legacy-parity.md` et `docs/architecture.md` couvrent chaque invariant de la section 2, `old/CONTEXTE_RACINE_APP_NAS.md` (§1.3, §2.12, §3, §9) et chaque exigence de ce fichier ; chaque exigence a un composant propriétaire ; toute contradiction entre ce fichier et le CONTEXTE est signalée (le CONTEXTE l'emporte).
+   - **CP2, avant d'activer chacun des paliers de risque 3, 4 et 5** : les tests du palier précédent passent, y compris points de crash et « dry-run sans mutation » ; la revue vérifie les invariants du moteur d'actions (`deleteFiles=false` partout, aucune commande shell construite par concaténation de chemins, journal d'intention avant mutation, fail-closed).
+   - **CP3, à la fin** : verdict de `27-release-gate` (`docs/release-readiness.md`).
+6. **Conditions d'arrêt (les seules).** Tu t'arrêtes et rapportes si : (a) la même porte de qualité ou le même point de contrôle échoue 3 fois de suite ; (b) une décision nécessaire contredirait un invariant de ce fichier ou du CONTEXTE ; (c) la suite exige un secret, un service réel, un accès réseau externe ou une publication (exception : à la vague 17, si `24-sec-setup` ne peut pas installer le skill de sécurité, bascule automatiquement sur le skill intégré `/security-review`, consigne la substitution dans `docs/PROGRESS.md` et continue) ; (d) `27-release-gate` rend `BLOCKED` après la boucle de correction. Dans tous les cas, écris la cause et les options dans `docs/PROGRESS.md`.
+7. **Git en mode autonome.** Au démarrage, crée la branche locale `autonomous-build` depuis `main`. Fais **un commit local à la fin de chaque vague**, sous mon identité git déjà configurée, sans aucune mention ni trailer Claude, sans modifier la configuration git. Jamais de `git push`, de tag, de release, de publication d'image ni de création de repo ou de PR.
+8. **Reprise : `docs/PROGRESS.md`.** Fichier tenu à jour après chaque agent, avec : tableau vague/agent/état (`todo`, `running`, `done`, `blocked`), résultat de la dernière porte de qualité, verdicts et compteurs d'itérations des points de contrôle, branche et dernier commit, cause du blocage éventuel. Au démarrage, lis-le : s'il existe, reprends à la première entrée non `done` (sans refaire le travail terminé) ; sinon crée-le.
+9. **Aucun accès au monde réel.** Ni mes services (qBittorrent, Sonarr, Radarr, Jellyfin), ni mon NAS, ni clés API, ni mots de passe, ni adresses IP ne te sont fournis ou ne doivent être demandés. Tous les tests utilisent des serveurs simulés sur la boucle locale, des arborescences temporaires et des secrets factices.
 
 | Vague | Agents (en parallèle) | Dépend de |
 |---|---|---|
 | 0 | `00-legacy-audit` | — |
 | 1 | `01-system-arch` | 00 |
-| — | **Point d'arrêt utilisateur** | |
+| — | **CP1 : revue autonome de l'architecture** | |
 | 2 | `02-rust-scaffold` | 01 |
 | 3 | `03-domain-model` | 00, 01, 02 |
 | 4 | `04-db-layer`, `05-config-secrets` | 03 (05 aussi 02) |
@@ -230,7 +233,7 @@ Règles :
 | 18 | `25-sec-audit` | 24 (ou repli explicite sur `/security-review`) |
 | 19 | `26-sec-fix`, puis ré-audit ciblé par `25-sec-audit` | 25 |
 | 20 | `27-release-gate` | tout ce qui précède |
-| — | **Point d'arrêt utilisateur : verdict final** | |
+| — | **CP3 : verdict final de la release-gate** | |
 
 **Paliers de risque (dans le périmètre complet de la V1).** Toutes les fonctionnalités sont en V1, mais les capacités destructives sont construites et validées par risque croissant (CONTEXTE §7.2). `12-plan-engine`, `13-action-runner` et `22-integration-tests` terminent un palier avant d'entamer le suivant :
 1. **Lecture seule** : scan, soucis, rapports, chemin dry-run complet.
@@ -243,4 +246,6 @@ Un palier n'est terminé que si ses tests de points de crash et de « dry-run sa
 
 ---
 
-**Démarrage :** lance la vague 0 (`00-legacy-audit`), puis la vague 1 (`01-system-arch`), puis arrête-toi au premier point d'arrêt utilisateur.
+**Fin de mission :** elle est atteinte quand `docs/release-readiness.md` existe avec un verdict (`PASS` ou `BLOCKED`) et que `docs/PROGRESS.md` ne contient plus d'entrée `todo` ou `running`. Termine par un message court : verdict, commits locaux créés, éventuels blocages. Je décide moi-même du push et de la release.
+
+**Démarrage :** lis `docs/PROGRESS.md` s'il existe et reprends où il s'arrête ; sinon crée-le, crée la branche `autonomous-build`, puis lance la vague 0 (`00-legacy-audit`) et enchaîne les vagues jusqu'à la fin de mission, sans attendre de validation humaine.
