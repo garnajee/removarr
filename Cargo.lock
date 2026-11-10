@@ -1910,6 +1910,7 @@ dependencies = [
  "removarr-domain",
  "removarr-fs",
  "removarr-matching",
+ "removarr-storage",
  "removarr-testkit",
  "serde",
  "serde_json",

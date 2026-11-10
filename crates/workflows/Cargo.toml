@@ -28,4 +28,7 @@ removarr-testkit = { workspace = true }
 # (architecture 2.2; gate in docs/development.md).
 removarr-fs = { workspace = true }
 removarr-config = { workspace = true }
+# Test-only (plan-engine): real SQLite repositories for immutable plan persistence, approval CAS
+# and status transitions. Normal dependencies are unchanged.
+removarr-storage = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
