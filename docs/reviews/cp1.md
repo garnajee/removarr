@@ -1,100 +1,116 @@
-# CP1 review — architecture checkpoint (iteration 1)
+# CP1 review — architecture checkpoint (iteration 2)
 
 Reviewer: independent `general-purpose` agent. I wrote none of the deliverables under review.
-Inputs read in full: `MASTER-PROMPT.md`, `old/CONTEXTE_RACINE_APP_NAS.md` (§0-§3, §4.8-§4.11, §6-§9),
-`docs/legacy-parity.md`, `docs/architecture.md`, `docs/adr/0001`-`0010`, `docs/handoffs/00-legacy-audit.md`,
-`docs/handoffs/01-system-arch.md`, `.claude/agents/00`-`27`, `docs/PROGRESS.md`.
+Scope of this iteration:
+- the revised `docs/architecture.md` (commit `a184135`; I read §4-§20 in full and checked §1-§3 for changes);
+- ADR-0003, ADR-0006 and ADR-0010 (amended);
+- `docs/handoffs/01-system-arch.md` ("CP1 iteration 1 changes");
+- the CP1 criteria again, using the inputs of iteration 1: `MASTER-PROMPT.md`, CONTEXTE, `legacy-parity.md` and the agent files.
 
-Verdict: FAIL
+Verdict: PASS
 
-Two blocking findings: the specification leaves open two paths to data loss, one in tier 4 and one in
-tier 5. There are also five major gaps. Most of them touch domain ports and DTOs, which become read-only
-after wave 3, so they are cheap to fix now and expensive later. The rest of the work is thorough and
-mostly compliant (see the last section).
+All 19 iteration-1 findings are fixed in the body of the documents, not only listed in §20. One residue
+remains, in F19 (minor). No blocking finding remains. The changes introduce **one new major finding (CP1-F20)**
+and a few minor ones. One major is within the pass rule ("more than a handful" fails).
+
+Condition attached to this PASS: CP1-F20 needs one ARR read in a domain port. The domain freezes after
+wave 3, so F20 must be patched in `docs/architecture.md` (or through the §15.1 rule-4 targeted 03 patch)
+**before wave 3 starts**. CP2-tier4 must verify it.
 
 ---
 
-## Findings
-
-Severity: **blocking** = the checkpoint cannot pass while it remains. **major** = must be fixed before
-the downstream wave that depends on it. **minor** = should be fixed and does not fail the checkpoint by itself.
+## Open findings
 
 | ID | Severity | Crit. | Evidence | Problem | Required change |
 |---|---|---|---|---|---|
-| CP1-F01 | blocking | 5, 1 | `architecture.md` §5 (`ArrCommands::manual_import(&ManualImportRequest)`), §7.4 ReplaceRelease steps 2-3, §13.2; ADR-0010 | The ARR manual-import **mode is unspecified**. In Sonarr/Radarr, `importMode` `move` (and `auto` for a folder without a tracked download-client item) **moves** the completed file into the library. That takes the seeding data out of `<completed_root>` (qBittorrent goes to `missingFiles`) without the app's deletion controls, journal step, allowlist or torrent transaction. Step 3 then compares only the media path's `PhysicalId` with the candidate's recorded `PhysicalId`, and a move keeps the inode, so **the move passes as `Verified`**. This is the "make another service delete the data" anti-pattern (MASTER §2) in another form, and it breaks CONTEXTE §3.6 / §3.8. | (1) `ManualImportRequest` has no mode field. The ARR adapter always sends `importMode = "copy"` as a literal (ARR then hardlinks when possible), and a gate grep like the `deleteFiles` one in §6.8(c) checks it. (2) Precondition and verification: `stat` the **completed source path** before and after the import. It must still exist with the same `PhysicalId`, and the media path must share that `(dev, ino)`. (3) If ARR copied (different inode), the outcome is `ExecutedUnverified`, `DeleteMediaFile` stays blocked and `AddedCost` is recorded. Make §7.4 step 5 consistent with step 3 (today they contradict). (4) `fake_arr` (09) asserts `importMode=copy`. Add a 22 test for "move would be detected". |
-| CP1-F02 | blocking | 5, 1 | `architecture.md` §13.3 A7; §7.4 "Delete under completed" step 1; §5 `Precondition` list | Automatic deletion under completed relies on "ARR evidence shows that the library holds the current file". Nothing requires that the **replacement media file is actually present on disk** in the latest complete scan, or that it is revalidated before the deletion. Delete revalidation re-checks the targets, torrents and scan errors, not the replacement. If ARR's database is stale (file removed outside ARR, wrong ARR path mapping), auto mode can delete the only remaining copy. That breaks CONTEXTE §1.3.1 (rule no. 1: no Jellyfin media loss), §2.12.7 (no automatic deletion without a reliable library replacement), §3.7 ("le média de remplacement est identifié sans ambiguïté") and MASTER §2 ("données ambiguës = décision manuelle"). | Add to A7, and to the planning of every `DeleteReplaced` outcome: for every media id of the unit, ARR's current file path maps (`Mapped`) into a media root, exists in the latest complete scan as a regular file, its size equals ARR's file size, and its `PhysicalId` differs from every deletion target. The plan stores an `EntryUnchanged { compare_nlink: false }` precondition per replacement file, re-`stat`ed in the "revalidate everything before the first service mutation" step. A mismatch between ARR and disk raises the `ArrAmbiguous` blocker and leaves only a manual decision. |
-| CP1-F03 | major | 5 | `architecture.md` §4.1 `TorrentInfo` (no `download_path`), §7.1 step 3 (DR-23 candidate choice), §7.4 `DeleteIncompleteOrphan`, OQ-02/OQ-05; `legacy-parity.md` §7 (no variant) | qBittorrent working files are not modeled. Files carrying the `.!qB` suffix (option "append .!qB to incomplete files"), libtorrent `.<hash>.parts` files, and files under `download_path` (qBittorrent >= 4.4 temp folder, separate from `save_path`) match no torrent file candidate. The data of an **active** download is then classified `incomplete_orphan` (or `orphan_completed` when there is no temp folder) with "no torrent" evidence, and offered for manual deletion. Fail-closed (MASTER §2) is violated by misleading evidence. | Add `download_path: MappedPath` to `TorrentInfo`. Generate candidates from `save_path`, `download_path` and `content_path`, each with an optional `.!qB` variant. `NoTorrentReferences` and orphan or junk classification consider **all** candidates of all torrents, not only the chosen one. A path inside the content directory of a non-complete torrent, and any `.parts` file, is protected (blocker `TorrentReferencesTarget`). Add a parity fixture variant (an active torrent with `.!qB` files under `<incomplete_root>` produces no orphan). |
-| CP1-F04 | major | 2, 4 | `architecture.md` §5 `ArrRead` (no episode listing); §4.1 `ArrLibraryEntry { file: ArrFileRef }` (only episodes that have a file); §7.4 ReplaceRelease step 1; §18.1 INV-36 owner 07 vs §7.4 "mapped by ARR's own preview"; agent 07 task 8, agent 09 task 1 | The season-coverage proof (MASTER §5, CONTEXTE §3.6 "chaque épisode attendu existe", §6.7, success criterion "remplace une saison seulement après preuve de couverture complète") needs ARR's **expected** episode set, including episodes without files, specials, and absolute or scene numbers. No port returns it, and the domain freezes after wave 3. The "explicit, verifiable numbering mapping" (INV-36, CONTEXTE §4.11 Jujutsu Kaisen and Love Hina) has two contradictory owners: 07 owns it in §18.1, but §7.4 delegates it to ARR's preview. 07 would build a mapping nobody uses, or 12 would have no evidence to verify. | Add to the domain and ports, for example `ArrRead::episodes(series_id, season: Option<i32>) -> Vec<ArrEpisode { id, season, episode, absolute: Option<i32>, scene_absolute: Option<i32>, has_file, monitored, aired }>`. Define coverage as follows: every expected episode (selected seasons, monitored and aired, specials only when explicitly included) maps to exactly one candidate through the episode ids of ARR's preview. Define 07's role: parsed absolute or aired numbers are explanatory evidence, and disagreement with ARR is a blocker. Store the episode-to-file mapping in the plan as evidence. |
-| CP1-F05 | major | 2, 1 | `architecture.md` §4.2 (no ARR queue/import category), §12.2 `DashboardVm` (no ARR queue field), §7.3 `PlanRequest { category, issue_ids, action }`, §7.4 "Manual ARR/Jellyfin commands", §13.1 tier 4 | `ArrRemoveQueueItem` and `ArrSetMonitored` are implemented and gated by capabilities, but **unreachable**: plans are built from issues, and no issue category carries ARR queue or import problems. Several CONTEXTE requirements are dropped in practice: §6.2 inventory "imports ARR en erreur ou obsolètes", §6.2 dashboard "files Sonarr/Radarr" (CTX-02), §3.9 stale queue entry removal (CTX-05), and §3.10 / §4.11 Lupin protection of a manual organization through targeted monitoring changes (CTX-06). | Add an issue category (for example `arr_queue`, subject `q:<service>:<id>`). Its evidence follows INV-39 (inode check first, then parent permissions). Its actions are `ArrRemoveQueueItem` (never when the queue item hides a real error) and, from the media detail, `ArrSetMonitored`. Add ARR queue counts to `DashboardVm`. If monitoring changes come from another entry point (issue detail), specify that `PlanRequest` variant. |
-| CP1-F06 | major | 2, 3 | `architecture.md` §13.2 "ARR grab is not implemented in V1 … (MASTER §9)", §18.2 M9.3; ADR-0010; handoff 01 deviations table; §4.1 `ArrCandidateDecision` | **Scope cut judged a deviation.** MASTER §6 lists grab among the "capacités séparément autorisées". MASTER §9 excludes only grab *without explicit approval*. MASTER §10 says "Toutes les fonctionnalités sont en V1". CONTEXTE §3.9 ("aucune candidate n'est téléchargée sans approbation") and §6.6 describe an approved grab. The justification "MASTER §9" misreads §9, and the cut is missing from the §17 register. Separately, the search DTO lacks the fields CONTEXTE §3.9 and agent 09 task 5 require: indexer, seeders, size, release id, and ordering by ARR decision and estimated gain. | Add a capability `arr_grab` (default **false**), `ArrCommands::grab(release_ref)`, and an `ArrGrabRelease` action. The action is tier 4, manual approval only, never auto (A9), live only and journaled. It is created from a search result, and the verification is that ARR accepted the command or the queue shows the item. ARR remains the importer (single importer holds). Extend `ArrCandidateDecision` (or add a `ReleaseSearchResult` DTO) with indexer, seeders, size, release guid/indexer id, and sort search results by ARR approval, then score, then estimated gain. |
-| CP1-F07 | major | 4, 1 | `architecture.md` §7.1 `RefreshService` ("re-runs steps 6 and 7 … There is no disk I/O on roots") vs step 6 ("samples … bounded"); §8.5 item 3; §12.1 `/services/*/refresh` | Internal contradiction on the core low-I/O requirement. A UI "Refresh" re-runs the matching funnel, which samples file content and wakes the HDDs. That violates MASTER §3 ("suivi de incomplete … sans I/O disque"; "Aucun rafraîchissement d'UI ne doit réveiller les disques"). Funnel results are not persisted anywhere, so 11 must choose between re-sampling and an undefined cache. §7.1 also says RefreshService serves "incomplete tracking between nightly scans", but no scheduler entry or config key exists for it. | Persist the funnel output of the last `Scan` (candidate pairs and their `ContentProof`, for example in issue evidence or a `match_candidates` table). `RefreshService` re-runs **classification only** from stored inventory and stored funnel results, with zero content reads (add it to B6). Either add a service refresh schedule key or delete the "between nightly scans" claim. |
-| CP1-F08 | minor | 4 | §8.1 `JobKind::VerifyContent`, §12.1 `/issues/verify-content`, §16 fixture note; §15.2 | `VerifyContent` (the only full compare outside execution) has no workflow module, no owning agent and no output contract. | Assign it (for example `workflows::evaluate::verify_content`, agent 12). Define the result: `ContentProof::Identical/Differs/Changed` attached through `IssueStore::attach_evidence`, bounded by `content_read_concurrency`, under shared root locks. |
-| CP1-F09 | minor | 1, 4 | §7.4 ConsolidateHardlink step 3 ("all affected hashes"); `legacy-parity.md` DR-25 (path-based, completed candidates only); MASTER §2 ("plusieurs hashes pour un même inode") | The affected-hash set is never defined. In a consolidation, a torrent that references the **media target path** (seeding from the library) is not stopped or rechecked. | Define the set as every hash whose mapped file path equals any source **or target** path of the plan. Hashes that only share the inode through another path are listed as informational. |
-| CP1-F10 | minor | 5 | §11 (`services.qbittorrent.url` optional), §7.4 (only torrent-less deletions say "qBittorrent must be reachable"), §8.3 (ARR not configured = skip) | Missing rule for an **unconfigured** qBittorrent: consolidation, deletions and junk would run without "torrents concernés identifiés" (CONTEXTE §3.5, §3.7). | State that qBittorrent `NotConfigured` raises `ServiceNotConfigured` on every action and classification that needs torrent ownership (consolidation, every completed or incomplete deletion, junk). |
-| CP1-F11 | minor | 1 | §7.6 auto cycle; CONTEXTE §3.11 `auto` "nouveau scan après réparation"; `legacy-parity.md` DR-34 (owner 14) | The auto cycle builds and runs all plans from one scan. It never rescans after consolidations before planning deletions, and never aborts on rescan errors. | Add the DR-34 two-phase sequence to §7.6: consolidations, then rescan of the touched roots, abort if errors, then deletion planning. |
-| CP1-F12 | minor | 4 | §7.3 `PlanRequest` (single `action`), §7.4 delete step 5 ("whose removal is planned"), §12.2; `legacy-parity.md` DR-35 | The spec never says how companion actions (`RemoveTorrentTask`, `RemoveEmptyParent`) enter a manual plan, or how their separate confirmation (DR-35) works. | Specify it: the plan engine adds `RemoveEmptyParent` automatically, `RemoveTorrentTask` is an explicit opt-in field of the request, and the confirm modal lists torrent removals with their own count. |
-| CP1-F13 | minor | 4 | §12.1 `/services/{sonarr,radarr,jellyfin}/rescan`; §5 `ArrCommands::rescan(media)` (per media only); §4.1 `IntentRecord.action: ActionRef { plan, .. }`; §8.4 "manual retry button"; agent 10 task 4 | Route and port gaps. (1) A service-wide rescan has no port method. (2) That route bypasses plans while journal intents require a plan. (3) The recovery "manual retry" has no route. (4) There is no Jellyfin refresh-state read for bounded polling (agent 10 task 4). | Add `ArrCommands::rescan_all()`, route service rescans through a one-action plan (or allow plan-less journal entries explicitly), add `POST /recovery/retry`, and add `JellyfinRead::refresh_status()` or record that polling is not supported. |
-| CP1-F14 | minor | 3 | §17 register; handoff 01 deviations table; OQ-14 | Deviations recorded outside the register: (a) interval plus UTC anchor instead of cron (MASTER §3). Acceptable, because "intervalle/cron" is satisfied by an interval, but it appears only in the handoff. (b) ADR-0010 (ARR imports) vs CONTEXTE §3.6 "créer les nouveaux hardlinks". Acceptable under CONTEXTE §3.9's "une seule méthode". (c) `FixMode` in media roots vs CONTEXTE §2.2 ("lecture par défaut"). Acceptable under MASTER §5.5. (d) CTX-04 reverse restore deferred vs CONTEXTE §4.11 McFarland ("peut réparer"). (e) dry-run is a startup switch, so a live process cannot simulate a plan, vs CONTEXTE §6.2 Planificateur "simulation complète". | Add C19-C23 to §17 with these resolutions. For (e), either allow `PlanMode::DryRun` plans with recording mutators inside a live process (this does not weaken safety) or record the restart requirement as a deliberate trade-off. |
-| CP1-F15 | minor | 2 | §12.4 HTMX ("2.x", `<version>`, "If the file cannot be obtained, 19 ships without it"); handoff 01 TODO 1; `PROGRESS.md` orchestrator interpretation | Shipping without HTMX contradicts MASTER §3 (HTMX provides the reactivity). The orchestrator has already ruled that a pinned, checksummed download is allowed, so the fallback is unnecessary. | Pin an exact HTMX 2.x version and SHA-256 in the architecture, make its presence and checksum a 27 release gate, and keep "works without JS" as a degradation property, not as a release option. |
-| CP1-F16 | minor | 4 | §15.2 rows 16, 17, 19, 06, 21; rule 3 | Ownership overlaps in sequential waves. `crates/web/templates/**`, `src/i18n.rs` and `locales/**` appear under "Creates / owns" for 16, 17 and 19. `crates/fs/**` (06) contains `crates/fs/tests/parity_*.rs` (21). 21 cannot add the dev-dependencies its parity tests need. | Use "May edit" for the later agents, exclude `tests/parity_*.rs` from feature-crate globs, and allow 21 to add `[dev-dependencies]` with `workspace = true`. |
-| CP1-F17 | minor | 1 | §8.4 (timeouts only); CONTEXTE §6.5 "timeouts et limites de taille"; CTX-11 | Connector responses have no size limit. | Add a maximum response body size per connector (for example 32 MiB, configurable in `[limits]`). Exceeding it raises `Rejected`. |
-| CP1-F18 | minor | 6 | §4.1 `candidate::CandidateState` (no field of `Issue`, `PlannedAction` or a table uses it); §9.1 `torrent_observations` "for stagnation history" vs OQ-06 (stagnation uses `added_on` only) | Speculative or dead abstractions. | Either map `CandidateState` explicitly onto issue, plan and outcome statuses (one derived function, used by reporting) or drop it and trace CTX-12 to the existing statuses. Drop `torrent_observations` unless a rule reads it. |
-| CP1-F19 | minor | 4 | §13.3 A2 ("zero … protected zones") vs §7.1 step 8 (`QbitInternal` does not make a session incomplete) | Inconsistent: a `BT_backup` zone inside a root would block auto mode forever, without the session ever being marked incomplete. | Decide one rule and state it in both places. |
+| CP1-F20 | major | 1, 3, 5 | `architecture.md` §7.4 ReplaceRelease steps 2-4 ("Old media files that ARR did not remove"); ADR-0010; §17 C20; CONTEXTE §3.6 ("retirer l'ancienne version seulement après cette preuve"), §4.11 Handmaid's Tale; INV-35 | Delegating the import to ARR changes the order of operations. When ARR imports a file over an existing one, its upgrade path removes the **old** media file (recycle bin, or permanent deletion) and only then copies or hardlinks the new one. This happens inside `manual_import`, so **before** the app's inode proof of step 3. A failed or partial import (one episode of a season) can therefore lose the old coverage first. That is the opposite of CONTEXTE §3.6 and INV-35 ("global transaction; each episode proven before removing the old coverage"). C20 says "No CONTEXTE invariant is weakened", which is not accurate. | Register the conflict in §17 with a resolution where CONTEXTE wins. Minimal fix: precondition `OldCoverageRecoverable` on `ReplaceRelease`. For every old media file, either (a) its inode has another retained link in the latest scan (for example the old completed release, still seeding), or (b) the ARR recycle bin is configured. For (b), add an ARR read port, for example `ArrRead::media_management() -> { recycle_bin: Option<MappedPath>, hardlinks_enabled: bool }`, plus a snapshot field. Otherwise the plan gets a new blocker `OldCoverageUnrecoverable`. Verification (step 3) also reports where each removed old file went. Use `hardlinks_enabled` to warn before planning when step 3(c) can never hold. Add the case to V10 and to the tier-4 tests. |
+| CP1-F19 | minor (residue) | 4 | §16 OQ-05 "**Auto**: any scan error **or protected zone** in a root blocks every automatic action" vs §7.1 step 8 and §13.3 A2 (`QbitInternal` does not count) | The single rule is stated in §7.1 and A2, but OQ-05 still contradicts it. | Edit OQ-05 so it excludes `QbitInternal` (units containing a zone are still blocked). |
+| CP1-F21 | minor | 4, 5 | §7.1 step 3 ("every entry under its content directory (from both `save_path` and `download_path`)") | For a **single-file** torrent, `content_path` is the file itself, so "content directory" is undefined. If it is read as `save_path`, every entry of `<completed_root>` becomes torrent-owned while such a torrent downloads. That fails safe, but it hides every orphan or junk issue. | Define it. Content directory = `content_path` for multi-file torrents. For single-file torrents only the file candidates (with the `.!qB` variant) and `.parts` files in that directory count as owned. |
+| CP1-F22 | minor | 4 | §6.5/§6.8 (guard tests cover dry-run processes only); `POST /plans/{id}/simulate` | The new "simulate any plan in a live process" path (ADR-0003 amendment) has no guard test. A wiring bug could hand the live set to a simulation. | Add guard test (e): in a live process with counting fakes, `ExecutePlan { simulate: true }` performs zero fs mutations and zero qBittorrent, ARR or Jellyfin mutator calls, and leaves `PlanStatus` unchanged. Owners: 13 and 22. |
+| CP1-F23 | minor | 1 (MASTER §3 low I/O) | §7.6 step 2; §8.1 `AutoCycle` "plus one inline rescan" | The auto cycle always runs a second full filesystem scan after phase 1, including in dry-run and when phase 1 mutated nothing. That doubles the nightly HDD metadata walk for no information. | Run the rescan only on the roots touched by at least one **live** mutation in phase 1. Otherwise phase 2 reuses the session. |
+| CP1-F24 | minor | 4 | §11: the `download_path` paragraph is inserted between table rows (after `services.qbittorrent.external_prefixes`) | It breaks the Markdown table. The rows after it (ARR and Jellyfin URLs, `mode.dry_run`, `mode.auto_mode`, `auth.*`) no longer render as part of the configuration contract. | Move the paragraph below the table. |
+| CP1-F25 | minor | 4 | §15.2 row 19 ("`crates/web/static/**` (including … `web::assets`)"; "`crates/web/templates/**` (login page markup and styling only, …)"); §12.1 `/plans/{id}/approve` | Small contract inconsistencies. (1) `web::assets` is `crates/web/src/assets.rs`, which is not under `static/**`, so no row owns that path. (2) Row 19's parenthesis can be read as limiting 19 to the login template. (3) The approve route omits `confirmed_torrent_removals`, which §7.3 requires. | List `crates/web/src/assets.rs` under 19. Reword row 19 to "all templates; for `pages/login.html`, markup and styling only". Add `confirmed_torrent_removals` to the approve route. |
 
-Count: 2 blocking, 5 major, 12 minor.
+Count: 0 blocking, 1 major (F20), 6 minor (F19 residue, F21-F25).
 
 ---
 
-## Scope cuts: verdicts
+## Status of the iteration-1 findings
 
-| Cut | Verdict |
-|---|---|
-| No cron expressions (interval + UTC anchor) | Acceptable: MASTER §3 "intervalle/cron" is satisfied by an interval, and nightly runs are covered. Must be registered (F14a). |
-| ARR grab not implemented | Deviation (F06). |
-| Nested roots refused at startup (C18) | Acceptable: stricter fail-closed reading of MASTER §2 "sans chevauchement ambigu", matches legacy DR-32, and is registered. |
-| HTMX may be absent | Not acceptable as a release option (F15). Vendoring a pinned asset is fine. |
-| Jellyfin metadata lock deferred (C14) | Acceptable: CONTEXTE §3.10 says "et/ou", and ARR monitoring change is provided. That path is unreachable today, though (F05). |
-| Reverse restore (CTX-04) deferred | Acceptable: CONTEXTE §4.11 says "peut", and an informational hint is provided. Must be registered (F14d). |
-| Old report import (C6) | Acceptable: MASTER §9, and CONTEXTE §7.2 is a migration recommendation. |
-| Cross-seed connector (C9), privilege elevation (C4) | Acceptable. |
+| ID | Sev. (it. 1) | Status | Evidence in the revised documents |
+|---|---|---|---|
+| F01 | blocking | **Fixed** | §5 `ManualImportRequest { files }` has no mode field, and the adapter sends the `importMode = "copy"` literal. §6.8(c) gate grep (`importMode` once, `"copy"`; no `move`/`auto`). §6.8(d) `fake_arr` rejects any other mode, and 22 has a move test. §7.4 ReplaceRelease 1-3: the completed source is `EntryUnchanged` and re-`stat`ed. `PathStillHasInode` is required. A move gives `FailedNeedsReview` + `ArrImportMoved`. A copy gives `ExecutedUnverified` + `AddedCost` and leaves `DeleteMediaFile` blocked. Step 5 is now consistent. Also covered by ADR-0010 and V10. |
+| F02 | blocking | **Fixed** | §7.3 `DeleteReplaced` planning rule: mapped, scanned regular file, equal size, distinct `PhysicalId`, `EntryUnchanged` precondition. A mismatch gives `ArrAmbiguous`/`KeepManual`, and only a plain deletion with reinforced confirmation remains possible. §7.4 delete step 1 re-`stat`s the replacements and re-reads the ARR path. §13.3 A7 repeats the rule for auto. |
+| F03 | major | **Fixed** (clarification F21) | §4.1 `TorrentInfo.download_path`, candidates from all three bases plus `.!qB` variants, `is_working_file`. §7.1 step 3 ownership index used by `orphan_completed`, `incomplete_orphan`, `junk` and `NoTorrentReferences`. §7.4 DeleteIncompleteOrphan. §11 `download_path` mapping note. §15.3 V9. |
+| F04 | major | **Fixed** | §5 `ArrRead::episodes` (all expected episodes, with or without files). §4.1 `ArrEpisode` (absolute and scene numbers), `episode_ids` on preview decisions, `CoverageProof`. §7.2 coverage definition (monitored and aired, specials opt-in, exactly-one mapping both ways). 07 is explanatory only, and disagreement gives `NumberingMismatch`. §18.1 INV-36 has the single owner 12. V10 covers it. |
+| F05 | major | **Fixed** | §4.2 `arr_queue` category with INV-39 stale proof and `QueueItemHidesError`. §7.3 `PlanRequest::Media`. §12.1 `/media/...` routes, §12.2 `MediaDetailVm`, `DashboardVm.arr_queues`. §9.1 `arr_queue_items`. §18.4 inventory note. |
+| F06 | major | **Fixed** | §13.2 `arr_grab` default **false**. §5 `ArrCommands::grab` (live adapter, capability-checked). §7.4 `ArrGrabRelease`: tier 4, manual only, never auto, live only, journaled `ArrGrab`, verification `ArrQueueHasRelease`. §13.3 A9 lists it. §4.1 `ReleaseSearchResult` (indexer, seeders, size, guid/indexer id, CF, rejections) and `sort_search_results`. C24, M9.3, ADR-0010. `ArrRead` has no grab method. |
+| F07 | major | **Fixed** | §4.1 `MatchCandidate` (signature-bound validity), §5 `MatchStore`, §9.1 `match_candidates`. §7.1: `RefreshService` reclassifies only, with **zero fs calls and zero content reads**. §8.1 lists disk I/O "none". §8.5 item 3. B6 extended to `RefreshService` and UI requests. `scan.qbit_refresh_minutes` exists. |
+| F08 | minor | **Fixed** | §7.2 `workflows::evaluate::verify_content` (agent 12): bounded, shared locks, results through `MatchStore::update_proof` and `attach_evidence`. |
+| F09 | minor | **Fixed** | §7.4 common rules: affected hashes = source **or target** paths (library seeders included). Inode-only sharing is informational. |
+| F10 | minor | **Fixed** | §7.1 (`NotConfigured` gives `ServiceNotConfigured(Qbittorrent)` on every ownership-dependent action and classification). OQ-05. |
+| F11 | minor | **Fixed** (follow-up F23) | §7.6 two-phase cycle: consolidations, then rescan, then abort on errors, then deletion planning. Failed consolidations become blockers. |
+| F12 | minor | **Fixed** (route detail F25) | §7.3 companion actions. `Approval.confirmed_torrent_removals`, `ConfirmVm.torrent_removals`. |
+| F13 | minor | **Fixed** | `ArrCommands::rescan_all`, `PlanRequest::ServiceRescan` (one-action plans, so every intent has a plan), `POST /recovery/retry`, `JellyfinRead::library_refresh_running`, C25. |
+| F14 | minor | **Fixed** (C20 statement contested by F20) | §17 C19-C25 and the complete accepted-cuts list. (e) resolved by `POST /plans/{id}/simulate` (ADR-0003). |
+| F15 | minor | **Fixed** | §12.4 `htmx.org@2.0.4`, SHA-256 constant + unit test + SRI `integrity`, cross-checked against two published digests, release gate, no ship-without option. ADR-0006, handoff TODO 1. |
+| F16 | minor | **Fixed** (detail F25) | §15.1 rules 7 (parity tests excluded from crate globs; 21 may add workspace dev-deps between waves) and 8 (no double "Creates / owns"). Rows 16, 17 and 19 rewritten. |
+| F17 | minor | **Fixed** | §8.4 streamed counting limit, `limits.max_response_bytes` (32 MiB), ffprobe stdout cap. |
+| F18 | minor | **Fixed** | `CandidateState` is derived only (`derive_candidate_state`, used by reporting). `PlanStatus::can_transition_to` is enforced. `torrent_observations` was removed (grep confirms). |
+| F19 | minor | **Partially fixed** | §7.1 step 8, A2 and §4.3 agree. OQ-05 still says "any … protected zone" (open as residue). |
 
 ---
 
-## Verified and compliant
+## Re-check of the six criteria (regressions and new gaps)
 
-- **Criterion 1 (coverage).** `legacy-parity.md` Appendix A maps every MASTER §2 invariant and all six
-  anti-patterns (A.1), CONTEXTE §1.3 items 1-11 (A.2), §2.12 items 1-13 one to one (REJ-01..13), §3.1-§3.15 (A.4) and
-  §9 items 1-10 (A.5). The IDs exist and are substantive (INV-01..51, REJ-01..30, CON-01..32). Architecture §18.4
-  links them to owners. All 32 legacy tests are mapped with statuses, and T-19 is correctly superseded by CON-02.
-- **Criterion 2 (ownership).** §18.1 gives each INV exactly one owner. §18.2 covers MASTER §0-§10
-  (M0.1..M10.3) with one owner each. §18.3 assigns every DR/WF/FH/API/T/CON/CTX/NEW/REJ/RPT/CFG ID once. No
-  silent drops apart from the explicit cuts above.
-- **Criterion 3 (contradictions).** C1-C18 are flagged with resolutions. Where they are business rules,
-  CONTEXTE wins or the stricter rule is chosen (C1/OQ-06, C4, C5/OQ-12, C8, C16). No resolution weakens a CONTEXTE invariant.
-- **Criterion 4 (implementability).** The following are concrete and consistent, apart from the gaps above: crate boundaries and
-  dependency gates (§2), ports with sync/async semantics (§5), structural dry-run (`LiveMode` token,
-  recording mutators, plan-mode check, guard tests and greps; ADR-0003), journal durability (SQLite
-  single writer, `synchronous=FULL`, intent before every step including `QbitStop`, CON-11), recovery (§7.5),
-  concurrency (two lanes, root `RwLock`s, cancellation only between steps, no retries of mutating calls),
-  config contract (§11, env names, validation, exit 2), route map (§12.1), tier mapping with
-  capability flags and `IMPLEMENTED_TIER` (§13), budgets B1-B11 (§14), and root `Cargo.toml` rules.
-  The parallel waves have disjoint file sets: wave 4 {storage} vs {config, examples, .env.example};
-  wave 5 {fs minus mutate, testkit/fixture} vs {qbit, fake_qbit} vs {arr, fake_arr} vs {jellyfin,
-  fake_jellyfin}; wave 13 {web/auth, login template, router/state/lib, app} vs {docs/ux} vs {Docker,
-  compose, .github, README, .env.example, deny.toml, docs/operations.md}. `testkit/Cargo.toml` is pre-declared.
-- **Criterion 5 (safety).**
-  - `deleteFiles`: the remove method has no boolean parameter, and a gate grep checks the literal `false`.
-  - `st_nlink` is never a proof. It is used only for gain accounting (DR-04) and deletion revalidation.
-  - No whole-NAS hashing. Scans stop at samples, and full compares run only in `VerifyContent` and execution (B6).
-  - Unconfigured paths are never scanned: no default roots, `RootedPath`, `openat(O_NOFOLLOW)`, canonical
-    non-nested roots, `BT_backup` handled as a protected zone, `outside/` checks in the fixture.
-  - ffprobe is called through argv only (INV-50).
-  - No automatic deletion in media roots (A9). `DeleteMediaFile` runs only inside an approved manual
-    replacement, after the import is proven.
-  - Auto mode refuses incomplete scans and ambiguous mappings: A2, OQ-05, OQ-07, cancelled sessions
-    produce no issues, `ENOENT` protects the zone.
-  - Samples: fixed protective rule, never junk, explicit per-sample acknowledgement, never auto.
-  - ARR mutators default off. A search never grabs.
-- **Criterion 6 (simplicity).** The crate count is justified by parallel waves. The single execution lane replaces
-  per-media lock tables. In-memory sessions and SQLite as the journal avoid extra moving parts. Only F18 is
-  flagged.
+1. **Coverage.** No regression. The new elements (grab, queue category, coverage, simulation) are traced in
+   §18.2 (M6.21, M9.3) and §18.4. CONTEXTE §3.6's ordering rule is the one new gap (F20).
+2. **One owner per requirement.** It still holds. INV-36 now has a single owner (12). `verify_content` is owned by 12.
+   No requirement is dropped. The accepted-cuts list (C6, C9, C14, C18, C19, C22) is complete and consistent
+   with MASTER and CONTEXTE. ARR grab is no longer a cut.
+3. **Contradictions.** C19-C25 were added with CONTEXTE-first resolutions. C20 needs the F20 amendment.
+4. **Implementability.** The new ports and DTOs are fully specified for 03 (handoff 01 lists them for the domain
+   freeze). Module ownership is still disjoint for the parallel waves:
+   - wave 4: {`crates/storage`} vs {`crates/config`, `examples/`, `.env.example`};
+   - wave 5: {`crates/fs` minus `mutate`, `testkit/fixture.rs` (V9 tree)} vs {`crates/qbit`,
+     `testkit/fake_qbit.rs` (T_R)} vs {`crates/arr`, `testkit/fake_arr.rs` (V10)} vs {`crates/jellyfin`,
+     `testkit/fake_jellyfin.rs`};
+   - wave 13: {`web/src/auth`, `web/tests/auth_*`, *edits* of login template, web
+     Cargo/router/lib/state, `crates/app/src`} vs {`docs/ux`} vs {Docker, compose, `.github`, `README.md`,
+     `.env.example`, `deny.toml`, `docs/operations.md`}.
+   - The root `Cargo.toml` rules are unchanged. The new configuration keys belong to 05 (wave 4).
+
+   Remaining gaps are minor (F21, F24, F25).
+5. **Safety.** The specific checks requested:
+   - `arr_grab` defaults to `false`, is tier 4, manual approval only, excluded from auto by A9, live only
+     (simulated in dry-run) and journaled. `ArrRead` cannot grab.
+   - `importMode = "copy"` is a literal with no parameter, enforced by a gate grep and a fake that rejects
+     anything else. A move is detected through the source inode check.
+   - Refresh never reads file content: `RefreshService` makes zero fs calls (§7.1, §8.1, §8.5, B6).
+   - Simulation in a live process always uses the recording set, never changes the plan status, and is ignored by
+     recovery. A guard test is still missing (F22).
+   - Still no `deleteFiles=true`, no `st_nlink` proof, no whole-NAS hashing, no unconfigured paths, no shell
+     strings, no automatic deletion in media roots, no automatic action on incomplete scans or ambiguous mappings,
+     and samples are still protected.
+   - The new data-loss ordering risk inside approved manual replacements is F20.
+6. **Simplicity.** No material new speculative abstraction. `MatchStore`/`match_candidates`, `simulation_runs`,
+   `arr_queue_items`, the `PlanRequest` enum, `CoverageProof` and `ReleaseSearchResult` each have a named
+   consumer. `CandidateState` became a single derived function, and `torrent_observations` was removed.
+
+## Still compliant (unchanged from iteration 1)
+
+The legacy-parity coverage (Appendix A, 32 tests, INV/REJ/CON sets) is unchanged and still covers all of
+these:
+- MASTER §2 invariants and anti-patterns;
+- CONTEXTE §1.3, §2.12, §3 and §9.
+
+These architecture elements are unchanged and still compliant:
+- crate boundaries and dependency gates;
+- structural dry-run (`LiveMode`);
+- the SQLite `synchronous=FULL` intent journal;
+- recovery;
+- the single execution lane with root locks;
+- the configuration contract;
+- route security (session, CSRF, rate limit, CSP);
+- the tier 1-5 mapping with capability flags and `IMPLEMENTED_TIER`;
+- budgets B1-B11.
