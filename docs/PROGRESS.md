@@ -14,8 +14,8 @@ Status values: `todo`, `running`, `done`, `blocked`.
 |---|---|---|---|
 | 0 | `00-legacy-audit` | done | 32 tests mapped, 51 INV, 30 REJ, 32 CON, 7 open questions for system-arch (OQ-01/05/06/07/09/11/12) |
 | 1 | `01-system-arch` | done | architecture.md (19 sections), ADR 0001-0010, 13 crates, OQs resolved; versions from memory, 02 must confirm |
-| 2 | `02-rust-scaffold` | running | |
-| 3 | `03-domain-model` | todo | |
+| 2 | `02-rust-scaffold` | done | 14 crates, Cargo.lock, all versions resolved in range, no deviations |
+| 3 | `03-domain-model` | running | |
 | 4 | `04-db-layer` | todo | |
 | 4 | `05-config-secrets` | todo | |
 | 5 | `06-fs-engine` | todo | |
@@ -53,5 +53,4 @@ Status values: `todo`, `running`, `done`, `blocked`.
 
 ## Last quality gate
 
-Toolchain: cargo/rustc 1.98.0 (Homebrew, no rustup), Docker 29.7.2, ffprobe available.
-Not run yet (`cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`).
+After wave 2: fmt OK, clippy -D warnings OK, tests OK (1 passed). Toolchain: cargo/rustc 1.98.0 (Homebrew, no rustup), Docker 29.7.2, ffprobe available.

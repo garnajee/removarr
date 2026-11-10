@@ -24,6 +24,19 @@ used to build the application.
 Open the repository in Claude Code and ask: "Read `MASTER-PROMPT.md` and execute it". The orchestrator runs
 the agents wave by wave, commits locally on an `autonomous-build` branch, and never pushes or publishes.
 
+## Development
+
+The Rust workspace lives in `crates/`. Bootstrap and quality commands (fmt, clippy, tests, release build):
+
+```sh
+cargo fmt --all --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+cargo build --workspace --release
+```
+
+Details and dependency-direction gates: `docs/development.md`.
+
 ## Safety principles
 
 - Hardlinks are proven by identical `(device, inode)`, never by link count or file name.

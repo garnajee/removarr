@@ -1,0 +1,19 @@
+[package]
+name = "removarr-testkit"
+description = "Deterministic test support: fake clock, ids, fixtures and fake services."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+removarr-domain = { workspace = true }
+tokio = { workspace = true }
+axum = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tempfile = { workspace = true }
+rustix = { workspace = true }

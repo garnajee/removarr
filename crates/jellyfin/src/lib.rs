@@ -1,0 +1,1 @@
+//! Jellyfin connector adapters.
