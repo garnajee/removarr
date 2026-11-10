@@ -16,12 +16,12 @@ Status values: `todo`, `running`, `done`, `blocked`.
 | 1 | `01-system-arch` | done | architecture.md (19 sections), ADR 0001-0010, 13 crates, OQs resolved; versions from memory, 02 must confirm |
 | 2 | `02-rust-scaffold` | done | 14 crates, Cargo.lock, all versions resolved in range, no deviations |
 | 3 | `03-domain-model` | done | 80 domain tests; added ActionTarget, evidence_level/completeness; domain frozen |
-| 4 | `04-db-layer` | running | |
-| 4 | `05-config-secrets` | running | |
-| 5 | `06-fs-engine` | todo | |
-| 5 | `08-qbit-api` | todo | |
-| 5 | `09-arr-api` | todo | |
-| 5 | `10-jellyfin-api` | todo | |
+| 4 | `04-db-layer` | done | 60 tests; STRICT tables, intent durable (synchronous=FULL), 7 documented deviations |
+| 4 | `05-config-secrets` | done | 44 tests; LiveMode token, PathMapper, redaction, examples/removarr.toml + .env.example |
+| 5 | `06-fs-engine` | running | |
+| 5 | `08-qbit-api` | running | |
+| 5 | `09-arr-api` | running | |
+| 5 | `10-jellyfin-api` | running | |
 | 6 | `07-media-match` | todo | |
 | 7 | `11-issue-engine` | todo | |
 | 8 | `12-plan-engine` | todo | |
@@ -39,7 +39,7 @@ Status values: `todo`, `running`, `done`, `blocked`.
 | 18 | `25-sec-audit` | todo | |
 | 19 | `26-sec-fix` | todo | |
 | 20 | `27-release-gate` | todo | |
-| continuous | `21-unit-tests` (from wave 3) | running | pass 1: domain crate |
+| continuous | `21-unit-tests` (from wave 3) | running | pass 1 done (domain, 11 proptests, parity-matrix.md); pass 2 running (config, storage) |
 
 ## Checkpoint reviews
 
@@ -53,4 +53,4 @@ Status values: `todo`, `running`, `done`, `blocked`.
 
 ## Last quality gate
 
-After wave 3: fmt OK, clippy -D warnings OK, tests OK (83 passed). Toolchain: cargo/rustc 1.98.0 (Homebrew, no rustup), Docker 29.7.2, ffprobe available.
+After wave 4: fmt OK, clippy -D warnings OK, tests OK (198 passed, 0 ignored). Toolchain: cargo/rustc 1.98.0 (Homebrew, no rustup), Docker 29.7.2, ffprobe available.

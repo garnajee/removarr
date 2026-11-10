@@ -1,0 +1,111 @@
+# removarr example configuration (all keys shown with their defaults where one exists).
+# Optional file: REMOVARR_CONFIG_FILE (default /config/removarr.toml). Every key below can be
+# overridden by a REMOVARR_* environment variable (see .env.example). Secrets (passwords, API
+# keys, password hash, session key) are NEVER read from this file; unknown keys are rejected.
+# Paths below are generic examples. Replace them with your own container paths.
+# Paths must not contain `,` or `=`.
+
+[server]
+bind = "0.0.0.0:8080"
+data_dir = "/config"            # SQLite lives here. Must be outside every root.
+log_level = "info"              # debug | info | warn | error
+trusted_proxies = []            # for example ["172.18.0.0/16"]. Empty = trust no proxy header.
+shutdown_grace_seconds = 45     # 5..=300
+
+[roots]                         # No default: every root is explicit, absolute, canonical, distinct.
+completed = "/data/completed"   # required
+incomplete = "/data/incomplete" # optional (incomplete features are off without it)
+media = ["/data/media"]         # required, at least one; roots must not be nested
+
+# Service path -> container path. Identity is never assumed.
+[[path_mappings.qbittorrent]]
+service = "/downloads"
+app = "/data/completed"
+
+[[path_mappings.qbittorrent]]
+service = "/downloads/incomplete"
+app = "/data/incomplete"
+
+[[path_mappings.sonarr]]
+service = "/tv"
+app = "/data/media"
+
+# [[path_mappings.radarr]]
+# service = "/movies"
+# app = "/data/media"
+
+# [[path_mappings.jellyfin]]
+# service = "/media"
+# app = "/data/media"
+
+[owner]
+# expected = "1000:1000"        # default: the process effective uid:gid
+
+[thresholds]
+incomplete_stalled_days = 14    # 1..=3650
+auto_min_age_hours = 48         # 0..=8760
+hide_recent_days = 2            # 0..=365
+recheck_timeout_seconds = 600   # 30..=7200
+plan_ttl_hours = 24             # 1..=168
+
+[files]
+video_extensions = [".mkv", ".mp4", ".avi", ".m4v", ".ts", ".m2ts", ".wmv"]
+junk_extensions = [".nfo", ".txt", ".sfv", ".md5", ".url", ".rar", ".zip", ".7z", ".par2", ".jpg", ".jpeg", ".png"]
+subtitle_extensions = [".srt", ".ass", ".ssa", ".sub", ".idx", ".vtt"]
+
+[scan]
+interval_minutes = 1440         # 0 = manual only, otherwise 60..=10080
+anchor_utc = "03:00"            # HH:MM UTC
+qbit_refresh_minutes = 60       # 0 = off, otherwise 5..=1440 (API only, no disk I/O)
+
+[limits]
+content_read_concurrency = 1    # 1..=4
+ffprobe_concurrency = 1         # 1..=4
+http_concurrency_per_service = 4 # 1..=16
+max_response_bytes = 33554432   # 1 MiB..=512 MiB per response body
+
+[matching]
+similarity_threshold = 0.60
+sample_size_bytes = 1048576
+sample_count = 5
+compare_chunk_bytes = 16777216
+duration_tolerance_seconds = 5.0
+duration_tolerance_ratio = 0.002
+ffprobe_path = "ffprobe"
+
+# Service URLs only. Passwords and API keys come from the environment.
+[services.qbittorrent]
+# url = "http://qbittorrent:8080"
+username = "admin"
+external_prefixes = []          # service prefixes deliberately outside every root
+
+[services.sonarr]
+# url = "http://sonarr:8989"
+
+[services.radarr]
+# url = "http://radarr:7878"
+
+[services.jellyfin]
+# url = "http://jellyfin:8096"
+
+[mode]
+dry_run = true                  # default ON. Turning it off needs a restart.
+auto_mode = false               # default OFF
+
+[capabilities]
+consolidate = true
+delete_completed = true
+cleanup_incomplete = true
+fix_permissions = true
+arr_manual_import = false
+arr_queue_remove = false
+arr_set_monitored = false
+arr_grab = false
+auto_remove_empty_torrents = false
+
+[auth]
+username = "admin"
+session_ttl_hours = 12          # 1..=720
+cookie_secure = true            # set false only for plain-HTTP LAN
+login_limit_per_ip = 20         # per 15 minutes
+login_limit_per_ip_user = 5
