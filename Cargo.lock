@@ -1906,7 +1906,9 @@ name = "removarr-workflows"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "removarr-config",
  "removarr-domain",
+ "removarr-fs",
  "removarr-matching",
  "removarr-testkit",
  "serde",

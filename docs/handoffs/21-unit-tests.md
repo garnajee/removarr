@@ -51,3 +51,21 @@ Findings (source not touched):
 Not covered here, for `integration-tests`: real mount boundary (needs a second filesystem), Linux `fadvise`/`fstatvfs` behavior, real qBittorrent 5.x/4.x servers and Jellyfin servers (fakes only), dry-run end to end (T-30), FsMutator confinement (13 not delivered), non-UTF-8 names (APFS refuses them; run on ext4/btrfs). The 20k-file large_tree test takes about 3 s in debug.
 
 Commands: `cargo test -p removarr-fs -p removarr-qbit -p removarr-jellyfin` all pass, 0 ignored (fs 39 tests, qbit 46, jellyfin 25), slowest binary `large_tree` 3.2 s, others under 0.7 s; `cargo clippy -p removarr-fs -p removarr-qbit -p removarr-jellyfin --all-targets -- -D warnings` clean; rustfmt applied to the three new files.
+
+## Pass 4 (after wave 6: matching and arr review)
+
+Review: matching (unit tests in checks/funnel/proof/similarity/parse plus `ffprobe_fake`, `funnel_parity`, `proof_real_fs`) and arr (`commands`, `search`, `snapshot`, `redaction`, `logs`, read tests, domain `arr` unit tests) are deterministic (tempdirs, loopback fake, FakeClock, synthetic IDs, dummy key), assert public behavior, no weakened assertions found. Already strong: late-byte and change-before/during/after, samples never bypass full compare, copy literal and fake refusing other modes, grab needs capability plus a recent search, snapshot outage never unchanged, key redaction over many fault kinds and logs.
+
+Added (new files only, no src or Cargo.toml edits):
+- `crates/matching/tests/parity_blockers.rs` (7): positive control (all checks pass); edition (one-sided and different), coverage reduced, numbering, title blockers each alone with the expected `BlockerCode`; real audio missing, candidate without audio, `und`/untagged on either side block; missing probe or missing/NaN duration always blocks (fail closed); proptest that resolution/source/codec/group never change any check in either direction and that missing probes block regardless of tags; proptest that `similarity` ignores technical tags; only a completed full compare maps to `ContentProof::Identical` (SamePhysical, SamplesDiffer, ChangedDuring, SizeDiffers all map to None).
+- `crates/arr/tests/parity_fail_closed.rs` (6): every read method on Sonarr and Radarr with all capabilities granted sends GET only (no grab, no command, no fake violation); search with `arr_grab` on never grabs and an unsearched release cannot be grabbed; every read x 500/502/503 is `Unavailable` and the key never appears; malformed/empty/HTML 200 bodies never revalidate a snapshot as unchanged (with a control); presentation order is invariant under quality label, custom format, indexer and protocol changes and approval dominates a high score; every command body on the wire has `importMode: "copy"` for ManualImport and no `importMode` for rescans.
+
+Matrix: T-06, T-07, T-11, T-12, T-19, T-30 rows extended; counts unchanged (16 covered, 5 partial, 11 pending); no row omitted. Rows still waiting on plan-engine/action-runner wiring.
+
+Findings (source not touched):
+1. Observation, not a bug: `audio_language_check` doc says `und` tracks on either side make the answer unknown, but an extra `und` track on the candidate passes when every language the current file requires is confirmed in the candidate. This is safe (nothing is lost); the doc comment is broader than the behavior. A test pins the behavior.
+2. No bugs found in matching or arr.
+
+Not covered, for `integration-tests`: real ffprobe (the one ignored test `real_ffprobe_accepts_the_argument_set` needs the binary), real Sonarr/Radarr (fake only; wire shapes follow the V10 fixtures), plan-engine wiring of matching blockers and ARR snapshot gating.
+
+Commands: `cargo test -p removarr-matching -p removarr-arr` pass, 1 ignored (real ffprobe), slowest binary 1.6 s (`ffprobe_fake`), new files 0.4 s; `cargo clippy -p removarr-matching -p removarr-arr --all-targets -- -D warnings` clean; rustfmt applied to both new files.

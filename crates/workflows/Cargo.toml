@@ -23,4 +23,9 @@ async-trait = { workspace = true }
 [dev-dependencies]
 tempfile = { workspace = true }
 removarr-testkit = { workspace = true }
+# Test-only: the real confined filesystem adapter builds the parity-fixture inventories and the
+# permission rules are checked against it. Normal dependencies stay domain + matching
+# (architecture 2.2; gate in docs/development.md).
+removarr-fs = { workspace = true }
+removarr-config = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
