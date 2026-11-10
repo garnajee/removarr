@@ -9,8 +9,10 @@ limit, minimal RAM and disk writes.
 
 ## Decision
 - Axum 0.8 routes render Askama 0.14 templates into `Html<String>`. `HX-Request` selects a
-  fragment. Every action works without JavaScript (progressive enhancement). HTMX is vendored and
-  embedded. CSP is `script-src 'self'`, with no eval and no `hx-on`.
+  fragment. Every action works without JavaScript (progressive enhancement as a degradation
+  property). HTMX is pinned to exactly `htmx.org@2.0.4`, vendored and embedded, with its SHA-256
+  checked by a unit test and its presence enforced by the release gate. There is no release
+  without it (amended at CP1). CSP is `script-src 'self'`, with no eval and no `hx-on`.
 - Sessions: an `axum-extra` `PrivateCookieJar` (AES-GCM, key from `REMOVARR_SESSION_KEY`) carries a
   random 32-byte session id. A bounded in-memory session table (max 32) holds expiry and the
   CSRF token. There is no session persistence, so a restart logs out.

@@ -76,7 +76,15 @@ No code and no files outside `docs/` were written.
    - `ids::IssueId` derivation;
    - `PlanHash` computed over the canonical `serde_json` serialization;
    - `ActionKind::tier()` / `capability()` (section 13);
-   - `candidate::CandidateState::transition` (CTX-12).
+   - `candidate::derive_candidate_state` (CTX-12, derived only) and
+     `PlanStatus::can_transition_to` (enforced machine);
+   - `torrent::is_working_file`, `arr::sort_search_results`.
+
+   Also the types added at CP1: `TorrentInfo.download_path`, `ArrEpisode`, `ReleaseRef`,
+   `ReleaseSearchResult`, `CoverageProof`, `MatchCandidate`, `Approval.confirmed_torrent_removals`,
+   the new `VerificationStep`/`BlockerCode`/`JournalStep` variants, `IssueCategory::ArrQueue`,
+   `ActionKind::ArrGrabRelease`, `Capability::ArrGrab`, and the ports `MatchStore`,
+   `ArrRead::episodes`, `ArrCommands::{grab, rescan_all}`, `JellyfinRead::library_refresh_running`.
 4. Deterministic serialization: `BTreeMap`/`BTreeSet`/`Vec` only in hashed or persisted types.
    `Timestamp` = UTC unix milliseconds.
 5. Also own `crates/testkit/src/clock.rs` (`FakeClock` with manual advance) and `ids.rs`
@@ -105,7 +113,7 @@ No code and no files outside `docs/` were written.
 | 07 media-match | "test target-directory write capability before full comparisons" | The probe creates a temporary hardlink, which is a mutation. It belongs to the 13 transaction (live only). Scans never run full compares, and 07's funnel stops at samples. |
 | 14 job-runner task 5/9 | serialize by media identity, path scope, action type | A single execution lane plus root `RwLock`s, plus the ARR queue check (ADR-0007). No per-media lock table. |
 | 15 reporting task 4 | "store" action history | Storage is 04 (written by 13). 15 queries and presents it. |
-| 09 arr-api task 4/9 | searches and grabs as separate capabilities | Grab is **not implemented** in V1 (display-only search). Manual import is the only import path (ADR-0010). |
+| 09 arr-api task 4/9 | searches and grabs as separate capabilities | Implemented as specified. Searches are read-only. `ArrGrabRelease` requires cap `arr_grab` (default off), manual approval only. Manual import always uses `importMode="copy"` (ADR-0010). |
 | 17 auth-guard task 3 | `Secure` cookies | `Secure` defaults to on and is configurable (`cookie_secure`) for plain-HTTP LAN setups. |
 | 06 fs-engine task 7 | permission anomalies | Detected from mode bits, uid/gid and the sticky bit versus `expected_owner`. ACLs are invisible (CONTEXTE §7.1.11) and documented as a limitation. |
 | MASTER §3 | "intervalle/cron configurable" | Interval + UTC anchor (`scan.interval_minutes`, `scan.anchor_utc`). No cron expressions. Nightly runs are covered. |
@@ -117,11 +125,11 @@ invariant.
 
 ## Open TODOs
 
-1. **HTMX asset (19, orchestrator).** Vendoring `htmx.min.js` 2.x needs a one-time download, and
-   agents have no network access. The UI must stay fully functional without it (progressive
-   enhancement is mandatory). If the file cannot be obtained, 19 ships without it and records
-   this. The orchestrator decides whether stop condition (c) applies or whether to ship without
-   HTMX enhancement.
+1. **HTMX asset (19, orchestrator).** Pinned to `htmx.org@2.0.4`. 19 performs the one pinned
+   download (the orchestrator has approved it), cross-checks it against the jsDelivr per-file hash
+   and the official SRI, records the SHA-256 constant and SRI, and adds the checksum unit test.
+   A release without it is not an option (27 gate). Working without JavaScript remains a
+   degradation property only.
 2. **Docker builder tag (20).** Verify that `rust:1.98-alpine` exists at build time. Otherwise use
    the nearest tag >= 1.88 and record it.
 3. **ARR endpoint details (09).** Exact v3 field names for `manualimport` preview rejections,
@@ -133,6 +141,35 @@ invariant.
    The §7.7 "3 proven pairs" requires a `VerifyContent` run.
 6. **21.** Use architecture section 18.3 as the owner reference for T-01..32 when adding Rust test names.
 
+## CP1 iteration 1 changes
+
+The review `docs/reviews/cp1.md` (FAIL: 2 blocking, 5 major, 12 minor) is fully addressed. No
+finding was rejected. The per-finding map is in `docs/architecture.md` §20.
+- Blocking:
+  - F01: ARR manual import always uses the `importMode="copy"` literal. The completed source
+    inode is verified after import. A move is detected as `FailedNeedsReview`. A copy gives
+    `ExecutedUnverified` + `AddedCost`.
+  - F02: replacement presence (mapped, scanned, size, distinct inode) is required for
+    `DeleteReplaced` and auto deletions, and revalidated as `EntryUnchanged`. A mismatch gives
+    `ArrAmbiguous`, which means manual only.
+- Major:
+  - F03: qBittorrent working files (`.!qB`, `.parts`, `download_path`) belong to their torrent.
+  - F04: `ArrRead::episodes` and the `CoverageProof` definition. INV-36 now has the single owner 12.
+  - F05: `arr_queue` category, dashboard queue counts, `PlanRequest::Media`.
+  - F06: `arr_grab` capability and `ArrGrabRelease` (manual only), plus `ReleaseSearchResult`.
+  - F07: funnel results persisted (`MatchStore`). `RefreshService` reclassifies only, with zero fs
+    calls. New key `scan.qbit_refresh_minutes`.
+- Minor F08-F19: VerifyContent owner and contract, affected-hash definition, qBittorrent
+  not-configured rule, two-phase auto cycle, companion actions and separate torrent-removal count,
+  `rescan_all`, one-action service-rescan plans, `/recovery/retry`, Jellyfin library-refresh polling,
+  register entries C19-C25, pinned HTMX 2.0.4 with checksum, ownership rules 7-8, response size
+  limit, derived `CandidateState` (and `torrent_observations` dropped), and a single
+  `QbitInternal` rule.
+- ADRs amended: 0003 (simulation in any process), 0006 (pinned HTMX), 0010 (copy literal, source
+  inode check, approved grab).
+- Ownership for waves 4, 5 and 13 is still disjoint. New fixture variants V9 (06/08) and V10 (09)
+  stay inside each agent's own testkit file.
+
 ## Commands run and results
 
 - No shell commands were run. Tools used: Read, Glob, Grep (inputs) and Write, Edit (outputs).
@@ -141,4 +178,8 @@ invariant.
   `.claude/agents/01..27*.md` (all), `README.md`, `old/CONTEXTE_RACINE_APP_NAS.md` §1.2-§1.4,
   §2.1-§2.4, §2.11-§2.12, §3 (all), §6 (all), §7.1-§7.3, §9.
 - `Glob` confirmed that no `Cargo.toml`, `crates/`, `locales/` or `docs/adr/` existed before this wave.
+- CP1 iteration 1: read `docs/reviews/cp1.md` in full (not edited). Edited `docs/architecture.md`,
+  ADR-0003, ADR-0006, ADR-0010 and this handoff. `Grep` checks found no stale "grab not
+  implemented", "ship without HTMX" or `torrent_observations` statements left in the architecture
+  or ADRs.
 - No network, no live storage, no services, no secrets.

@@ -45,7 +45,7 @@ Status values: `todo`, `running`, `done`, `blocked`.
 
 | Checkpoint | Verdict | Iterations | Report |
 |---|---|---|---|
-| CP1 architecture (after wave 1) | FAIL (iter 1: 2 blocking, 5 major, 12 minor) — fixing | 1/3 | `docs/reviews/cp1.md` |
+| CP1 architecture (after wave 1) | iter 1 FAIL (2 blocking, 5 major, 12 minor), all 19 fixed; iter 2 review running | 2/3 | `docs/reviews/cp1.md` |
 | CP2 tier 3 (deletions) | pending | 0/3 | `docs/reviews/cp2-tier3.md` |
 | CP2 tier 4 (ARR replacement) | pending | 0/3 | `docs/reviews/cp2-tier4.md` |
 | CP2 tier 5 (automatic mode) | pending | 0/3 | `docs/reviews/cp2-tier5.md` |
