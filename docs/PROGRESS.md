@@ -6,13 +6,14 @@ Status values: `todo`, `running`, `done`, `blocked`.
 - Branch: `autonomous-build` (created from `main` at 4fa9e32)
 - Last commit: none
 - Blocking cause: none
+- Orchestrator interpretation: downloading pinned build dependencies from public package registries (crates.io, the pinned HTMX asset with a checksum) is build tooling, not "real-world access" under rule 9 / stop condition (c). No access to the user's services, NAS or secrets.
 
 ## Agents
 
 | Wave | Agent | Status | Notes |
 |---|---|---|---|
 | 0 | `00-legacy-audit` | done | 32 tests mapped, 51 INV, 30 REJ, 32 CON, 7 open questions for system-arch (OQ-01/05/06/07/09/11/12) |
-| 1 | `01-system-arch` | running | |
+| 1 | `01-system-arch` | done | architecture.md (19 sections), ADR 0001-0010, 13 crates, OQs resolved; versions from memory, 02 must confirm |
 | 2 | `02-rust-scaffold` | todo | |
 | 3 | `03-domain-model` | todo | |
 | 4 | `04-db-layer` | todo | |
@@ -44,7 +45,7 @@ Status values: `todo`, `running`, `done`, `blocked`.
 
 | Checkpoint | Verdict | Iterations | Report |
 |---|---|---|---|
-| CP1 architecture (after wave 1) | pending | 0/3 | `docs/reviews/cp1.md` |
+| CP1 architecture (after wave 1) | running | 1/3 | `docs/reviews/cp1.md` |
 | CP2 tier 3 (deletions) | pending | 0/3 | `docs/reviews/cp2-tier3.md` |
 | CP2 tier 4 (ARR replacement) | pending | 0/3 | `docs/reviews/cp2-tier4.md` |
 | CP2 tier 5 (automatic mode) | pending | 0/3 | `docs/reviews/cp2-tier5.md` |
