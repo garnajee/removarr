@@ -191,8 +191,11 @@ fn check(
             }
         }
         // Import activity and configuration are revalidated live by the runner; the config
-        // fingerprint is compared above.
-        Precondition::NoArrImport { .. } | Precondition::ConfigFingerprint(_) => {}
+        // fingerprint is compared above. `ArrReplacementPresent` is revalidated by its paired
+        // `EntryUnchanged` and `ArrFingerprint`.
+        Precondition::NoArrImport { .. }
+        | Precondition::ArrReplacementPresent { .. }
+        | Precondition::ConfigFingerprint(_) => {}
     }
 }
 

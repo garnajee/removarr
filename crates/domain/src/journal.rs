@@ -144,6 +144,65 @@ pub struct VerificationResult {
     pub at: Timestamp,
 }
 
+/// What a re-read of a service showed, for the service-command verification steps.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ServiceObservation {
+    QueueItemPresent(bool),
+    Monitored(bool),
+    /// The command or task was observed completed.
+    CommandCompleted,
+    /// The command or task was observed failed.
+    CommandFailed {
+        reason: String,
+    },
+    /// Nothing could be observed (service down, command still running, no status).
+    Unobserved {
+        reason: String,
+    },
+}
+
+/// Judges a service-command step against a re-read. Only a positive observation passes: an
+/// unobserved completion is `NotRun`, so the action stays `ExecutedUnverified`. A step that is
+/// not a service step, or an observation of another kind, is `NotRun` too.
+#[must_use]
+pub fn evaluate_service_step(
+    step: &VerificationStep,
+    observed: &ServiceObservation,
+) -> VerificationStatus {
+    use ServiceObservation as O;
+    use VerificationStep as S;
+    let failed = |reason: &str| VerificationStatus::Failed {
+        reason: reason.to_string(),
+    };
+    match (step, observed) {
+        (_, O::Unobserved { reason }) => VerificationStatus::NotRun {
+            reason: reason.clone(),
+        },
+        (S::ArrQueueItemAbsent { .. }, O::QueueItemPresent(false)) => VerificationStatus::Passed,
+        (S::ArrQueueItemAbsent { .. }, O::QueueItemPresent(true)) => {
+            failed("the queue item is still present")
+        }
+        (S::ArrMonitored { monitored, .. }, O::Monitored(now)) if now == monitored => {
+            VerificationStatus::Passed
+        }
+        (S::ArrMonitored { .. }, O::Monitored(_)) => {
+            failed("the monitored flag differs from the requested one")
+        }
+        (S::ArrCommandCompleted { .. } | S::JellyfinRefreshed { .. }, O::CommandCompleted) => {
+            VerificationStatus::Passed
+        }
+        (
+            S::ArrCommandCompleted { .. } | S::JellyfinRefreshed { .. },
+            O::CommandFailed { reason },
+        ) => VerificationStatus::Failed {
+            reason: reason.clone(),
+        },
+        _ => VerificationStatus::NotRun {
+            reason: "the observation does not match the verification step".to_string(),
+        },
+    }
+}
+
 /// Decides the outcome of an executed action from its verification results.
 ///
 /// `Verified` requires at least one step and every step `Passed`. An empty list, a failed step
@@ -382,6 +441,125 @@ mod tests {
         ] {
             assert!(s.is_terminal());
             assert!(!s.can_transition_to(ActionState::Running));
+        }
+    }
+
+    fn service_steps() -> Vec<(VerificationStep, ServiceObservation, VerificationStatus)> {
+        use crate::arr::{ArrMediaRef, ArrService};
+        let media = ArrMediaRef {
+            service: ArrService::Radarr,
+            media_id: 1,
+            episode_ids: vec![],
+        };
+        let q = VerificationStep::ArrQueueItemAbsent {
+            service: ArrService::Radarr,
+            id: 7,
+        };
+        let m = VerificationStep::ArrMonitored {
+            media: media.clone(),
+            monitored: false,
+        };
+        let r = VerificationStep::ArrCommandCompleted {
+            service: ArrService::Radarr,
+            media: Some(media),
+        };
+        let j = VerificationStep::JellyfinRefreshed { item_id: None };
+        let failed = |s: &str| VerificationStatus::Failed { reason: s.into() };
+        vec![
+            (
+                q.clone(),
+                ServiceObservation::QueueItemPresent(false),
+                VerificationStatus::Passed,
+            ),
+            (
+                q,
+                ServiceObservation::QueueItemPresent(true),
+                failed("the queue item is still present"),
+            ),
+            (
+                m.clone(),
+                ServiceObservation::Monitored(false),
+                VerificationStatus::Passed,
+            ),
+            (
+                m,
+                ServiceObservation::Monitored(true),
+                failed("the monitored flag differs from the requested one"),
+            ),
+            (
+                r.clone(),
+                ServiceObservation::CommandCompleted,
+                VerificationStatus::Passed,
+            ),
+            (
+                r,
+                ServiceObservation::CommandFailed {
+                    reason: "boom".into(),
+                },
+                failed("boom"),
+            ),
+            (
+                j,
+                ServiceObservation::CommandCompleted,
+                VerificationStatus::Passed,
+            ),
+        ]
+    }
+
+    #[test]
+    fn service_steps_pass_only_on_a_positive_reread() {
+        for (step, obs, expected) in service_steps() {
+            let status = evaluate_service_step(&step, &obs);
+            assert_eq!(status, expected, "{step:?} {obs:?}");
+            let outcome = outcome_from_verification(&[VerificationResult {
+                step,
+                status,
+                at: Timestamp(0),
+            }]);
+            assert_eq!(
+                outcome == ActionOutcome::Verified,
+                expected == VerificationStatus::Passed
+            );
+        }
+    }
+
+    #[test]
+    fn unobserved_or_mismatched_service_observation_stays_unverified() {
+        for (step, _, _) in service_steps() {
+            for obs in [
+                ServiceObservation::Unobserved {
+                    reason: "running".into(),
+                },
+                ServiceObservation::Monitored(true),
+                ServiceObservation::QueueItemPresent(false),
+            ] {
+                let status = evaluate_service_step(&step, &obs);
+                let passes = status == VerificationStatus::Passed;
+                let matches_kind = matches!(
+                    (&step, &obs),
+                    (
+                        VerificationStep::ArrQueueItemAbsent { .. },
+                        ServiceObservation::QueueItemPresent(false)
+                    ) | (
+                        VerificationStep::ArrMonitored {
+                            monitored: true,
+                            ..
+                        },
+                        ServiceObservation::Monitored(true)
+                    )
+                );
+                assert_eq!(passes, matches_kind, "{step:?} {obs:?}");
+                if !passes {
+                    assert!(matches!(
+                        outcome_from_verification(&[VerificationResult {
+                            step: step.clone(),
+                            status,
+                            at: Timestamp(0)
+                        }]),
+                        ActionOutcome::ExecutedUnverified { .. }
+                    ));
+                }
+            }
         }
     }
 }

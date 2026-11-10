@@ -18,6 +18,10 @@ use crate::torrent::{TorrentHash, TorrentState};
 #[serde(rename_all = "snake_case")]
 pub enum EvidenceLevel {
     None,
+    /// Not a content proof and not comparable with the levels below: ARR says the completed
+    /// file is not an upgrade and its replacement is physically present. Only deletions under
+    /// the completed root may carry it, and `approve_auto` re-checks the pinned evidence.
+    ArrValidatedReplacement,
     NameSize,
     Semantic,
     Sampled,

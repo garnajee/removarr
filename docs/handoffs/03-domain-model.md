@@ -134,3 +134,45 @@ Public API, `removarr_domain::arr::correlate`:
 - `Correlation { NotFound, Unique(ArrMediaRef), Ambiguous(Vec<_>), Unidentified }`, `unique()`.
 - `Correlator` (`new`, `add_queue`, `add_history`, `add_library`, `by_hash`, `by_path`, `for_content`).
 - `ImportActivity`, `import_activity`, `import_in_progress` (unknown state counts as in progress); `QueueHealth`, `queue_health` (informational only, never a hardlink verdict, INV-39).
+
+## Patch 2 (between waves 8 and 9)
+
+Gap 1 (automatic ARR-validated deletions) and gap 2 (service-command verification) of `12-plan-engine.md`. Gap 3 (coverage
+proof / warnings slot in the plan) is accepted as a deviation and not implemented.
+
+New public API:
+- `evidence::EvidenceLevel::ArrValidatedReplacement`: not a content proof, not comparable with `NameSize..Full` (declared
+  after `None`; nothing orders levels). Serialized as `arr_validated_replacement`.
+- `plan::Precondition::ArrReplacementPresent { media: ArrMediaRef, path: RootedPath, size: u64 }`: the "ARR replacement
+  present" evidence (ARR's current file for the media, ARR's size).
+- `HashedPlan::approve_auto` accepts an action with `evidence_level = ArrValidatedReplacement` only when ALL hold,
+  otherwise it is refused:
+  - kind is `DeleteCompletedFile` or `DeleteCompletedFolder` with `ActionTarget::Path` under the `completed` root, else
+    `AutoApprovalForbidden` (media-root targets, other kinds, consolidations);
+  - `completeness` complete (as before, `IncompleteEvidence` otherwise); samples / unrecoverable files still forbid;
+  - at least one `ArrReplacementPresent`; for each, a paired `EntryUnchanged { path, compare_nlink: false }` whose
+    signature is a `File` of exactly `size`, with the path in a media root (`RootKind::Media`), and an
+    `ArrFingerprint` precondition for the same media;
+  - the replacement `PhysicalId` differs from every target `PhysicalId`, taken from the other `EntryUnchanged`
+    preconditions and from every `DirUnchanged` snapshot entry; no known target signature at all counts as missing;
+  - failures of the evidence conditions give `IncompleteEvidence { action_index }`.
+  Builder contract for 12/14: emit these preconditions, set `evidence_level = ArrValidatedReplacement` on the deletion
+  action only after the CP1-F02 checks passed, keep target pins as `compare_nlink: true` (or `DirUnchanged`), and the
+  replacement pin as `compare_nlink: false` (that flag is how the two are told apart).
+- `plan::VerificationStep::{ArrQueueItemAbsent { service, id }, ArrMonitored { media, monitored },
+  ArrCommandCompleted { service, media: Option<_> }, JellyfinRefreshed { item_id: Option<String> }}`.
+- `journal::ServiceObservation { QueueItemPresent(bool), Monitored(bool), CommandCompleted, CommandFailed { reason },
+  Unobserved { reason } }` and `journal::evaluate_service_step(&VerificationStep, &ServiceObservation) ->
+  VerificationStatus`. Only a positive re-read passes (queue item absent, monitored equal, command observed completed);
+  `Unobserved` or a mismatched observation kind is `NotRun`, so `outcome_from_verification` keeps the action
+  `ExecutedUnverified`. 12 can drop `UNVERIFIABLE_KINDS` and emit these steps; 13 feeds the observations.
+
+Hash stability: no existing variant changed; a golden test pins the hash of a plan not using the new variants
+(`golden_hash_of_plan_without_patch2_variants_is_pinned`, value computed before the patch). New variants roundtrip
+deterministically (`patch2_variants_roundtrip_deterministically`). Schema: no change for db-layer (JSON bodies only).
+
+Minimal exhaustive-match addition outside the domain: `crates/workflows/src/plans/expiry.rs` (`ArrReplacementPresent` is a
+no-op in staleness, covered by its paired `EntryUnchanged` and `ArrFingerprint`). Nothing else failed to compile.
+
+Commands: `cargo fmt --all --check` pass; `cargo clippy --workspace --all-targets -- -D warnings` pass;
+`cargo test --workspace` pass (603 passed, 0 failed); the three dependency-direction greps print nothing. Not committed.

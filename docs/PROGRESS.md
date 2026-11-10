@@ -26,8 +26,8 @@ Status values: `todo`, `running`, `done`, `blocked`.
 | 6 | `03-domain-model` patch (arr snapshot/correlate into domain) | done | option A; single implementation in removarr_domain::arr |
 | 7 | `11-issue-engine` | done | 96 tests; 13 categories; refresh zero fs calls; orchestrator confirmed strict per-version qBit allowlist (pausedUP 4.x only, stoppedUP 5.x only) and `note:` evidence convention |
 | 8 | `12-plan-engine` | done | plans for all tiers, tier-tagged and capability-gated; no mutation port referenced |
-| 8 | `03-domain-model` patch 2 (ARR-validated auto deletion evidence, service-command verification steps) | running | orchestrator decision on 12 domain gaps 1-2; gap 3 accepted as deviation |
-| 8 | `12-plan-engine` follow-up (adopt patch 2, torrent staleness by eligibility class) | todo | |
+| 8 | `03-domain-model` patch 2 (ARR-validated auto deletion evidence, service-command verification steps) | done | 603 tests; golden hash unchanged; gap 3 accepted as deviation |
+| 8 | `12-plan-engine` follow-up (adopt patch 2, torrent staleness by eligibility class) | running | |
 | 9 | `13-action-runner` | todo | |
 | 10 | `14-job-runner` | todo | |
 | 11 | `15-reporting` | todo | |

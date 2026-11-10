@@ -12,11 +12,11 @@ use crate::arr::{ArrMediaRef, ArrService, ManualImportRequest, OldFileRecovery, 
 use crate::canonical::{canonical_json, sha256_hex};
 use crate::error::DomainError;
 use crate::evidence::{Completeness, EvidenceLevel};
-use crate::fs::{DirSnapshot, EntrySignature, PhysicalId};
+use crate::fs::{DirSnapshot, EntryKind, EntrySignature, PhysicalId};
 use crate::gain::{GainEstimate, PlanGains};
 use crate::ids::{PlanId, SessionId, SubjectKey};
 use crate::issue::Blocker;
-use crate::path::{RootId, RootedPath};
+use crate::path::{RootId, RootKind, RootedPath};
 use crate::policy::{Capability, RiskTier};
 use crate::session::ServiceKind;
 use crate::time::Timestamp;
@@ -262,6 +262,13 @@ pub enum Precondition {
         b: RootedPath,
     },
     ServiceAvailable(ServiceKind),
+    /// ARR's current file for `media` is `path`, with `size` bytes (CP1-F02, "replacement
+    /// present"). It must be paired with an `EntryUnchanged` on the same path.
+    ArrReplacementPresent {
+        media: ArrMediaRef,
+        path: RootedPath,
+        size: u64,
+    },
     ConfigFingerprint(String),
     /// Every old media file that ARR's upgrade import will delete, with where its content
     /// survives (CP1-F20).
@@ -304,6 +311,25 @@ pub enum VerificationStep {
     ArrQueueHasRelease {
         service: ArrService,
         release: ReleaseRef,
+    },
+    /// The ARR queue item is gone on re-read.
+    ArrQueueItemAbsent {
+        service: ArrService,
+        id: i64,
+    },
+    /// The re-read monitored flag of the media equals the requested one.
+    ArrMonitored {
+        media: ArrMediaRef,
+        monitored: bool,
+    },
+    /// The ARR rescan command was observed completed.
+    ArrCommandCompleted {
+        service: ArrService,
+        media: Option<ArrMediaRef>,
+    },
+    /// The Jellyfin refresh task was observed completed.
+    JellyfinRefreshed {
+        item_id: Option<String>,
     },
     /// Where a replaced old media file went (recycle bin, other link, or nowhere).
     OldFileAccounted {
@@ -590,6 +616,9 @@ impl HashedPlan {
                     action_index: a.index,
                 });
             }
+            if a.evidence_level == EvidenceLevel::ArrValidatedReplacement {
+                check_arr_validated_deletion(a)?;
+            }
         }
         Ok(Approval {
             plan_id: self.plan.id,
@@ -613,6 +642,81 @@ impl HashedPlan {
             Ok(())
         }
     }
+}
+
+/// The `ArrValidatedReplacement` level is a deletion-only proof (A7, CP1-F02): the target is
+/// under the completed root and every replacement ARR reports is pinned, physically present
+/// in a media root with ARR's size, and a different inode from every deletion target.
+fn check_arr_validated_deletion(a: &PlannedAction) -> Result<(), DomainError> {
+    let forbid = |m: &str| Err(DomainError::AutoApprovalForbidden(m.to_string()));
+    let missing = || {
+        Err(DomainError::IncompleteEvidence {
+            action_index: a.index,
+        })
+    };
+    let target = match (&a.kind, &a.target) {
+        (
+            ActionKind::DeleteCompletedFile | ActionKind::DeleteCompletedFolder,
+            ActionTarget::Path { path },
+        ) => path,
+        _ => return forbid("ARR-validated evidence only covers completed deletions"),
+    };
+    if target.root != RootId::completed() {
+        return forbid("ARR-validated deletion is limited to the completed root");
+    }
+    let replacements: Vec<(&ArrMediaRef, &RootedPath, u64)> = a
+        .preconditions
+        .iter()
+        .filter_map(|p| match p {
+            Precondition::ArrReplacementPresent { media, path, size } => Some((media, path, *size)),
+            _ => None,
+        })
+        .collect();
+    if replacements.is_empty() {
+        return missing();
+    }
+    let mut replacement_phys = Vec::new();
+    for (media, path, size) in &replacements {
+        if path.root.kind() != RootKind::Media {
+            return missing();
+        }
+        let pinned = a.preconditions.iter().find_map(|p| match p {
+            Precondition::EntryUnchanged {
+                path: q,
+                sig,
+                compare_nlink: false,
+            } if q == *path => Some(sig),
+            _ => None,
+        });
+        let Some(sig) = pinned else {
+            return missing();
+        };
+        let fingerprinted = a
+            .preconditions
+            .iter()
+            .any(|p| matches!(p, Precondition::ArrFingerprint { media: m, .. } if m == *media));
+        if sig.kind != EntryKind::File || sig.size != *size || !fingerprinted {
+            return missing();
+        }
+        replacement_phys.push(sig.phys());
+    }
+    let replacement_paths: BTreeSet<&RootedPath> = replacements.iter().map(|r| r.1).collect();
+    let mut target_phys = Vec::new();
+    for p in &a.preconditions {
+        match p {
+            Precondition::EntryUnchanged { path, sig, .. } if !replacement_paths.contains(path) => {
+                target_phys.push(sig.phys());
+            }
+            Precondition::DirUnchanged { snapshot } => {
+                target_phys.extend(snapshot.entries.values().map(EntrySignature::phys));
+            }
+            _ => {}
+        }
+    }
+    if target_phys.is_empty() || replacement_phys.iter().any(|r| target_phys.contains(r)) {
+        return missing();
+    }
+    Ok(())
 }
 
 /// Returns the required paths in sorted order, or the ones missing from `given`.
@@ -809,6 +913,21 @@ mod tests {
                 .unwrap()
                 .hash(),
             h.hash()
+        );
+    }
+
+    #[test]
+    fn golden_hash_of_plan_without_patch2_variants_is_pinned() {
+        let mut a = consolidate(0);
+        a.preconditions
+            .push(Precondition::ServiceAvailable(ServiceKind::Sonarr));
+        a.verification.push(VerificationStep::Absent {
+            path: p("completed", "x"),
+        });
+        let h = HashedPlan::seal(plan(vec![a])).unwrap();
+        assert_eq!(
+            h.hash().as_str(),
+            "6a25e2ec99cd303b05876950333bebf3bd0804e191b8e3ca56b5843b32d362a4"
         );
     }
 
@@ -1213,5 +1332,290 @@ mod tests {
             HashedPlan::seal(pl).unwrap().approve_auto(Timestamp(0)),
             Err(DomainError::AutoApprovalForbidden(_))
         ));
+    }
+
+    // ---- Patch 2: automatic approval of ARR-validated deletions ----
+
+    fn sig(ino: u64, size: u64) -> EntrySignature {
+        EntrySignature {
+            kind: EntryKind::File,
+            dev: 1,
+            ino,
+            size,
+            nlink: 1,
+            mtime_ns: crate::time::MtimeNs(0),
+            mode: 0o644,
+            uid: 0,
+            gid: 0,
+        }
+    }
+
+    fn media_ref() -> ArrMediaRef {
+        ArrMediaRef {
+            service: ArrService::Radarr,
+            media_id: 9,
+            episode_ids: vec![],
+        }
+    }
+
+    /// A valid auto deletion plan with ARR-validated evidence; `tweak` breaks one condition.
+    fn arr_auto(
+        tweak: impl FnOnce(&mut PlannedAction, &mut ActionPlan),
+    ) -> Result<Approval, DomainError> {
+        let target = p("completed", "rel/a.mkv");
+        let repl = p("media-00000000", "lib/a.mkv");
+        let mut a = action(
+            0,
+            ActionKind::DeleteCompletedFile,
+            ActionTarget::Path {
+                path: target.clone(),
+            },
+        );
+        a.evidence_level = EvidenceLevel::ArrValidatedReplacement;
+        a.preconditions = vec![
+            Precondition::EntryUnchanged {
+                path: target,
+                sig: sig(10, 100),
+                compare_nlink: true,
+            },
+            Precondition::EntryUnchanged {
+                path: repl.clone(),
+                sig: sig(20, 500),
+                compare_nlink: false,
+            },
+            Precondition::ArrReplacementPresent {
+                media: media_ref(),
+                path: repl,
+                size: 500,
+            },
+            Precondition::ArrFingerprint {
+                media: media_ref(),
+                fingerprint: "f".into(),
+            },
+        ];
+        let mut pl = plan(vec![]);
+        pl.origin = PlanOrigin::AutoPolicy;
+        tweak(&mut a, &mut pl);
+        pl.actions = vec![a];
+        HashedPlan::seal(pl)?.approve_auto(Timestamp(0))
+    }
+
+    #[test]
+    fn arr_validated_deletion_is_auto_approved_when_every_rule_holds() {
+        assert_eq!(arr_auto(|_, _| {}).unwrap().by, Approver::AutoPolicy);
+    }
+
+    #[test]
+    fn arr_validated_deletion_needs_every_pinned_condition() {
+        type Tweak = Box<dyn Fn(&mut PlannedAction)>;
+        let cases: Vec<(&str, Tweak)> = vec![
+            (
+                "no replacement evidence",
+                Box::new(|a| {
+                    a.preconditions
+                        .retain(|p| !matches!(p, Precondition::ArrReplacementPresent { .. }))
+                }),
+            ),
+            (
+                "no replacement pin",
+                Box::new(|a| {
+                    a.preconditions.retain(|p| {
+                        !matches!(
+                            p,
+                            Precondition::EntryUnchanged {
+                                compare_nlink: false,
+                                ..
+                            }
+                        )
+                    })
+                }),
+            ),
+            (
+                "no fingerprint",
+                Box::new(|a| {
+                    a.preconditions
+                        .retain(|p| !matches!(p, Precondition::ArrFingerprint { .. }))
+                }),
+            ),
+            (
+                "size differs",
+                Box::new(|a| {
+                    for p in &mut a.preconditions {
+                        if let Precondition::ArrReplacementPresent { size, .. } = p {
+                            *size = 501;
+                        }
+                    }
+                }),
+            ),
+            (
+                "same inode as target",
+                Box::new(|a| {
+                    for p in &mut a.preconditions {
+                        if let Precondition::EntryUnchanged {
+                            sig: s,
+                            compare_nlink: false,
+                            ..
+                        } = p
+                        {
+                            s.ino = 10;
+                        }
+                    }
+                }),
+            ),
+            (
+                "replacement not in a media root",
+                Box::new(|a| {
+                    for p in &mut a.preconditions {
+                        match p {
+                            Precondition::EntryUnchanged {
+                                path,
+                                compare_nlink: false,
+                                ..
+                            }
+                            | Precondition::ArrReplacementPresent { path, .. } => {
+                                *path = p_in_incomplete();
+                            }
+                            _ => {}
+                        }
+                    }
+                }),
+            ),
+            (
+                "target inode unknown",
+                Box::new(|a| {
+                    a.preconditions.retain(|p| {
+                        !matches!(
+                            p,
+                            Precondition::EntryUnchanged {
+                                compare_nlink: true,
+                                ..
+                            }
+                        )
+                    })
+                }),
+            ),
+            (
+                "incomplete",
+                Box::new(|a| {
+                    a.completeness = Completeness::Incomplete {
+                        missing: vec!["x".into()],
+                    }
+                }),
+            ),
+            (
+                "unknown",
+                Box::new(|a| a.completeness = Completeness::Unknown),
+            ),
+            (
+                "no evidence",
+                Box::new(|a| a.evidence_level = EvidenceLevel::None),
+            ),
+        ];
+        for (name, f) in cases {
+            let r = arr_auto(|a, _| f(a));
+            assert!(
+                matches!(r, Err(DomainError::IncompleteEvidence { action_index: 0 })),
+                "{name}: {r:?}"
+            );
+        }
+    }
+
+    fn p_in_incomplete() -> RootedPath {
+        p("incomplete", "x.mkv")
+    }
+
+    #[test]
+    fn arr_validated_level_is_refused_outside_completed_deletions() {
+        let r = arr_auto(|a, _| {
+            a.target = ActionTarget::Path {
+                path: p("media-00000000", "lib/a.mkv"),
+            };
+        });
+        assert!(
+            matches!(r, Err(DomainError::AutoApprovalForbidden(_))),
+            "{r:?}"
+        );
+        let r = arr_auto(|a, _| a.kind = ActionKind::DeleteJunk);
+        assert!(r.is_err());
+        let r = arr_auto(|a, pl| {
+            a.kind = ActionKind::ConsolidateHardlink;
+            a.target = ActionTarget::Consolidate {
+                source: p("completed", "a"),
+                target: p("media-00000000", "b"),
+            };
+            let _ = pl;
+        });
+        assert!(
+            matches!(r, Err(DomainError::AutoApprovalForbidden(_))),
+            "{r:?}"
+        );
+        let r = arr_auto(|_, pl| pl.samples.push(p("completed", "rel/Sample/s.mkv")));
+        assert!(matches!(r, Err(DomainError::AutoApprovalForbidden(_))));
+        // A user plan never auto-approves.
+        let r = arr_auto(|_, pl| pl.origin = PlanOrigin::User);
+        assert!(r.is_err());
+    }
+
+    #[test]
+    fn arr_validated_folder_deletion_compares_every_snapshot_entry() {
+        let r = arr_auto(|a, _| {
+            a.kind = ActionKind::DeleteCompletedFolder;
+            a.preconditions.retain(|p| {
+                !matches!(
+                    p,
+                    Precondition::EntryUnchanged {
+                        compare_nlink: true,
+                        ..
+                    }
+                )
+            });
+            let mut entries = BTreeMap::new();
+            entries.insert(crate::path::RelPath::new("a.mkv").unwrap(), sig(20, 500));
+            a.preconditions.push(Precondition::DirUnchanged {
+                snapshot: DirSnapshot {
+                    dir: p("completed", "rel/a.mkv"),
+                    entries,
+                },
+            });
+        });
+        assert!(
+            matches!(r, Err(DomainError::IncompleteEvidence { .. })),
+            "{r:?}"
+        );
+    }
+
+    #[test]
+    fn patch2_variants_roundtrip_deterministically() {
+        let mut a = action(
+            0,
+            ActionKind::ArrRemoveQueueItem,
+            ActionTarget::Queue {
+                service: ArrService::Sonarr,
+                id: 3,
+            },
+        );
+        a.verification = vec![
+            VerificationStep::ArrQueueItemAbsent {
+                service: ArrService::Sonarr,
+                id: 3,
+            },
+            VerificationStep::ArrMonitored {
+                media: media_ref(),
+                monitored: true,
+            },
+            VerificationStep::ArrCommandCompleted {
+                service: ArrService::Radarr,
+                media: None,
+            },
+            VerificationStep::JellyfinRefreshed {
+                item_id: Some("x".into()),
+            },
+        ];
+        a.evidence_level = EvidenceLevel::ArrValidatedReplacement;
+        let h = HashedPlan::seal(plan(vec![a])).unwrap();
+        let json = serde_json::to_string(h.plan()).unwrap();
+        let back: ActionPlan = serde_json::from_str(&json).unwrap();
+        assert_eq!(&back, h.plan());
+        assert_eq!(PlanHash::compute(&back).unwrap(), *h.hash());
     }
 }
