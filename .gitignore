@@ -14,3 +14,14 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Rust
+target/
+**/*.rs.bk
+
+# Local databases and runtime data
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+data/
