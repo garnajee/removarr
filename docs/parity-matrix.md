@@ -25,7 +25,7 @@ Last update: pass 1 (after wave 3, domain only).
 | T-15 | `test_smallest_orphan_folder_is_proposed_with_sidecars` | adapt | pending subsystem | -- | issue-engine, plan-engine |
 | T-16 | `test_changed_folder_is_rejected` | keep | pending subsystem | -- | plan-engine, action-runner |
 | T-17 | `test_deletion_never_follows_a_symlink` | keep | pending subsystem | -- | action-runner, fs-engine |
-| T-18 | `test_report_directory_cannot_be_under_media` | adapt | pending subsystem | -- | config-secrets |
+| T-18 | `test_report_directory_cannot_be_under_media` | adapt | partial (config side) | `crates/config/tests/roots.rs::data_dir_must_be_outside_roots_and_contain_none`; report directory under data_dir is pending in reporting | config-secrets, reporting |
 | T-19 | `test_auto_candidate_requires_age_identity_quality_and_language` | superseded (CON-02) | pending subsystem (superseded by CON-02) | -- replacement: ARR-snapshot gate test in plan-engine | plan-engine, arr-api, media-match |
 | T-20 | `test_auto_candidate_refuses_recent_and_failed_repair_paths` | keep | pending subsystem | -- | plan-engine |
 | T-21 | `test_auto_folder_is_all_or_nothing` | keep | pending subsystem | -- | plan-engine |
@@ -33,7 +33,7 @@ Last update: pass 1 (after wave 3, domain only).
 | T-23 | `test_partial_torrent_is_left_stopped_and_reported` | keep | pending subsystem | -- | action-runner |
 | T-24 | `test_id_ranges` | obsolete | pending subsystem (obsolete, principle kept) | -- replacement: explicit-ID selection and unknown-ID rejection in backend-api | backend-api, web-ui |
 | T-25 | `test_api_mapping_stop_recheck_and_safe_delete` | keep | pending subsystem | -- | qbit-api |
-| T-26 | `test_mapping_rejects_path_outside_container_root` | keep (+ `..` case, CON-07) | pending subsystem | -- | config-secrets, qbit-api |
+| T-26 | `test_mapping_rejects_path_outside_container_root` | keep (+ `..` case, CON-07) | covered (config side) | `crates/config/tests/mapping.rs`: `classification`, `traversal_and_garbage_are_invalid`, `ancestor_rule_still_confines_to_roots`, property `confinement_and_round_trip`; `crates/config/tests/parity_redaction.rs`: `dot_dot_never_escapes_even_when_it_would_land_in_another_root`, `prefix_matching_is_case_sensitive_and_component_bounded`; qbit-side wiring pending | config-secrets, qbit-api |
 | T-27 | `test_qbittorrent_v4_uses_pause` | keep | pending subsystem | -- | qbit-api |
 | T-28 | `test_qbittorrent_v5_2_accepts_204_login` | keep | pending subsystem | -- | qbit-api |
 | T-29 | `test_api_failure_is_wrapped` | keep | pending subsystem | -- | qbit-api |
@@ -41,6 +41,6 @@ Last update: pass 1 (after wave 3, domain only).
 | T-31 | `test_auto_mode_repairs_proven_duplicate_without_prompt` | adapt (CON-21, CON-05) | pending subsystem | -- | job-runner, plan-engine, action-runner |
 | T-32 | `test_automatic_cleanup_removes_only_empty_torrent_without_files` | adapt (CON-04, CON-05) | pending subsystem | -- | action-runner, qbit-api, plan-engine |
 
-Count: 32 rows, 1 covered, 31 pending (T-19 superseded, T-24 obsolete, both with replacement owners). No row omitted.
+Count: 32 rows, 2 covered (T-03; T-26 config side), 1 partial (T-18 config side), 29 pending (T-19 superseded, T-24 obsolete, both with replacement owners). No row omitted.
 
 Domain invariants with domain-level tests but no T-xx row: INV-17 (`outcome_from_verification`), INV-21 (gain ids, `aggregate_unique`), INV-13 (plan hash, tamper, approval), INV-15 fail-closed approval (`incomplete_evidence_cannot_be_automatically_approved`), INV-45/INV-12 type separation (`evidence` tests).

@@ -18,11 +18,12 @@ Status values: `todo`, `running`, `done`, `blocked`.
 | 3 | `03-domain-model` | done | 80 domain tests; added ActionTarget, evidence_level/completeness; domain frozen |
 | 4 | `04-db-layer` | done | 60 tests; STRICT tables, intent durable (synchronous=FULL), 7 documented deviations |
 | 4 | `05-config-secrets` | done | 44 tests; LiveMode token, PathMapper, redaction, examples/removarr.toml + .env.example |
-| 5 | `06-fs-engine` | running | |
-| 5 | `08-qbit-api` | running | |
-| 5 | `09-arr-api` | running | |
-| 5 | `10-jellyfin-api` | running | |
-| 6 | `07-media-match` | todo | |
+| 5 | `06-fs-engine` | done | 33 tests; read-only confined walk, 19.8k files in 59 ms (warm); mutate.rs left to 13 per §15.2 |
+| 5 | `08-qbit-api` | done | 37 tests; deleteFiles literal false once; 4.x/5.x; fake_qbit |
+| 5 | `09-arr-api` | done | 51 tests; importMode copy literal; grab gated; opaque release tokens; snapshot/correlate to move into domain (option A) |
+| 5 | `10-jellyfin-api` | done | 22 tests; reader/commander split, LiveMode-gated refresh |
+| 6 | `07-media-match` | running | |
+| 6 | `03-domain-model` patch (arr snapshot/correlate into domain) | running | orchestrator decision: option A from 09 handoff |
 | 7 | `11-issue-engine` | todo | |
 | 8 | `12-plan-engine` | todo | |
 | 9 | `13-action-runner` | todo | |
@@ -39,7 +40,7 @@ Status values: `todo`, `running`, `done`, `blocked`.
 | 18 | `25-sec-audit` | todo | |
 | 19 | `26-sec-fix` | todo | |
 | 20 | `27-release-gate` | todo | |
-| continuous | `21-unit-tests` (from wave 3) | running | pass 1 done (domain, 11 proptests, parity-matrix.md); pass 2 running (config, storage) |
+| continuous | `21-unit-tests` (from wave 3) | running | pass 1 done (domain, 11 proptests, parity-matrix.md); pass 2 done (+14 tests); pass 3 running (fs, qbit, jellyfin) |
 
 ## Checkpoint reviews
 
@@ -53,4 +54,4 @@ Status values: `todo`, `running`, `done`, `blocked`.
 
 ## Last quality gate
 
-After wave 4: fmt OK, clippy -D warnings OK, tests OK (198 passed, 0 ignored). Toolchain: cargo/rustc 1.98.0 (Homebrew, no rustup), Docker 29.7.2, ffprobe available.
+After wave 5: fmt OK, clippy -D warnings OK, tests OK (357 passed, 0 ignored). Safety greps OK (deleteFiles literal false only in qbit/control.rs; importMode copy literal). Toolchain: cargo/rustc 1.98.0 (Homebrew, no rustup), Docker 29.7.2, ffprobe available.
