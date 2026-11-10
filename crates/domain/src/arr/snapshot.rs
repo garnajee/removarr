@@ -7,9 +7,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use removarr_domain::arr::{ArrFileRef, ArrQualitySnapshot};
-use removarr_domain::error::PortError;
-use removarr_domain::ports::ArrRead;
+use crate::arr::{ArrFileRef, ArrQualitySnapshot};
+use crate::error::PortError;
+use crate::ports::ArrRead;
 use serde::{Deserialize, Serialize};
 
 /// One reason a stored snapshot no longer matches ARR.

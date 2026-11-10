@@ -202,3 +202,5 @@ c.by_hash(&hash) / c.by_path(&rooted) / c.for_content(hashes, paths) -> Correlat
 - Gates: `importMode` appears once in `crates/arr/src` with `"copy"`; no `move`/`auto` word in `crates/arr/src`; no
   `LiveMode::` in `crates/arr/src`; no `apikey` query; domain and workflows dependency greps print nothing.
 - No network beyond loopback and crates.io; no real services or secrets; nothing committed.
+
+Note: the pure `snapshot` and `correlate` modules now live in `removarr_domain::arr` (re-exported here); see the "Patch: ARR pure rules" section of `docs/handoffs/03-domain-model.md`.

@@ -11,11 +11,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use removarr_domain::arr::{
-    ArrHistoryRecord, ArrLibraryEntry, ArrMediaRef, ArrQueueItem, ArrService,
-};
-use removarr_domain::path::RootedPath;
-use removarr_domain::torrent::{MappedPath, TorrentHash};
+use crate::arr::{ArrHistoryRecord, ArrLibraryEntry, ArrMediaRef, ArrQueueItem, ArrService};
+use crate::path::RootedPath;
+use crate::torrent::{MappedPath, TorrentHash};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -270,7 +268,7 @@ mod tests {
             media: sonarr(9, &[901]),
             event_type: "grabbed".into(),
             source_title: "x".into(),
-            date: removarr_domain::time::Timestamp(0),
+            date: crate::time::Timestamp(0),
         }]);
         assert!(matches!(c.by_hash(&h('a')), Correlation::Ambiguous(_)));
     }

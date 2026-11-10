@@ -6,7 +6,7 @@ use std::collections::BTreeSet;
 use std::sync::Mutex as StdMutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use removarr_config::{PathMapper, Secret, redact_text};
+use removarr_config::{PathMapper, Secret};
 use removarr_domain::error::{ErrorClass, PortError};
 use removarr_domain::torrent::{TorrentHash, TorrentInfo};
 use reqwest::{Client, Method, Url, redirect};
@@ -74,43 +74,29 @@ impl Inner {
         })
     }
 
-    /// Strips the password and sensitive key/value shapes from text coming from the network.
-    pub(crate) fn scrub(&self, s: &str) -> String {
-        let pw = self.password.expose();
-        let s = if pw.is_empty() {
-            s.to_string()
-        } else {
-            s.replace(pw, "[REDACTED]")
-        };
-        redact_text(&s)
-    }
-
     fn net_err(&self, e: &reqwest::Error) -> PortError {
+        // Kind only: no URL, host or library message (which may echo either).
         let what = if e.is_timeout() {
-            "request timed out".to_string()
+            "request timed out"
         } else if e.is_connect() {
-            "connection failed".to_string()
+            "connection failed"
+        } else if e.is_body() || e.is_decode() {
+            "response body interrupted"
         } else {
-            self.scrub(&e.to_string().replace(&self.base, "<qbittorrent>"))
+            "transport error"
         };
         err(ErrorClass::Unavailable, format!("qbittorrent: {what}"))
     }
 
-    fn status_err(&self, status: u16, body: &[u8]) -> PortError {
+    /// Status only: upstream bodies are never echoed (they could carry a SID or host).
+    fn status_err(&self, status: u16) -> PortError {
         let class = match status {
             401 | 403 => ErrorClass::Unauthorized,
             404 => ErrorClass::NotFound,
             408 | 429 | 500..=599 => ErrorClass::Unavailable,
             _ => ErrorClass::Rejected,
         };
-        let snippet: String = String::from_utf8_lossy(body).chars().take(120).collect();
-        err(
-            class,
-            format!(
-                "qbittorrent returned HTTP {status}: {}",
-                self.scrub(snippet.trim())
-            ),
-        )
+        err(class, format!("qbittorrent returned HTTP {status}"))
     }
 
     async fn send_once(
@@ -181,7 +167,7 @@ impl Inner {
                 ErrorClass::Unauthorized,
                 "qbittorrent refused the login (HTTP 403, possibly banned)",
             )),
-            _ => Err(self.status_err(status, &body)),
+            _ => Err(self.status_err(status)),
         }
     }
 
@@ -227,10 +213,10 @@ impl Inner {
                 if attempt == 0 {
                     continue;
                 }
-                return Err(self.status_err(status, &body));
+                return Err(self.status_err(status));
             }
             if !(200..300).contains(&status) {
-                return Err(self.status_err(status, &body));
+                return Err(self.status_err(status));
             }
             return Ok(body);
         }

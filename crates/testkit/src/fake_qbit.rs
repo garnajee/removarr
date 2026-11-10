@@ -156,6 +156,7 @@ struct FakeState {
     torrents: Vec<FakeTorrent>,
     requests: Vec<Recorded>,
     delay: Duration,
+    path_delay: BTreeMap<String, Duration>,
     oversize: Option<usize>,
     forced: BTreeMap<String, (u16, String)>,
     sid_valid: bool,
@@ -196,6 +197,7 @@ impl FakeQbit {
             torrents: Vec::new(),
             requests: Vec::new(),
             delay: Duration::ZERO,
+            path_delay: BTreeMap::new(),
             oversize: None,
             forced: BTreeMap::new(),
             sid_valid: false,
@@ -241,6 +243,11 @@ impl FakeQbit {
     /// Delay applied to every non-login response.
     pub fn set_delay(&self, d: Duration) {
         lock(&self.state).delay = d;
+    }
+
+    /// Delay for responses whose path ends with `suffix` (added to nothing else).
+    pub fn set_path_delay(&self, suffix: &str, d: Duration) {
+        lock(&self.state).path_delay.insert(suffix.to_string(), d);
     }
 
     /// Makes `torrents/info` answer a valid JSON array padded to about `bytes` bytes.
@@ -433,7 +440,12 @@ async fn handle(State(shared): State<Shared>, req: Request) -> Response {
             .find(|(k, _)| path.ends_with(k.as_str()))
             .map(|(_, v)| v.clone());
         let aborted = st.aborted.iter().any(|k| path.ends_with(k.as_str()));
-        (st.delay, forced, aborted, st.oversize)
+        let extra = st
+            .path_delay
+            .iter()
+            .find(|(k, _)| path.ends_with(k.as_str()))
+            .map_or(Duration::ZERO, |(_, d)| *d);
+        (st.delay + extra, forced, aborted, st.oversize)
     };
 
     if path == "/api/v2/auth/login" {

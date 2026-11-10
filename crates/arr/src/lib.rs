@@ -5,8 +5,8 @@
 //!   command status and media management settings. It can only issue GET requests.
 //! - [`ArrCommander`] implements `ArrCommands`. It can only be built with a `LiveMode` token,
 //!   and each mutator checks its capability flag before sending anything.
-//! - [`snapshot`] detects quality snapshot changes; [`correlate`] maps download hashes and
-//!   paths to ARR media. Both are pure over domain types.
+//! - [`snapshot`] and [`correlate`] are re-exports of `removarr_domain::arr::{snapshot,
+//!   correlate}`, the single implementation of the pure ARR rules.
 //!
 //! ARR is the only quality authority: this crate reports ARR's profiles, Custom Format
 //! scores, cutoffs and accept/reject verdicts verbatim and never ranks codecs, groups or
@@ -19,8 +19,7 @@ mod http;
 mod read;
 mod time;
 
-pub mod correlate;
-pub mod snapshot;
+pub use removarr_domain::arr::{correlate, snapshot};
 
 pub use commands::ArrCommander;
 pub use error::ArrError;

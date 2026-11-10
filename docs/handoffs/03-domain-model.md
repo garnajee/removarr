@@ -121,3 +121,16 @@ No other crate or manifest was touched; `Cargo.lock` is unchanged.
 - `cargo clippy --workspace --all-targets -- -D warnings`: pass, no warnings.
 - `cargo test --workspace`: pass (domain 80 tests, testkit 3).
 - Dependency gates from `docs/development.md` (domain deps, `std::(fs|process|net)`, workflows, web): all print nothing.
+
+## Patch: ARR pure rules (between waves 5 and 6)
+
+The pure ARR logic moved from `removarr-arr` into the domain so `workflows` (issue-engine 11, plan-engine 12) can use it without depending on the arr crate. `crates/domain/src/arr.rs` became `crates/domain/src/arr/mod.rs`, with two new submodules. Behavior and unit tests are unchanged; `removarr-arr` re-exports them (`removarr_arr::{snapshot, correlate}`), so there is one implementation and arr's integration tests are untouched.
+
+Public API, `removarr_domain::arr::snapshot`:
+- `SnapshotChange` (enum of field-level reasons), `detect_changes(stored, current) -> Vec<SnapshotChange>` (empty only when both fingerprints are valid and equal).
+- `SnapshotValidity { Unchanged, Changed(Vec<_>), Unavailable(PortError) }` with `is_unchanged()`; `async revalidate(&dyn ArrRead, &ArrQualitySnapshot) -> SnapshotValidity` (fail-closed).
+
+Public API, `removarr_domain::arr::correlate`:
+- `Correlation { NotFound, Unique(ArrMediaRef), Ambiguous(Vec<_>), Unidentified }`, `unique()`.
+- `Correlator` (`new`, `add_queue`, `add_history`, `add_library`, `by_hash`, `by_path`, `for_content`).
+- `ImportActivity`, `import_activity`, `import_in_progress` (unknown state counts as in progress); `QueueHealth`, `queue_health` (informational only, never a hardlink verdict, INV-39).

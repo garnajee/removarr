@@ -1,5 +1,8 @@
 //! Sonarr/Radarr model. ARR is the only quality authority: nothing here ranks codecs or groups.
 
+pub mod correlate;
+pub mod snapshot;
+
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
 

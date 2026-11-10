@@ -343,7 +343,7 @@ async fn mutation_timeout_is_not_retried_and_reports_unknown_outcome() {
     let r = QbitReader::new(s).unwrap();
     r.version().await.unwrap();
     let c = controller(&r);
-    f.set_delay(Duration::from_millis(400));
+    f.set_path_delay("/torrents/stop", Duration::from_millis(400));
     let err = c.stop(&set(&['1'])).await.unwrap_err();
     assert_eq!(err.class, ErrorClass::Unavailable);
     assert!(err.detail.contains("outcome unknown"), "{err}");
@@ -682,3 +682,54 @@ async fn from_config_reflects_configuration() {
     let cfg = Config::from_sources(None, &env).unwrap();
     assert!(QbitReader::from_config(&cfg).unwrap().is_ok());
 }
+
+#[tokio::test]
+async fn fresh_reader_without_listing_refuses_unmapped_and_unlisted_hashes() {
+    let e = env();
+    let f = fake5().await;
+    f.add_torrent(parity_escape_torrent(NOW));
+    // No torrents()/files()/snapshot() call on this reader.
+    let c = controller(&reader(&f, &e));
+    for bad in ['c', 'e'] {
+        for op in 0..4 {
+            let s = set(&['1', bad]);
+            let r = match op {
+                0 => c.stop(&s).await,
+                1 => c.start(&s).await,
+                2 => c.recheck(&s).await,
+                _ => c.remove_tasks_keep_data(&s).await,
+            };
+            assert_eq!(r.unwrap_err().class, ErrorClass::Rejected, "{bad} op {op}");
+        }
+    }
+    assert_eq!(f.mutation_count(), 0);
+    // A hash absent from the current listing is refused too.
+    let ghost = removarr_domain::torrent::TorrentHash::new("9".repeat(39) + "0").unwrap();
+    let err = c.stop(&[ghost].into_iter().collect()).await.unwrap_err();
+    assert_eq!(err.class, ErrorClass::NotFound);
+    assert_eq!(f.mutation_count(), 0);
+    // A mapped hash still works on a fresh reader.
+    c.stop(&set(&['1'])).await.unwrap();
+    assert_eq!(f.mutation_count(), 1);
+}
+
+#[tokio::test]
+async fn errors_never_echo_upstream_body_sid_or_host() {
+    let e = env();
+    let f = fake5().await;
+    let r = reader(&f, &e);
+    let host = f.url().replace("http://", "");
+    let body = format!("{FAKE_SID_ECHO} {host} {FAKE_PASSWORD}");
+    for status in [400u16, 401, 403, 404, 500, 503] {
+        f.force_response("/torrents/info", status, &body);
+        let err = r.torrents().await.unwrap_err();
+        let text = format!("{err} {err:?}");
+        for secret in [FAKE_SID_ECHO, host.as_str(), FAKE_PASSWORD, "127.0.0.1"] {
+            assert!(!text.contains(secret), "{status}: {text}");
+        }
+    }
+    drop(f);
+    tokio::time::sleep(Duration::from_millis(50)).await;
+}
+
+const FAKE_SID_ECHO: &str = "SID-echo-0123456789";

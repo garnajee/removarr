@@ -106,3 +106,17 @@ Fails200, Forbidden403, Garbage200})`, `set_torrents`, `add_torrent`, `set_delay
   `cargo tree -p removarr-qbit -e normal` shows only domain and config as internal dependencies.
 - Legacy parity routed here: T-25, T-26 (qbit part: escaping path), T-27 (4.x pause), T-28 (204 login), T-29 (API failure wrapped), T-30 and T-32
   (qbit half: no mutation without live token, delete with keep-data flag). 21 owns the matrix rows.
+
+## Fix after unit-tests pass 3
+
+1. Fail-closed mutation. `QbitController::mutate` now lists torrents itself (one `torrents/info` read) immediately before every mutation. A hash absent
+   from that listing is refused with `NotFound`; a hash whose paths are `NoRule`/`Invalid` (or whose file candidates were found uncertain earlier by
+   `files()`) is refused with `Rejected`. Both happen before any mutating HTTP call, on a fresh reader too. Cost: one extra read per mutation. Callers no
+   longer need a prior `snapshot()`. Note: removing or starting an already-removed hash now returns `NotFound` (recovery code must treat that as
+   "already gone" only after its own re-read). Test: `fresh_reader_without_listing_refuses_unmapped_and_unlisted_hashes` (zero mutating requests).
+2. Error redaction. Errors are now status or kind only ("qbittorrent returned HTTP 500", "qbittorrent: request timed out"): no upstream body, no host,
+   no library message. Test: `errors_never_echo_upstream_body_sid_or_host`. `parity_safety.rs` was not changed (its assertions still hold).
+3. testkit: `FakeQbit::set_path_delay(suffix, d)` (the mutation-timeout test now delays only `/torrents/stop`, since the pre-mutation listing is a read).
+
+Commands: fmt, `cargo clippy -p removarr-qbit --all-targets -- -D warnings` clean; `cargo test -p removarr-qbit` pass (32 adapter, 9 parity_safety, 7 rules);
+`deleteFiles` still occurs once in `crates/qbit/src`.

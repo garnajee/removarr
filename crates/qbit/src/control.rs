@@ -68,6 +68,21 @@ impl QbitController {
         }
         // Authentication uncertainty blocks mutation: login and version discovery must succeed.
         let mut version = self.inner.version().await?;
+        // Fail closed: mapping status always comes from a listing taken right now, never from an
+        // earlier call. Every hash must be listed and have certain paths.
+        let listed: BTreeSet<TorrentHash> = self
+            .inner
+            .list_torrents()
+            .await?
+            .into_iter()
+            .map(|t| t.hash)
+            .collect();
+        if hashes.iter().any(|h| !listed.contains(h)) {
+            return Err(PortError::new(
+                ErrorClass::NotFound,
+                "torrent not in the current listing; mutation refused",
+            ));
+        }
         let uncertain = hashes
             .iter()
             .filter(|h| self.inner.mapping_uncertain(h))
