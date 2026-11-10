@@ -15,9 +15,9 @@ Status values: `todo`, `running`, `done`, `blocked`.
 | 0 | `00-legacy-audit` | done | 32 tests mapped, 51 INV, 30 REJ, 32 CON, 7 open questions for system-arch (OQ-01/05/06/07/09/11/12) |
 | 1 | `01-system-arch` | done | architecture.md (19 sections), ADR 0001-0010, 13 crates, OQs resolved; versions from memory, 02 must confirm |
 | 2 | `02-rust-scaffold` | done | 14 crates, Cargo.lock, all versions resolved in range, no deviations |
-| 3 | `03-domain-model` | running | |
-| 4 | `04-db-layer` | todo | |
-| 4 | `05-config-secrets` | todo | |
+| 3 | `03-domain-model` | done | 80 domain tests; added ActionTarget, evidence_level/completeness; domain frozen |
+| 4 | `04-db-layer` | running | |
+| 4 | `05-config-secrets` | running | |
 | 5 | `06-fs-engine` | todo | |
 | 5 | `08-qbit-api` | todo | |
 | 5 | `09-arr-api` | todo | |
@@ -39,7 +39,7 @@ Status values: `todo`, `running`, `done`, `blocked`.
 | 18 | `25-sec-audit` | todo | |
 | 19 | `26-sec-fix` | todo | |
 | 20 | `27-release-gate` | todo | |
-| continuous | `21-unit-tests` (from wave 3) | todo | |
+| continuous | `21-unit-tests` (from wave 3) | running | pass 1: domain crate |
 
 ## Checkpoint reviews
 
@@ -53,4 +53,4 @@ Status values: `todo`, `running`, `done`, `blocked`.
 
 ## Last quality gate
 
-After wave 2: fmt OK, clippy -D warnings OK, tests OK (1 passed). Toolchain: cargo/rustc 1.98.0 (Homebrew, no rustup), Docker 29.7.2, ffprobe available.
+After wave 3: fmt OK, clippy -D warnings OK, tests OK (83 passed). Toolchain: cargo/rustc 1.98.0 (Homebrew, no rustup), Docker 29.7.2, ffprobe available.
