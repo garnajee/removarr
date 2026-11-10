@@ -14,7 +14,7 @@ Status values: `todo`, `running`, `done`, `blocked`.
 |---|---|---|---|
 | 0 | `00-legacy-audit` | done | 32 tests mapped, 51 INV, 30 REJ, 32 CON, 7 open questions for system-arch (OQ-01/05/06/07/09/11/12) |
 | 1 | `01-system-arch` | done | architecture.md (19 sections), ADR 0001-0010, 13 crates, OQs resolved; versions from memory, 02 must confirm |
-| 2 | `02-rust-scaffold` | todo | |
+| 2 | `02-rust-scaffold` | running | |
 | 3 | `03-domain-model` | todo | |
 | 4 | `04-db-layer` | todo | |
 | 4 | `05-config-secrets` | todo | |
@@ -45,7 +45,7 @@ Status values: `todo`, `running`, `done`, `blocked`.
 
 | Checkpoint | Verdict | Iterations | Report |
 |---|---|---|---|
-| CP1 architecture (after wave 1) | PASS (iter 2); follow-up patch for CP1-F20 (major, before wave 3) + minors F19/F21-F25 | 2/3 | `docs/reviews/cp1.md` |
+| CP1 architecture (after wave 1) | PASS (iter 2); follow-up F20 + F19/F21-F25 fixed | 2/3 | `docs/reviews/cp1.md` |
 | CP2 tier 3 (deletions) | pending | 0/3 | `docs/reviews/cp2-tier3.md` |
 | CP2 tier 4 (ARR replacement) | pending | 0/3 | `docs/reviews/cp2-tier4.md` |
 | CP2 tier 5 (automatic mode) | pending | 0/3 | `docs/reviews/cp2-tier5.md` |

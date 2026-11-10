@@ -201,13 +201,13 @@ fields but must not change meaning.
 | `fs` | `EntryKind { File, Dir, Symlink, Other }`, `PhysicalId { dev: u64, ino: u64 }`, `EntrySignature { kind, dev, ino, size, nlink, mtime_ns, mode, uid, gid }`, `FsEntry { path, sig, allocated: u64 (st_blocks*512), symlink_target: Option<String> (display only) }`, `IoKind { NotFound, PermissionDenied, CrossDevice, AlreadyExists, NotADirectory, Other }`, `ScanErrorRecord { path, io: IoKind, message }`, `ProtectedZone { path, reason: QbitInternal | MountBoundary | NonUtf8Name }`, `RootInventory { root, root_sig, entries, errors, protected, finished: bool }`, `DirSnapshot { dir, entries: BTreeMap<RelPath, EntrySignature> }` (includes `""` for the dir itself), `PermissionFinding { path, kind: OwnerMismatch { uid, gid } \| ParentNotWritable \| NotWritableByOwner }` |
 | `session` | `AuditSession { id, started_at, finished_at, status, roots: Vec<RootStatus>, services: Vec<ServiceStatus>, metrics: SessionMetrics }`, `SessionStatus { Running, Complete, CompleteWithErrors, Cancelled, Interrupted, Failed }`, `RootStatus { root, scanned: bool, error_count, protected_count }`, `ServiceKind { Qbittorrent, Sonarr, Radarr, Jellyfin }`, `ServiceStatus { service, state: ServiceState, observed_at }`, `ServiceState { Ok { version }, Unavailable { reason }, AuthRejected, NotConfigured, MappingErrors { count } }` |
 | `torrent` | `TorrentHash(String)` (lower hex, 40 or 64), `TorrentState` (every documented 4.x and 5.x state + `Unknown(String)`; `parse(&str)` is case-sensitive per API), `fn destructive_eligible(state, progress) -> bool` (INV-28: `progress >= 1.0` **and** state in `uploading`, `stalledUP`, `queuedUP`, `forcedUP`, `pausedUP`, `stoppedUP`), `fn is_checking(state)`, `fn was_active(state)` (DR-27), `MappedPath { Mapped(RootedPath), OutsideRoots, DeclaredExternal, NoRule, Invalid { reason } }` (each variant keeps the raw service path string for display), `TorrentInfo { hash, name, state, progress: f64, added_on, completion_on: Option<Timestamp>, category, size, save_path: MappedPath, download_path: Option<MappedPath> (qBittorrent >= 4.4 temp folder; `None` when unset or empty), content_path: MappedPath }`, `TorrentFile { index, name, size, priority, progress: f64, candidates: Vec<MappedPath> }`. `candidates` = **every** plausible on-disk location, in DR-23 order: from `save_path`, from `download_path`, from `content_path`, each immediately followed by its `.!qB` variant (CP1-F03). `fn is_working_file(name) -> bool` (suffix `.!qB`, or a libtorrent `.parts` file: name `.parts` or `.<hash>.parts`), `TorrentSnapshot { taken_at, version: String, major: u8, torrents, files: BTreeMap<TorrentHash, Vec<TorrentFile>> }`, `fn evaluate_recheck(before, observations) -> RecheckStatus { Verified, Pending, TimedOut, Failed }` (CON-12: verified only if checking was observed **and** has ended, `progress >= 1.0` and state allowlisted). Tracker URLs and magnet URIs are **not modeled** (INV-31). |
-| `arr` | `ArrService { Sonarr, Radarr }`, `ArrMediaRef { service, media_id: i64, episode_ids: Vec<i64> }`, `MediaKind { Movie, Episode, Special }`, `MediaIdentity { kind, arr: Option<ArrMediaRef>, external_ids: BTreeMap<String,String>, title, year, season, episode, absolute }`, `ArrFileRef { file_id, path: MappedPath, quality, custom_formats: Vec<String>, cf_score: i64, cutoff_not_met: bool, languages: Vec<String> }`, `ArrCandidateDecision { subject: String, size, quality, custom_formats, cf_score, episode_ids: Vec<i64> (episodes ARR assigns to this file), approved: bool, rejections: Vec<String>, source: ManualImportPreview \| Parse }`, `ArrQualitySnapshot { service, service_version, media, profile_id, profile_name, cutoff, upgrade_allowed, min_format_score, cutoff_format_score, format_scores: BTreeMap<String,i64>, current_files: Vec<ArrFileRef>, candidates: Vec<ArrCandidateDecision>, captured_at, fingerprint }` (fingerprint = sha256 of canonical profile + scores + current files, INV-34), `ArrQueueItem { id, download_id: Option<TorrentHash>, media: Option<ArrMediaRef>, status, tracked_state, messages }`, `ArrHistoryRecord { download_id, media, event_type, source_title, date }`, `ArrLibraryEntry { media, identity, file: ArrFileRef, monitored }`, `ArrEpisode { id, series_id, season, episode, absolute: Option<i32>, scene_absolute: Option<i32>, scene_season: Option<i32>, scene_episode: Option<i32>, has_file, file_id: Option<i64>, monitored, aired: bool }` (CP1-F04), `ReleaseRef { guid, indexer_id }`, `ReleaseSearchResult { release: ReleaseRef, indexer, title, size, seeders: Option<u32>, leechers: Option<u32>, age_days, protocol, quality, custom_formats, cf_score, approved, rejections, download_allowed }` and `fn sort_search_results(&mut [ReleaseSearchResult], current_allocated: u64)` (ARR approval first, then CF score, then estimated gain = current allocated bytes minus release size; CP1-F06), `CoverageProof { media: ArrMediaRef, expected: BTreeSet<i64>, mapping: BTreeMap<i64, RootedPath>, specials_included: bool }` |
+| `arr` | `ArrService { Sonarr, Radarr }`, `ArrMediaRef { service, media_id: i64, episode_ids: Vec<i64> }`, `MediaKind { Movie, Episode, Special }`, `MediaIdentity { kind, arr: Option<ArrMediaRef>, external_ids: BTreeMap<String,String>, title, year, season, episode, absolute }`, `ArrFileRef { file_id, path: MappedPath, quality, custom_formats: Vec<String>, cf_score: i64, cutoff_not_met: bool, languages: Vec<String> }`, `ArrCandidateDecision { subject: String, size, quality, custom_formats, cf_score, episode_ids: Vec<i64> (episodes ARR assigns to this file), approved: bool, rejections: Vec<String>, source: ManualImportPreview \| Parse }`, `ArrQualitySnapshot { service, service_version, media, profile_id, profile_name, cutoff, upgrade_allowed, min_format_score, cutoff_format_score, format_scores: BTreeMap<String,i64>, current_files: Vec<ArrFileRef>, candidates: Vec<ArrCandidateDecision>, media_management: Option<ArrMediaManagement>, captured_at, fingerprint }` (fingerprint = sha256 of canonical profile + scores + current files, INV-34), `ArrQueueItem { id, download_id: Option<TorrentHash>, media: Option<ArrMediaRef>, status, tracked_state, messages }`, `ArrHistoryRecord { download_id, media, event_type, source_title, date }`, `ArrLibraryEntry { media, identity, file: ArrFileRef, monitored }`, `ArrEpisode { id, series_id, season, episode, absolute: Option<i32>, scene_absolute: Option<i32>, scene_season: Option<i32>, scene_episode: Option<i32>, has_file, file_id: Option<i64>, monitored, aired: bool }` (CP1-F04), `ReleaseRef { guid, indexer_id }`, `ReleaseSearchResult { release: ReleaseRef, indexer, title, size, seeders: Option<u32>, leechers: Option<u32>, age_days, protocol, quality, custom_formats, cf_score, approved, rejections, download_allowed }` and `fn sort_search_results(&mut [ReleaseSearchResult], current_allocated: u64)` (ARR approval first, then CF score, then estimated gain = current allocated bytes minus release size; CP1-F06), `CoverageProof { media: ArrMediaRef, expected: BTreeSet<i64>, mapping: BTreeMap<i64, RootedPath>, specials_included: bool }`, `ArrMediaManagement { recycle_bin: Option<MappedPath>, recycle_bin_cleanup_days: Option<u32>, hardlinks_enabled: bool, captured_at }` (CP1-F20; stored in `ArrQualitySnapshot.media_management` and included in its fingerprint), `OldFileRecovery { OtherLink(RootedPath), RecycleBin, Unrecoverable }` |
 | `jellyfin` | `JellyfinItemRef { id, kind, name, path: MappedPath, series, season, episode, provider_ids }`, `JellyfinLibrary { name, locations: Vec<MappedPath> }` |
 | `media` | `ProbeReport { duration_s: Option<f64>, video: Vec<VideoStream>, audio: Vec<AudioStream { codec, language, channels }>, subtitles: Vec<SubtitleStream> }` |
 | `evidence` | `ContentProof { None, NameSize, Semantic { score_milli: u32 }, Sampled, Identical { compared_at }, Differs { offset } }`, `IdentityProof { None, NameParse { score_milli }, ArrMatched, Ambiguous }`, `QualityEvidence { None, ArrSnapshot { fingerprint } }` (three separate dimensions: content, media identity and quality, CONTEXTE §9.3), `Provenance { Filesystem { session }, Qbittorrent { taken_at }, Arr { service, captured_at }, Jellyfin { at }, Ffprobe { at }, Computed }`, `Evidence { kind: EvidenceKind (typed payloads), provenance, observed_at }`, `MatchCandidate { a: RootedPath, b: RootedPath, sig_a, sig_b, identity: IdentityProof, content: ContentProof, reasons: Vec<String>, session }`. This is the persisted funnel output. A proof is valid only while both current inventory signatures equal `sig_a`/`sig_b` (CP1-F07). |
 | `issue` | `IssueCategory` (section 4.2), `Severity { Info, Warning, Critical }`, `Outcome { Consolidate, DeleteReplaced, KeepManual, KeepSample }`, `Unit { File(RootedPath), Folder { dir, members, annexes }, Torrent(TorrentHash), Pair { a, b } }`, `BlockerCode` (section 4.3), `Blocker { code, detail }`, `Issue { id, category, subject, unit, severity, outcome, evidence, blockers, torrent_hashes: BTreeSet, logical_bytes, potential_bytes, age_basis: Timestamp, first_seen_at, session }` |
 | `candidate` | `CandidateState` per CONTEXTE §6.4 / CTX-12 (`Observed, Identified, AmbiguousManual, Candidate, Rejected, Planned, PlanExpired, Approved, Executing, FailedCompensated, FailedNeedsReview, Executed, Verified, Closed`). It is **derived, not stored** (CP1-F18): `fn derive_candidate_state(issue: Option<&Issue>, plan: Option<PlanStatus>, outcome: Option<&ActionOutcome>) -> CandidateState`, used by `reporting` for display. The stored, enforced state machine is `PlanStatus` (below). `ActionOutcome::Verified` is the only path to `Verified`. |
-| `plan` | `PlanMode { DryRun, Live }`, `PlanOrigin { User, AutoPolicy }`, `ActionKind` (section 13), `fn ActionKind::tier()`, `fn ActionKind::capability()`, `Precondition { EntryUnchanged { path, sig, compare_nlink }, DirUnchanged { snapshot }, NoScanErrorUnder { path }, TorrentStates { states: BTreeMap<TorrentHash,(TorrentState,f64)> }, NoTorrentReferences { path }, ArrFingerprint { media, fingerprint }, NoArrImport { media, hashes }, SameDevice { a, b }, ServiceAvailable(ServiceKind), ConfigFingerprint(String) }`, `VerificationStep { InodeEquals { path, phys }, Absent { path }, RecheckVerified { hashes }, TorrentAbsent { hashes }, ArrCurrentFile { media, path }, JellyfinRecognized { path }, ModeEquals { path, mode }, PathStillHasInode { path, phys } (completed source unchanged after an ARR import, CP1-F01), ArrQueueHasRelease { service, release } }`, `PlannedAction { index, kind, preconditions, verification, expected_gain: GainEstimate, depends_on: Vec<u32>, torrent_hashes }`, `ActionPlan { id, created_at, expires_at, mode, origin, session, config_fingerprint, actions, excluded: Vec<(SubjectKey, Vec<Blocker>)>, lock_roots: BTreeSet<RootId>, torrent_states, arr_snapshots, gains: PlanGains }`, `PlanHash(String)` = sha256 hex of canonical `serde_json` bytes of `ActionPlan`, `PlanStatus { Draft, Approved, Executing, Executed, PartiallyExecuted, Failed, Expired, Invalidated, Discarded, Interrupted }` with `fn PlanStatus::can_transition_to(self, next) -> bool` (explicit table, enforced by `PlanStore::transition`. Simulations do not change the status; see section 6), `Approval { plan_id, plan_hash, approved_at, by: User \| AutoPolicy, confirmed_count, confirmed_torrent_removals: u32, acknowledged_samples: Vec<RootedPath> }` |
+| `plan` | `PlanMode { DryRun, Live }`, `PlanOrigin { User, AutoPolicy }`, `ActionKind` (section 13), `fn ActionKind::tier()`, `fn ActionKind::capability()`, `Precondition { EntryUnchanged { path, sig, compare_nlink }, DirUnchanged { snapshot }, NoScanErrorUnder { path }, TorrentStates { states: BTreeMap<TorrentHash,(TorrentState,f64)> }, NoTorrentReferences { path }, ArrFingerprint { media, fingerprint }, NoArrImport { media, hashes }, SameDevice { a, b }, ServiceAvailable(ServiceKind), ConfigFingerprint(String), OldCoverageRecoverable { old_files: Vec<(RootedPath, PhysicalId, OldFileRecovery)> } (CP1-F20) }`, `VerificationStep { InodeEquals { path, phys }, Absent { path }, RecheckVerified { hashes }, TorrentAbsent { hashes }, ArrCurrentFile { media, path }, JellyfinRecognized { path }, ModeEquals { path, mode }, PathStillHasInode { path, phys } (completed source unchanged after an ARR import, CP1-F01), ArrQueueHasRelease { service, release }, OldFileAccounted { path, recovery } (where each replaced old media file went, CP1-F20) }`, `PlannedAction { index, kind, preconditions, verification, expected_gain: GainEstimate, depends_on: Vec<u32>, torrent_hashes }`, `ActionPlan { id, created_at, expires_at, mode, origin, session, config_fingerprint, actions, excluded: Vec<(SubjectKey, Vec<Blocker>)>, lock_roots: BTreeSet<RootId>, torrent_states, arr_snapshots, gains: PlanGains }`, `PlanHash(String)` = sha256 hex of canonical `serde_json` bytes of `ActionPlan`, `PlanStatus { Draft, Approved, Executing, Executed, PartiallyExecuted, Failed, Expired, Invalidated, Discarded, Interrupted }` with `fn PlanStatus::can_transition_to(self, next) -> bool` (explicit table, enforced by `PlanStore::transition`. Simulations do not change the status; see section 6), `Approval { plan_id, plan_hash, approved_at, by: User \| AutoPolicy, confirmed_count, confirmed_torrent_removals: u32, acknowledged_samples: Vec<RootedPath>, acknowledged_unrecoverable: Vec<RootedPath> (CP1-F20) }` |
 | `journal` | `JournalStep { FsProbeHardlink, FsReplaceWithHardlink, FsRemoveFile, FsRemoveTree, FsRemoveEmptyDir, FsSetMode, QbitStop, QbitStart, QbitRecheck, QbitRemoveKeepData, ArrManualImport, ArrRemoveQueueItem, ArrSetMonitored, ArrGrab, ArrRescan, JellyfinRefresh }`, `IntentRecord { id, action: ActionRef, step, mode (Live \| Simulated), target: serde_json::Value, observed: serde_json::Value, expected_gain, hashes, created_at }`, `StepOutcome { Done { final_state }, Failed { class, message }, Simulated, Skipped { reason } }`, `ResultRecord { intent_id, outcome, at }`, `ActionOutcome { Verified, ExecutedUnverified { reason }, Failed { class }, Compensated, FailedNeedsReview, Simulated, NotExecuted { blockers } }`, `UnfinishedIntent` |
 | `gain` | `GainKind { AttributableDeletion, AttributableConsolidation, AddedCost }`, `GainRecord { gain_id, action, kind, phys, bytes, recorded_at }`, `fn gain_id(phys, size, mtime_ns) -> GainId` (sha256-derived; the DB enforces UNIQUE, so the same freed inode can never be counted twice, CON-13), `fn estimate_reclaimable(selected: &BTreeMap<PhysicalId, (u32 selected_links, u64 nlink, u64 allocated)>, held_elsewhere: &BTreeSet<PhysicalId>) -> u64` (DR-04, T-03), `ObservedDelta { root, free_before, free_after_local, free_after_services }`, `PlanGains { logical, attributable, added, net }` |
 | `policy` | `fn is_sample(&RelPath) -> bool` (OQ-01), `RiskTier { T1, T2, T3, T4, T5 }`, `Capability` (section 13) |
@@ -252,7 +252,8 @@ Incomplete -> `incomplete_stalled` (FX-36 via T_O) and `incomplete_orphan` (FX-3
 `DuplicateTarget`, `MediaRootDeletion`, `CapabilityDisabled`, `NotInBuild`, `DryRunOnly`,
 `ProtectedZone`, `Symlink`, `NumberingMismatch` (parsed numbering disagrees with ARR, CP1-F04),
 `QueueItemHidesError` (CP1-F05), `ReleaseNotInSearch` (CP1-F06), `ArrImportMoved` (the completed source
-path vanished or changed inode after an ARR import, CP1-F01).
+path vanished or changed inode after an ARR import, CP1-F01), `OldCoverageUnrecoverable` and
+`ArrHardlinksDisabled` (CP1-F20).
 
 **Units containing a protected zone** (any `ProtectedZone` inside the unit's subtree, including
 `QbitInternal`) always carry `ProtectedZone` and can never be planned (CP1-F19).
@@ -335,6 +336,7 @@ pub trait ArrRead: Send + Sync {
     async fn search_releases(&self, media: &ArrMediaRef)
         -> Result<Vec<ReleaseSearchResult>, PortError>;                      // GET /release: never grabs
     async fn command_status(&self, id: i64) -> Result<CommandState, PortError>;
+    async fn media_management(&self) -> Result<ArrMediaManagement, PortError>; // GET config/mediamanagement: recycle bin + hardlinks (CP1-F20)
 }
 #[async_trait::async_trait]
 pub trait ArrCommands: Send + Sync {        // live impl requires LiveMode + per-method capability
@@ -482,6 +484,12 @@ pub trait MediaProbe: Send + Sync {
      `move` and `auto` never appear as an import mode (CP1-F01);
    - `LiveMode::` is used only in `config`, the four adapter constructors, `app::wiring` and tests.
 
+   (e) Live-process simulation guard (CP1-F22; owners 13 unit, 22 integration): in a process
+   built with `dry_run = false` and counting live fakes, `ExecutePlan { simulate: true }` on an
+   approved live plan performs zero fs mutations, zero qBittorrent `stop/start/pause/resume/recheck/delete`,
+   zero ARR mutator calls and zero Jellyfin refresh calls, records only `Simulated` intents, and
+   leaves `PlanStatus` unchanged.
+
    (d) `fake_arr` (09) rejects any manual import whose `importMode` is not `copy`. 22 has a test
    where the fake ARR simulates a move (the source path disappears): the action must end in
    `FailedNeedsReview` with `ArrImportMoved`, never `Verified`.
@@ -504,9 +512,13 @@ Sequence for one `Scan` job. All roots and all services together form one `Audit
    else the first candidate (DR-23). **Torrent ownership is wider than the display path**
    (CP1-F03). The ownership index contains every `Mapped` candidate of every file of every
    torrent (the `save_path`, `download_path` and `content_path` forms and their `.!qB` variants),
-   plus the inodes of those paths. For a torrent with progress < 1, it also contains every entry
-   under its content directory (from both `save_path` and `download_path`) and every `.parts` file
-   in those directories. `orphan_completed`, `incomplete_orphan`, `junk` and `NoTorrentReferences`
+   plus the inodes of those paths. For a torrent with progress < 1, it also contains the following
+   (CP1-F21). **Content directory** is defined only for **multi-file** torrents: it is the
+   `content_path` directory, in both its `save_path` and `download_path` forms. Every entry under
+   it is owned, as are the `.parts` files directly in the parent directory of that content
+   directory. For **single-file** torrents (`content_path` is the file itself), only the file
+   candidates (with `.!qB`) and the `.parts` files in the directories of those candidates are owned.
+   Their parent directory is **never** treated as owned. `orphan_completed`, `incomplete_orphan`, `junk` and `NoTorrentReferences`
    test against this whole index. An owned path carries `TorrentReferencesTarget`.
 4. ARR (each configured service): `status`, `library`, `queue`, and `history_for_download` for
    hashes attached to completed content (bounded). No `quality_snapshot`,
@@ -707,9 +719,29 @@ cannot `chown`, so owner mismatches are report-only, with instructions). Revalid
    - ARR snapshot fingerprint;
    - `EntryUnchanged { compare_nlink: false }` and the recorded `PhysicalId` of every **completed
      source** candidate file;
-   - same `st_dev` for source and target media root.
-2. Execute: revalidate, including re-reading the ARR snapshot (fingerprint must be equal) and
-   re-`stat`ing every completed source. Then intent `ArrManualImport`, then
+   - same `st_dev` for source and target media root;
+   - **`OldCoverageRecoverable`** (CP1-F20; CONTEXTE §3.6, INV-35). ARR's upgrade import deletes
+     the old media file *inside* `manual_import`, before the app's inode proof. So every old
+     media file that ARR may replace (ARR current files of the covered episodes or movie) must be
+     recoverable through one of the following:
+     - (a) `OtherLink(path)`: its inode has another link in the latest complete scan, outside the
+       media path being replaced (typically the old completed release, still seeding). That link
+       is itself an `EntryUnchanged` precondition, and the plan must not delete it before step 3
+       is verified;
+     - (b) `RecycleBin`: `ArrRead::media_management()` reports a configured recycle bin whose path
+       maps (`Mapped`, `OutsideRoots` or `DeclaredExternal`; not `NoRule`/`Invalid`), with a
+       cleanup period of 0 (never) or >= 7 days.
+
+     Otherwise the file is `Unrecoverable` and the plan gets `OldCoverageUnrecoverable`. The
+     blocker can be lifted **only** by an explicit per-file acknowledgement of the risk at approval
+     (`Approval.acknowledged_unrecoverable`, typed confirmation). It is never lifted
+     automatically, and `ReplaceRelease` is never auto (A9).
+   - If `media_management().hardlinks_enabled` is false, the plan carries the warning
+     `ArrHardlinksDisabled`: step 3(c) can never hold, so the best outcome is
+     `ExecutedUnverified` with `AddedCost`. The user sees this before approving.
+2. Execute: revalidate, including re-reading the ARR snapshot and `media_management()` (the
+   fingerprint covers both and must be equal), re-`stat`ing every completed source and every
+   `OtherLink` path of `OldCoverageRecoverable`. Then intent `ArrManualImport`, then
    `ArrCommands::manual_import` (ARR is the importer; requires `arr_manual_import`; the adapter
    always sends `importMode = "copy"`, CP1-F01). Poll `command_status` until completion or timeout.
 3. Verify per episode or movie. All of these must hold for `Verified`:
@@ -727,6 +759,14 @@ cannot `chown`, so owner mismatches are report-only, with instructions). Revalid
      `DeleteMediaFile` stays blocked.
    - Jellyfin refresh (live) and the recognition check (`items_by_paths`, polling
      `library_refresh_running` with a bounded timeout) are informational verification.
+   - `OldFileAccounted` (CP1-F20): for every old media file, the result records where it went:
+     - `OtherLink` re-`stat`ed and still present;
+     - moved to the recycle bin (confirmed by `stat` when the recycle bin maps into a root,
+       otherwise "per ARR configuration");
+     - still in place;
+     - gone (only possible for acknowledged `Unrecoverable` files).
+
+     A lost old file that was not acknowledged makes the outcome `FailedNeedsReview`.
 4. Old media files that ARR did not remove: an optional `DeleteMediaFile` step. It runs only when
    the user selected it explicitly in this plan, only after step 3 is `Verified` for its episode,
    and never auto (OQ-12).
@@ -774,17 +814,24 @@ observe steps run inline inside the job, with shared root locks only. Exclusive 
 only while a plan executes.
 1. **Phase 1, consolidations.** Build auto `ConsolidateHardlink` plans from the session, approve
    them as policy, and execute them (live) or simulate them (dry-run).
-2. **Rescan.** Run the full observe pipeline (section 7.1) as a new session. Abort the cycle,
-   setting `auto_paused`, if that session is not `Complete` with zero errors in the roots
-   concerned, or if a required service is not `Ok`. Failed consolidations (the completed
-   identity is still absent from media) become `FailedConsolidation` blockers.
-3. **Phase 2, deletions.** `Evaluate` the deletion candidates of the new session (ARR evidence),
-   then build, approve and execute auto deletion plans (section 13.3 rules).
+2. **Rescan, only where something changed** (CP1-F23). Let R be the set of roots touched by at
+   least one **live** mutation result (`StepOutcome::Done`) in phase 1.
+   - If R is empty (no consolidation executed, or dry-run where every step is `Simulated`),
+     there is no rescan, and phase 2 reuses the triggering session, which is unchanged by
+     construction.
+   - Otherwise run the observe pipeline restricted to R (`observe::run(roots = Some(R))`), with
+     fresh service reads. Roots outside R keep their stored inventory and status from the
+     triggering session. The new session records which roots were rescanned.
+   - Abort the cycle, setting `auto_paused`, if any rescanned root is not error-free, or if a
+     required service is not `Ok`. Failed consolidations (the completed identity is still absent
+     from media) become `FailedConsolidation` blockers.
+3. **Phase 2, deletions.** `Evaluate` the deletion candidates of the session from step 2 (ARR
+   evidence), then build, approve and execute auto deletion plans (section 13.3 rules). Execution
+   revalidation re-`stat`s every target anyway, so a stale root outside R cannot lead to an
+   unchecked deletion.
 
 At the first failure or uncertainty in any phase: stop, set `auto_paused` with the reason
-(`StateStore`), and show it on the dashboard. Only a user `POST /auto/resume` clears it. In dry-run
-the rescan of step 2 still runs, but simulated consolidations change nothing, so phase 2 plans
-from unchanged data. This is the expected, honest preview.
+(`StateStore`), and show it on the dashboard. Only a user `POST /auto/resume` clears it.
 
 ---
 
@@ -800,7 +847,7 @@ from unchanged data. This is the expected, honest preview.
 | `Evaluate { issue_ids }` / `Evaluate { media, search }` | Observe | `evaluate:<sorted ids or media hash>` | ARR preview and ffprobe reads (bounded); none for search only |
 | `VerifyContent { issue_ids }` | Observe | `verify:<hash>` | full compare (bounded) |
 | `ExecutePlan { plan_id, simulate }` | Execute | `exec:<plan_id>:<simulate>` | as per plan (`stat` and re-reads only when simulating) |
-| `AutoCycle { session }` | Execute | `auto:<session>` | as per plans, plus one inline rescan |
+| `AutoCycle { session }` | Execute | `auto:<session>` | as per plans, plus an inline rescan of only the roots that phase 1 live-mutated (none in dry-run) |
 
 - Two worker tasks: **one Observe worker and one Execute worker**. Mutations are globally
   serialized (ADR-0007). This single execution lane is the in-process per-media lock (INV-16)
@@ -1038,10 +1085,6 @@ file. **Secrets are environment-only.** The TOML schema has no secret fields
 | `services.qbittorrent.username` | `REMOVARR_QBIT_USERNAME` | `admin` | non-empty |
 | — | `REMOVARR_QBIT_PASSWORD` | secret | required if URL set |
 | `services.qbittorrent.external_prefixes` | `REMOVARR_QBIT_EXTERNAL_PREFIXES` | empty | container prefixes declared outside every root (OQ-07) |
-
-qBittorrent's `download_path` (temp folder) must be covered by `path_mappings.qbittorrent`
-(normally onto `<incomplete_root>`). If a torrent's `download_path` maps to `NoRule`, the torrent is
-an `unmapped_torrent` like any other unmapped path (CP1-F03).
 | `services.sonarr.url` / `services.radarr.url` | `REMOVARR_SONARR_URL` / `REMOVARR_RADARR_URL` | none | URL |
 | — | `REMOVARR_SONARR_API_KEY` / `REMOVARR_RADARR_API_KEY` | secret | required if URL set |
 | `services.jellyfin.url` | `REMOVARR_JELLYFIN_URL` | none | URL |
@@ -1055,6 +1098,10 @@ an `unmapped_torrent` like any other unmapped path (CP1-F03).
 | `auth.session_ttl_hours` | `REMOVARR_SESSION_TTL_HOURS` | 12 | 1..=720 |
 | `auth.cookie_secure` | `REMOVARR_COOKIE_SECURE` | true | bool (set false only for plain-HTTP LAN) |
 | `auth.login_limit_per_ip` / `_per_ip_user` | `REMOVARR_LOGIN_LIMIT_PER_IP` / `_PER_IP_USER` | 20 / 5 per 15 min | 1..=1000 |
+
+qBittorrent's `download_path` (temp folder) must be covered by `path_mappings.qbittorrent`
+(normally onto `<incomplete_root>`). If a torrent's `download_path` maps to `NoRule`, the torrent is
+an `unmapped_torrent` like any other unmapped path (CP1-F03).
 
 Startup validation failures print every missing or invalid **key name** (never values) and exit
 with code 2 (FH-01). Additional root checks: a root must not be the filesystem root `/`, must not
@@ -1103,7 +1150,7 @@ page is rendered. Every action works without JavaScript (forms and redirects); H
 | POST | `/plans` | build a plan from `category`, `action`, `issue_ids[]` | redirect to `/plans/{id}` |
 | GET | `/plans`, `/plans/{id}` | plan list, preview (actions, excluded + blockers, gains, annex preview, dry-run results) | `PlanListVm`, `PlanPreviewVm` |
 | GET | `/plans/{id}/confirm` | confirmation modal fragment | `ConfirmVm` |
-| POST | `/plans/{id}/approve` | `plan_hash`, `confirmed_count`, `acknowledged_samples[]` | redirect |
+| POST | `/plans/{id}/approve` | `plan_hash`, `confirmed_count`, `confirmed_torrent_removals`, `acknowledged_samples[]`, `acknowledged_unrecoverable[]` (CP1-F20, F25) | redirect |
 | POST | `/plans/{id}/execute` | enqueue `ExecutePlan { simulate: false }` (approved, not expired, live plan in a live process) | redirect to job |
 | POST | `/plans/{id}/simulate` | enqueue `ExecutePlan { simulate: true }` (any draft or approved plan, any process; CP1-F14e) | redirect to job |
 | POST | `/plans/{id}/discard` | discard a draft or approved plan | redirect |
@@ -1204,7 +1251,7 @@ page is rendered. Every action works without JavaScript (forms and redirects); H
 | 1 Read-only | scan, issues, evaluate, reports, plans, full dry-run path | none mutating; dry-run simulation of every kind | 06-11, 12 (plans in dry-run), 13 (recording mutators, revalidation), 14, 15 | — | parity inventory (§7.5), dry-run-no-mutation with counting fakes |
 | 2 Exact-copy consolidation | permission probe, full compare, temp hardlink, atomic replace, stop/recheck/resume | `ConsolidateHardlink`; manual commands `ArrRescan`, `JellyfinRefresh` | 12, 13, 22 | `consolidate` | crash after each intent and each mutation (probe, stop, replace, recheck, start), T-11..T-14, T-22, V6, V7, dry-run-no-mutation |
 | 3 Deletions under completed | unlinked files, folders, junk outside torrents, stalled incomplete, task removal (`deleteFiles=false`), empty parents, targeted chmod | `DeleteCompletedFile`, `DeleteCompletedFolder`, `DeleteJunk`, `RemoveEmptyParent`, `RemoveTorrentTask`, `CleanupStalledIncomplete`, `DeleteIncompleteOrphan`, `FixMode` | 12, 13, 22 | `delete_completed`, `cleanup_incomplete`, `fix_permissions`, `auto_remove_empty_torrents` (policy, auto only) | crash points per step, T-15..T-17, T-23, T-32, sample protection, partial torrent, fail-closed V2-V4, dry-run-no-mutation |
-| 4 ARR replacement | quality snapshots, coverage proof, ffprobe checks, numbering, approved grab, queue/monitoring commands | `ReplaceRelease` (+ `DeleteMediaFile` step), `ArrGrabRelease`, `ArrRemoveQueueItem`, `ArrSetMonitored` | 09, 12, 13, 22 | `arr_manual_import`, `arr_grab`, `arr_queue_remove`, `arr_set_monitored` | ARR score change invalidates the plan, rejected candidate never selected, coverage (incl. episodes without files, specials, absolute numbering), ffprobe blockers, `importMode=copy` asserted, "move would be detected", search never grabs, crash points, dry-run-no-mutation |
+| 4 ARR replacement | quality snapshots, coverage proof, ffprobe checks, numbering, approved grab, queue/monitoring commands | `ReplaceRelease` (+ `DeleteMediaFile` step), `ArrGrabRelease`, `ArrRemoveQueueItem`, `ArrSetMonitored` | 09, 12, 13, 22 | `arr_manual_import`, `arr_grab`, `arr_queue_remove`, `arr_set_monitored` | ARR score change invalidates the plan, rejected candidate never selected, coverage (incl. episodes without files, specials, absolute numbering), ffprobe blockers, `importMode=copy` asserted, "move would be detected", `OldCoverageRecoverable` (other-link case, recycle-bin case, unrecoverable -> blocked unless acknowledged, hardlinks-disabled warning, `OldFileAccounted` results), search never grabs, crash points, dry-run-no-mutation. **CP2-tier4 must verify CP1-F20.** |
 | 5 Automatic mode | auto cycle with every auto rule | auto plans of `ConsolidateHardlink`, `DeleteCompletedFile`, `DeleteCompletedFolder`, `RemoveEmptyParent`, `RemoveTorrentTask` only | 12 (`plans::auto`), 14, 22 | `mode.auto_mode` (default false) | T-20, T-21, T-31, stop-at-first-failure, fail-closed on every incomplete input, dry-run auto simulation |
 
 ### 13.2 Capability flags (`[capabilities]`, env `REMOVARR_CAP_<NAME>`)
@@ -1355,7 +1402,7 @@ budgets (B3 roots untouched, B11) can never be waived.
 | 17 auth-guard | 13 | `crates/web/src/auth/**`, `crates/web/tests/auth_*.rs` | `crates/web/templates/pages/login.html` (created minimal by 16), `crates/web/Cargo.toml`, `crates/web/src/router.rs` (layer wiring only), `crates/web/src/lib.rs`, `crates/web/src/state.rs` (auth state field), `crates/app/src/**` (auth wiring, `hash-password` subcommand) | templates other than login, `locales/`, Docker/CI files |
 | 18 ux-design | 13 | `docs/ux/**` | — | any code, `README.md` |
 | 20 devops | 13 | `Dockerfile`, `.dockerignore`, `docker-compose.yml`, `.github/**` (workflows, issue templates), `README.md`, `.env.example` (from wave 13), `deny.toml`, `docs/operations.md` | — | `crates/**` (request changes via handoff) |
-| 19 web-ui | 14 | `crates/web/static/**` (including the pinned HTMX file and `web::assets`), `crates/web/src/views/**`, `crates/web/tests/ui_*.rs` | takes over from 16: `crates/web/templates/**` (login page markup and styling only, not its auth logic), `crates/web/src/i18n.rs`, `locales/**`; also `crates/web/src/handlers/**` (rendering and view-model wiring only), `crates/web/src/lib.rs`, `crates/web/Cargo.toml` (dev-deps such as `sha2` for the asset test) | auth logic, routes semantics |
+| 19 web-ui | 14 | `crates/web/static/**` (including the pinned HTMX file), `crates/web/src/assets.rs` (`web::assets`, `HTMX_SHA256`), `crates/web/src/views/**`, `crates/web/tests/ui_*.rs` | takes over from 16: **all** of `crates/web/templates/**` (for `pages/login.html`: markup and styling only, never its auth logic), `crates/web/src/i18n.rs`, `locales/**`; also `crates/web/src/handlers/**` (rendering and view-model wiring only), `crates/web/src/lib.rs`, `crates/web/Cargo.toml` (dev-deps such as `sha2` for the asset test) | auth logic, routes semantics |
 | 21 unit-tests | between waves, from 3 | `crates/*/tests/parity_*.rs`, `docs/legacy-parity.md` (§2 status and Rust test name columns only) | — | `src/**` of any crate (bugs are handed back to the owner) |
 | 22 integration-tests | 15 | `crates/integration-tests/**` | `crates/testkit/src/**` (extend fixture and fakes, no breaking changes) | `src/**` of feature crates |
 | 23 e2e-perf | 16 | `crates/e2e-perf/**`, `docs/perf-results.md` | — | `src/**` of feature crates |
@@ -1391,8 +1438,11 @@ are Rust-only):
   `incomplete_stalled` only when older than the threshold. The tree is built by 06, T_R by 08.
 - **V10, ARR replacement** (CP1-F01, F02, F04). A Sonarr season with 3 expected episodes (one
   without a file, one special excluded by default, one absolute-numbered), a manual-import
-  preview, and a "move" switch in `fake_arr` that deletes the source on import. Built by 09,
-  asserted by 22.
+  preview, and a "move" switch in `fake_arr` that deletes the source on import. It also has a
+  `media_management` preset (recycle bin set or unset, hardlinks on or off) and an "upgrade
+  deletes old file" behavior. The old media files cover three cases: one still linked from an old
+  completed release (`OtherLink`), one recoverable only through the recycle bin, and one
+  unrecoverable (must be blocked unless acknowledged; CP1-F20). Built by 09, asserted by 22.
 
 ### 15.4 Deviations protocol
 
@@ -1412,7 +1462,7 @@ instead, why, and the impact on other agents. CP2 reviewers and 27 check deviati
 | 0007 | Single execution lane (global serialization of mutations) |
 | 0008 | Stalled incomplete cleanup is a manual-only action outside the completed allowlist |
 | 0009 | Static musl binary with rustls (ring); no OpenSSL |
-| 0010 | ARR is the single importer for release replacements (`importMode="copy"` literal, source inode verified) and for approved grabs (amended CP1) |
+| 0010 | ARR is the single importer for release replacements (`importMode="copy"` literal, source inode verified, old coverage must be recoverable before import) and for approved grabs (amended CP1 iterations 1 and 2) |
 
 ---
 
@@ -1424,7 +1474,7 @@ instead, why, and the impact on other agents. CP2 reviewers and 27 check deviati
 | OQ-02 junk list | Defaults in section 11 (`junk_extensions` + `.rNN` parts). Junk = regular file under **`<completed_root>` only**, extension in the list or an orphan subtitle, not a video, not a sample, and **neither its path nor its inode** is held by any torrent. Media roots never have junk (posters and `.nfo` are Jellyfin metadata). | 11 |
 | OQ-03 orphan subtitle | Strip trailing tags from the subtitle stem repeatedly (2-3 letter language codes, `forced`, `sdh`, `cc`, `default`, `hi`). The result must equal the stem of a video in the same directory, or, for subtitles in a `Subs`/`Subtitles` subdirectory, of a video in the parent directory. Otherwise it is orphan. | 11 |
 | OQ-04 multi-category | One issue per (category, subject). Totals per category. Potential bytes are deduplicated per `PhysicalId` across all categories. A plan dedupes targets. | 11, 15 |
-| OQ-05 fail-closed perimeter | **Auto**: any scan error or protected zone in a root blocks every automatic action touching that root. Any non-Ok required service blocks actions depending on it. **Manual**: block targets whose path, subtree or ancestors carry a scan error (`ScanErrorUnder`). Plans are never built from `Cancelled`/`Interrupted`/`Failed` sessions. qBittorrent `NoRule`/`Invalid` torrents block every torrent-less deletion (orphans, junk, incomplete orphans), manual included, because torrent ownership is then uncertain. qBittorrent `NotConfigured` or `Unavailable` blocks every action that needs torrent ownership (CP1-F10). | 12 |
+| OQ-05 fail-closed perimeter | **Auto**: any scan error or `MountBoundary`/`NonUtf8Name` protected zone in a root blocks every automatic action touching that root. `QbitInternal` zones do not count for the root, but any unit containing a protected zone of any kind is blocked, manual or auto (same rule as §7.1 step 8, §4.3 and A2; CP1-F19). Any non-Ok required service blocks actions depending on it. **Manual**: block targets whose path, subtree or ancestors carry a scan error (`ScanErrorUnder`). Plans are never built from `Cancelled`/`Interrupted`/`Failed` sessions. qBittorrent `NoRule`/`Invalid` torrents block every torrent-less deletion (orphans, junk, incomplete orphans), manual included, because torrent ownership is then uncertain. qBittorrent `NotConfigured` or `Unavailable` blocks every action that needs torrent ownership (CP1-F10). | 12 |
 | OQ-06 stalled incomplete vs allowlist | The allowlist (INV-28) governs actions on **completed** data only. `CleanupStalledIncomplete` is a separate, **manual-only** action type, never available to auto mode (A9). Eligibility: progress < 1, `now - added_on >= incomplete_stalled_days`, state not in {`checkingDL`, `checkingUP`, `checkingResumeData`, `moving`, `allocating`} and not `Unknown`, all files `Mapped` under `<incomplete_root>`. Steps: stop, remove the task with `deleteFiles=false`, revalidate, then the application deletes the data under `<incomplete_root>` (section 7.4). ADR-0008. | 12, 13 |
 | OQ-07 torrents outside mappings | `NoRule` (no mapping prefix matches) -> `unmapped_torrent` Critical, which **blocks torrent-less deletions** (OQ-05) until the user adds a mapping or declares the prefix in `qbittorrent.external_prefixes` (then `DeclaredExternal`, Info). Mapped but outside every root -> `OutsideRoots`, Info, no blocker. A prefix match that escapes (`..`, invalid) -> `Invalid`, mapping error, blocks automation (CON-07, V4). | 08 (mapping outcome), 11, 12 |
 | OQ-08 torrent-less path sharing an inode | Junk requires that neither path nor inode is torrent-held, so it is not junk. It **is** listed in `orphan_completed` (path-based, matches legacy FX-35) with evidence "inode shared with torrent file X" and attributable gain 0. | 11 |
@@ -1464,7 +1514,7 @@ at sample level). Before that, the pairs show proof `Sampled` or `NameSize`.
 | C17 | Release folder vs "smallest admissible subfolder" (CON-23) | MASTER §5 vs CONTEXTE §3.7 | Consistent once samples are protected. See OQ-11. |
 | C18 | Nested roots | MASTER §2 "sans chevauchement ambigu" vs common layouts with incomplete inside completed | Any nesting is refused at startup (fail-closed). Documented by 20. |
 | C19 | Scheduling syntax (CP1-F14a) | MASTER §3 "intervalle/cron configurable" | Interval + UTC anchor (`scan.interval_minutes`, `scan.anchor_utc`). No cron expressions. "intervalle/cron" is satisfied by an interval, and nightly runs are covered. Accepted scope cut. |
-| C20 | Who creates hardlinks for a different version (CP1-F14b) | CONTEXTE §3.6 "créer les nouveaux hardlinks" vs ADR-0010 (ARR imports with `importMode=copy`, hardlinking) | CONTEXTE §3.9 requires choosing "une seule méthode". ARR is the single importer and creates the hardlinks. The app verifies the inodes and that the completed source is untouched. No CONTEXTE invariant is weakened. |
+| C20 | Who creates hardlinks for a different version, and **when the old version disappears** (CP1-F14b, **CP1-F20**) | CONTEXTE §3.6 "créer les nouveaux hardlinks … retirer l'ancienne version seulement après cette preuve" and INV-35 (global transaction, every episode proven before the old coverage is removed) vs ADR-0010 (ARR imports with `importMode=copy`; ARR's upgrade import removes the old media file **inside** the import, before the app's inode proof) | **This is a real conflict. CONTEXTE §3.6 and INV-35 win.** ARR stays the single importer (CONTEXTE §3.9 "une seule méthode"). The order cannot be changed, so the old coverage must be **recoverable before** the import: the `OldCoverageRecoverable` precondition (§7.4) requires each old media file to keep another retained link, or ARR's recycle bin to be configured (`ArrRead::media_management`). Otherwise the plan carries `OldCoverageUnrecoverable` and is blocked. The only way past it is an explicit, per-file, typed acknowledgement of the risk in a manual approval, never automatic. Verification accounts for every old file (`OldFileAccounted`). CP2-tier4 must verify this rule. |
 | C21 | `FixMode` in media roots (CP1-F14c) | CONTEXTE §2.2 media "lecture par défaut" vs MASTER §5.5 targeted fix through an approved plan | Allowed only as a manual, approved, non-recursive chmod of entries owned by the process UID (MASTER §5.5, INV-32). Never auto. |
 | C22 | Reverse restore library -> torrent source (CP1-F14d) | CONTEXTE §4.11 (McFarland: "peut réparer") | Deferred (accepted scope cut). `torrent_missing_files` shows an informational hint. The CONTEXTE wording is permissive, so no rule is broken. |
 | C23 | Simulation in a live process (CP1-F14e) | CONTEXTE §6.2 Planificateur "simulation complète" vs dry-run as a startup switch | Resolved without a trade-off. `POST /plans/{id}/simulate` runs any plan with the recording mutators in any process (section 6). Live execution still requires `dry_run = false` at startup. |
@@ -1475,7 +1525,9 @@ Accepted scope cuts (complete list): C6 (old report import), C9 (cross-seed conn
 metadata lock; ARR monitoring changes are reachable through `PlanRequest::Media`, CP1-F05), C18
 (nested roots refused), C19 (no cron syntax), C22 (reverse restore). None removes a CONTEXTE rule.
 
-No resolution weakens a CONTEXTE invariant.
+No resolution weakens a CONTEXTE invariant. The only override path, C20's per-file acknowledgement
+of an unrecoverable old file, is the explicit, audited manual exception that CONTEXTE §2.11 and
+§9.4 reserve to the user. It is never available to automatic mode.
 
 ---
 
@@ -1721,4 +1773,16 @@ Every finding was fixed. None was rejected.
 | CP1-F16 | minor | §15.1 rules 7-8 (parity tests excluded from crate globs; 21 may add workspace dev-deps between waves; no double "creates"); §15.2 rows 16, 17, 19 |
 | CP1-F17 | minor | §8.4 response size limit; §11 `limits.max_response_bytes` |
 | CP1-F18 | minor | §4.1 `CandidateState` derived only (`derive_candidate_state`), `PlanStatus::can_transition_to` is the enforced machine; §9.1 `torrent_observations` dropped |
-| CP1-F19 | minor | §7.1 step 8 and §13.3 A2 share one rule (`QbitInternal` does not degrade the session or auto; units containing any protected zone are blocked, §4.3) |
+| CP1-F19 | minor | §7.1 step 8 and §13.3 A2 share one rule (`QbitInternal` does not degrade the session or auto; units containing any protected zone are blocked, §4.3); residue fixed in iteration 2: §16 OQ-05 aligned |
+
+### 20.1 Iteration 2 follow-up (PASS with condition)
+
+| ID | Severity | Fixed where |
+|---|---|---|
+| CP1-F20 | major | §4.1 `ArrMediaManagement` (in `ArrQualitySnapshot` + fingerprint), `OldFileRecovery`, `Precondition::OldCoverageRecoverable`, `VerificationStep::OldFileAccounted`, `Approval.acknowledged_unrecoverable`; §4.3 `OldCoverageUnrecoverable`, `ArrHardlinksDisabled`; §5 `ArrRead::media_management()` (domain contract for wave 3); §7.4 ReplaceRelease steps 1-3; §12.1 approve route; §13.1 tier-4 tests + CP2-tier4 note; §15.3 V10; §17 C20 rewritten (conflict registered, CONTEXTE wins) + closing note; ADR-0010 |
+| CP1-F19 (residue) | minor | §16 OQ-05 now states the same single protected-zone rule |
+| CP1-F21 | minor | §7.1 step 3: "content directory" defined for multi-file torrents only; single-file torrents own only their candidates (+ `.!qB`) and `.parts` files |
+| CP1-F22 | minor | §6.8(e) live-process simulation guard test (owners 13, 22) |
+| CP1-F23 | minor | §7.6 step 2: rescan only the roots live-mutated in phase 1 (none in dry-run, none if nothing executed), otherwise reuse the session; §8.1 |
+| CP1-F24 | minor | §11 `download_path` paragraph moved below the table |
+| CP1-F25 | minor | §15.2 row 19 owns `crates/web/src/assets.rs` and "all templates (login: markup and styling only)"; §12.1 approve route carries `confirmed_torrent_removals` |

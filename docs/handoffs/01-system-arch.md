@@ -170,6 +170,37 @@ finding was rejected. The per-finding map is in `docs/architecture.md` §20.
 - Ownership for waves 4, 5 and 13 is still disjoint. New fixture variants V9 (06/08) and V10 (09)
   stay inside each agent's own testkit file.
 
+## CP1 iteration 2 follow-up
+
+CP1 passed at iteration 2 with one condition: CP1-F20 had to be fixed before wave 3. All open
+findings are now fixed (per-finding map in `docs/architecture.md` §20.1):
+- **CP1-F20 (major).** ARR's upgrade import deletes the old media file before the inode proof.
+  The conflict is registered in §17 C20, and CONTEXTE §3.6 / INV-35 win. New pieces:
+  - the `ReplaceRelease` precondition `OldCoverageRecoverable` (another retained link, or ARR's
+    recycle bin configured);
+  - the blocker `OldCoverageUnrecoverable` (lifted only by a manual, per-file, typed
+    acknowledgement; never auto);
+  - the warning `ArrHardlinksDisabled`;
+  - the verification step `OldFileAccounted`.
+
+  ADR-0010 is amended.
+
+  **Contract for 03 (wave 3), mandatory:** `ArrRead::media_management() -> ArrMediaManagement { recycle_bin: Option<MappedPath>, recycle_bin_cleanup_days: Option<u32>, hardlinks_enabled: bool, captured_at }`,
+  `ArrQualitySnapshot.media_management` (included in its fingerprint), `OldFileRecovery`,
+  `Precondition::OldCoverageRecoverable`, `VerificationStep::OldFileAccounted`,
+  `Approval.acknowledged_unrecoverable`, and the two new blocker codes. For 09: read
+  `GET /api/v3/config/mediamanagement` (`recycleBin`, `recycleBinCleanupDays`, `copyUsingHardlinks`)
+  and extend the V10 preset. **CP2-tier4 must verify this rule.**
+- CP1-F19 residue: OQ-05 aligned with the single protected-zone rule.
+- CP1-F21: "content directory" defined (multi-file torrents only). Single-file torrents own only
+  their candidates and `.parts` files.
+- CP1-F22: guard test (e) for live-process simulation (owners 13, 22).
+- CP1-F23: the auto cycle rescans only the roots live-mutated in phase 1. There is no rescan in
+  dry-run or when nothing executed.
+- CP1-F24: §11 table repaired.
+- CP1-F25: row 19 owns `crates/web/src/assets.rs` and all templates (login: markup and styling
+  only). The approve route carries `confirmed_torrent_removals` (and `acknowledged_unrecoverable[]`).
+
 ## Commands run and results
 
 - No shell commands were run. Tools used: Read, Glob, Grep (inputs) and Write, Edit (outputs).

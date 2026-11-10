@@ -1,6 +1,6 @@
 # ADR-0010: ARR is the single importer for release replacements and approved grabs
 
-Status: accepted (wave 1), amended after CP1 iteration 1 (CP1-F01, CP1-F06).
+Status: accepted (wave 1), amended after CP1 iteration 1 (CP1-F01, CP1-F06) and iteration 2 (CP1-F20).
 Details: `docs/architecture.md` sections 5, 7.2, 7.4, 13.
 
 ## Context
@@ -30,6 +30,17 @@ without the application's deletion controls.
   - A vanished or changed source means `FailedNeedsReview` (`ArrImportMoved`), reported Critical.
   - A different media inode (ARR copied) means `ExecutedUnverified`, the new bytes are recorded as
     `AddedCost`, and old-file deletion stays blocked.
+- **Old coverage must be recoverable before the import** (CP1-F20). ARR's upgrade import deletes
+  the old media file inside the import, before the application can prove the new inode. That
+  conflicts with CONTEXTE §3.6 and INV-35, and CONTEXTE wins.
+  - Precondition `OldCoverageRecoverable`: every old media file either keeps another retained link
+    in the latest complete scan (for example the old completed release), or ARR's recycle bin is
+    configured. The recycle bin is read through `ArrRead::media_management()`, which also reports
+    `hardlinks_enabled`; both are in the snapshot fingerprint.
+  - Otherwise the plan gets `OldCoverageUnrecoverable`. Only an explicit per-file typed
+    acknowledgement in a manual approval can lift it, and auto mode never can.
+  - Verification records where each old file went (`OldFileAccounted`).
+  - Hardlinks disabled in ARR show `ArrHardlinksDisabled` before approval.
 - Old media files that ARR did not remove are deleted only by an explicit, manually approved step
   after that proof. Never automatic.
 - Grab: `ArrGrabRelease` from a listed interactive search result. It needs the `arr_grab`
@@ -39,5 +50,7 @@ without the application's deletion controls.
 ## Consequences
 - The ARR database stays consistent, and the single-importer rule holds by construction.
 - A move by ARR cannot pass as success.
+- An ARR upgrade can never silently destroy the only copy of the old coverage. Users without a
+  recycle bin and without a still-linked old release must acknowledge the risk file by file.
 - Replacement and grab require ARR to be configured. Without hardlinks enabled in ARR, a
   replacement can never be `Verified`.
