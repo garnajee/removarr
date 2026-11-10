@@ -3,7 +3,7 @@
 Maintained by the orchestrator (see section 10 of `MASTER-PROMPT.md`). Update after every agent.
 Status values: `todo`, `running`, `done`, `blocked`.
 
-- Branch: `autonomous-build` (not created yet)
+- Branch: `autonomous-build` (created from `main` at 4fa9e32)
 - Last commit: none
 - Blocking cause: none
 
@@ -11,8 +11,8 @@ Status values: `todo`, `running`, `done`, `blocked`.
 
 | Wave | Agent | Status | Notes |
 |---|---|---|---|
-| 0 | `00-legacy-audit` | todo | |
-| 1 | `01-system-arch` | todo | |
+| 0 | `00-legacy-audit` | done | 32 tests mapped, 51 INV, 30 REJ, 32 CON, 7 open questions for system-arch (OQ-01/05/06/07/09/11/12) |
+| 1 | `01-system-arch` | running | |
 | 2 | `02-rust-scaffold` | todo | |
 | 3 | `03-domain-model` | todo | |
 | 4 | `04-db-layer` | todo | |
@@ -52,4 +52,5 @@ Status values: `todo`, `running`, `done`, `blocked`.
 
 ## Last quality gate
 
+Toolchain: cargo/rustc 1.98.0 (Homebrew, no rustup), Docker 29.7.2, ffprobe available.
 Not run yet (`cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`).
