@@ -14,6 +14,7 @@ mod content;
 mod gate;
 pub mod handle;
 pub mod inventory;
+pub mod mutate;
 pub mod perm;
 mod scan;
 
@@ -31,6 +32,7 @@ use removarr_domain::path::{RelPath, RootId, RootedPath};
 use removarr_domain::ports::{FsInventory, ScanControl};
 
 pub use content::MIN_CHUNK;
+pub use mutate::LiveFsMutator;
 pub use scan::{DirHook, QBIT_INTERNAL_DIR};
 
 use gate::Gate;

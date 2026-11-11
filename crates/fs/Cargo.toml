@@ -21,4 +21,6 @@ async-trait = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+# Test-only: `LiveMode::for_tests()` for the mutation adapter tests (ADR-0003).
+removarr-config = { workspace = true, features = ["test-support"] }
 removarr-testkit = { workspace = true }

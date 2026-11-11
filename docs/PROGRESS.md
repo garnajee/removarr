@@ -28,7 +28,7 @@ Status values: `todo`, `running`, `done`, `blocked`.
 | 8 | `12-plan-engine` | done | plans for all tiers, tier-tagged and capability-gated; no mutation port referenced |
 | 8 | `03-domain-model` patch 2 (ARR-validated auto deletion evidence, service-command verification steps) | done | 603 tests; golden hash unchanged; gap 3 accepted as deviation |
 | 8 | `12-plan-engine` follow-up (adopt patch 2, torrent staleness by eligibility class) | done | 607 tests; wanted-file set checked live by 13 at revalidation (accepted); auto plans omit companion actions (confirmed, cleanup stays manual) |
-| 9 | `13-action-runner` | running | stage A: tiers 1-2; CP2 review before each of tiers 3, 4, 5 |
+| 9 | `13-action-runner` | running | stage A done (tiers 1-2, 634 tests, 8 crash boundaries); CP2-tier3 review running |
 | 10 | `14-job-runner` | todo | |
 | 11 | `15-reporting` | todo | |
 | 12 | `16-backend-api` | todo | |
@@ -49,11 +49,11 @@ Status values: `todo`, `running`, `done`, `blocked`.
 | Checkpoint | Verdict | Iterations | Report |
 |---|---|---|---|
 | CP1 architecture (after wave 1) | PASS (iter 2); follow-up F20 + F19/F21-F25 fixed | 2/3 | `docs/reviews/cp1.md` |
-| CP2 tier 3 (deletions) | pending | 0/3 | `docs/reviews/cp2-tier3.md` |
+| CP2 tier 3 (deletions) | running | 1/3 | `docs/reviews/cp2-tier3.md` |
 | CP2 tier 4 (ARR replacement) | pending | 0/3 | `docs/reviews/cp2-tier4.md` |
 | CP2 tier 5 (automatic mode) | pending | 0/3 | `docs/reviews/cp2-tier5.md` |
 | CP3 release gate | pending | — | `docs/release-readiness.md` |
 
 ## Last quality gate
 
-After wave 8 follow-ups: fmt OK, clippy -D warnings OK, tests OK (607 passed, 1 ignored = opt-in real-ffprobe test). Safety greps OK (deleteFiles literal false only in qbit/control.rs; importMode copy literal). Toolchain: cargo/rustc 1.98.0 (Homebrew, no rustup), Docker 29.7.2, ffprobe available.
+After wave 9 stage A: fmt OK, clippy -D warnings OK, tests OK (634 passed, 1 ignored = opt-in real-ffprobe test). Safety greps OK (deleteFiles literal false only in qbit/control.rs; importMode copy literal). Toolchain: cargo/rustc 1.98.0 (Homebrew, no rustup), Docker 29.7.2, ffprobe available.
