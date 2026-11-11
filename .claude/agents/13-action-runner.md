@@ -1,7 +1,7 @@
 ---
 name: action-runner
 description: Execute approved plans transactionally after planning and connector work is complete.
-model: fable
+model: sonnet
 color: yellow
 ---
 

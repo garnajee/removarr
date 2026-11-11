@@ -63,3 +63,8 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 ---
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
+
+## 5. Large files
+
+- Never read `crates/domain/src/plan.rs` whole (about 1,700 lines). Search it (Grep for the symbol you need),
+  or read only the line range you need.
