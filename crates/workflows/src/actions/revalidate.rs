@@ -13,7 +13,7 @@ use removarr_domain::arr::{ArrMediaRef, ArrQueueItem, ArrService};
 use removarr_domain::error::PortError;
 use removarr_domain::fs::{EntryKind, EntrySignature, RootInventory};
 use removarr_domain::issue::{Blocker, BlockerCode};
-use removarr_domain::path::{RootId, RootedPath};
+use removarr_domain::path::{RelPath, RootId, RootedPath};
 use removarr_domain::plan::{ActionTarget, PlannedAction, Precondition};
 use removarr_domain::session::{AuditSession, ServiceKind};
 use removarr_domain::torrent::{
@@ -302,7 +302,133 @@ impl Ctx<'_> {
             self.check(live, a, &paths, p, &mut out).await?;
         }
         self.check_wanted_files(live, a, &paths, &mut out).await?;
+        self.check_live_holders(live, a, &paths, &mut out).await?;
         Ok(out)
+    }
+
+    /// CP2T3-F02: the live set of torrents holding any path of the action (by path through
+    /// the full ownership index, and by inode through the stored inventories) must equal the
+    /// planned `torrent_hashes` (the action's own hash excepted). A holder that appeared after
+    /// planning, or a mapping fault on a torrent near the paths, refuses the action.
+    async fn check_live_holders(
+        &self,
+        live: &mut LiveReads,
+        a: &PlannedAction,
+        paths: &[RootedPath],
+        out: &mut Vec<Blocker>,
+    ) -> Result<(), PortError> {
+        if paths.is_empty() {
+            return Ok(());
+        }
+        let own = match &a.target {
+            ActionTarget::Torrent { hash, .. } => Some(hash.clone()),
+            _ => None,
+        };
+        let (list, major) = match self.torrents(live).await {
+            Ok(x) => x,
+            Err(e) => {
+                out.push(unavailable(ServiceKind::Qbittorrent, &e));
+                return Ok(());
+            }
+        };
+        let related = |p: &RootedPath, q: &RootedPath| {
+            p.root == q.root && (p.rel.starts_with(&q.rel) || q.rel.starts_with(&p.rel))
+        };
+        let mut near = Vec::new();
+        for t in &list {
+            let mut bases = vec![&t.save_path, &t.content_path];
+            bases.extend(t.download_path.iter());
+            let mut faulty = false;
+            let mut is_near = false;
+            for b in bases {
+                match b {
+                    MappedPath::Mapped { path, .. } => {
+                        let dir = RootedPath::new(
+                            path.root.clone(),
+                            path.rel.parent().unwrap_or_else(RelPath::root),
+                        );
+                        if paths.iter().any(|p| related(p, path) || related(p, &dir)) {
+                            is_near = true;
+                        }
+                    }
+                    MappedPath::NoRule { .. } | MappedPath::Invalid { .. } => faulty = true,
+                    MappedPath::OutsideRoots { .. } | MappedPath::DeclaredExternal { .. } => {}
+                }
+            }
+            if faulty {
+                out.push(Blocker::new(
+                    BlockerCode::MappingError,
+                    format!("torrent {} has a path mapping fault", t.hash.as_str()),
+                ));
+                return Ok(());
+            }
+            if is_near {
+                near.push(t.clone());
+            }
+        }
+        let mut files = BTreeMap::new();
+        for t in &near {
+            match self.files(live, &t.hash).await {
+                Ok(f) => {
+                    if f.iter().flat_map(|f| f.candidates.iter()).any(|c| {
+                        matches!(c, MappedPath::NoRule { .. } | MappedPath::Invalid { .. })
+                    }) {
+                        out.push(Blocker::new(
+                            BlockerCode::MappingError,
+                            format!("torrent {} has a file mapping fault", t.hash.as_str()),
+                        ));
+                        return Ok(());
+                    }
+                    files.insert(t.hash.clone(), f);
+                }
+                Err(e) => {
+                    out.push(unavailable(ServiceKind::Qbittorrent, &e));
+                    return Ok(());
+                }
+            }
+        }
+        let snapshot = TorrentSnapshot {
+            taken_at: self.ports.clock.now(),
+            version: String::new(),
+            major,
+            torrents: near,
+            files,
+        };
+        let mut idx = TorrentIndex::build(&snapshot);
+        let mut inventories = Vec::new();
+        for root in paths.iter().map(|p| &p.root).collect::<BTreeSet<_>>() {
+            if let Some(inv) = self.inventory(live, root).await? {
+                inventories.push(inv);
+            }
+        }
+        idx.bind_inventories(&inventories);
+        let mut holders: BTreeSet<TorrentHash> = BTreeSet::new();
+        for p in paths {
+            holders.extend(idx.hashes_under(p));
+            if let Ok(Some(sig)) = self.stat(p).await
+                && sig.kind == EntryKind::File
+            {
+                holders.extend(idx.hashes_for_inode(&sig.phys()));
+            }
+        }
+        let extra: Vec<_> = holders
+            .iter()
+            .filter(|h| !a.torrent_hashes.contains(h) && Some(*h) != own.as_ref())
+            .collect();
+        if !extra.is_empty() {
+            out.push(Blocker::new(
+                BlockerCode::TorrentReferencesTarget,
+                format!(
+                    "torrents not in the plan hold a path or inode of this action: {}",
+                    extra
+                        .iter()
+                        .map(|h| h.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            ));
+        }
+        Ok(())
     }
 
     async fn check(

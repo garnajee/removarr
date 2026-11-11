@@ -12,8 +12,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use removarr_domain::error::{ErrorClass, PortError};
 use removarr_domain::fs::{EntrySignature, PhysicalId};
 use removarr_domain::issue::{Blocker, BlockerCode};
-use removarr_domain::journal::{ActionOutcome, JournalStep, VerificationResult};
-use removarr_domain::path::{RelPath, RootedPath};
+use removarr_domain::journal::{ActionOutcome, JournalStep, StepOutcome, VerificationResult};
+use removarr_domain::path::{RelPath, RootKind, RootedPath};
 use removarr_domain::plan::{ActionTarget, PlanOrigin, PlannedAction, Precondition};
 use removarr_matching::proof::{ContentVerdict, HardlinkProbeGate, ReadOnlyGate, VerifyRequest};
 use removarr_matching::reject::Rejection;
@@ -31,6 +31,14 @@ pub(crate) struct ReplaceTarget {
     pub target: RootedPath,
     pub expect_source: EntrySignature,
     pub expect_target: EntrySignature,
+}
+
+/// `final_state` of a `FsReplaceWithHardlink` result: what the disk showed after the call.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct ReplaceObserved {
+    pub replaced: bool,
+    pub phys: Option<PhysicalId>,
+    pub error: Option<String>,
 }
 
 /// `target` payload of a `FsProbeHardlink` intent.
@@ -80,6 +88,14 @@ fn item(a: &PlannedAction) -> Result<Item<'_>, Blocker> {
             format!("the plan carries no signature for {p}"),
         )
     };
+    // Defense in depth (CP2T3-F08): the planner, the runner and the mutator each enforce the
+    // direction completed -> media.
+    if source.root.kind() != RootKind::Completed || target.root.kind() != RootKind::Media {
+        return Err(Blocker::new(
+            BlockerCode::ProtectedZone,
+            "consolidation goes from a completed source to a media target only",
+        ));
+    }
     Ok(Item {
         action: a,
         source: source.clone(),
@@ -302,7 +318,15 @@ impl Ctx<'_> {
         self.reporter.stage("revalidate", 0, None);
         let mut failed = BTreeMap::new();
         for it in items {
-            let bl = self.revalidate_action(live, it.action).await?;
+            // A store or task failure is a blocker, never an abort (CP2T3-F11): after the stop,
+            // the compensating restore must still run.
+            let bl = match self.revalidate_action(live, it.action).await {
+                Ok(bl) => bl,
+                Err(e) => vec![Blocker::new(
+                    BlockerCode::ScanIncomplete,
+                    format!("revalidation could not read the stored state: {}", e.detail),
+                )],
+            };
             if !bl.is_empty() {
                 failed.insert(it.action.index, bl);
             }
@@ -423,49 +447,85 @@ impl Ctx<'_> {
             expect_target: it.expect_target,
         };
         let p = payload.clone();
-        let run = self
-            .step(
+        let intent = self
+            .intent(
                 it.action.index,
                 JournalStep::FsReplaceWithHardlink,
                 json(&payload),
                 json(&verdict),
                 hashes.clone(),
-                || {
-                    self.blocking(move || {
-                        fs.replace_with_hardlink(
-                            &p.source,
-                            &p.target,
-                            &p.expect_source,
-                            &p.expect_target,
-                        )
-                    })
-                },
             )
             .await?;
-        Ok(match run {
-            StepRun::Done(_phys) => {
-                b.tx.modified.extend(hashes);
-                Replaced::Mutated(None)
-            }
-            StepRun::Simulated => {
-                b.tx.modified.extend(hashes);
-                Replaced::Simulated
-            }
-            StepRun::Failed(e) => {
-                // Never guess: the target's inode says whether the replacement happened.
-                match self.observe_replaced(it).await {
-                    Some(true) => {
-                        b.tx.modified.extend(hashes);
-                        Replaced::Mutated(Some(e))
-                    }
-                    Some(false) => Replaced::Nothing(ActionOutcome::Failed { class: e.class }),
-                    None => {
-                        b.tx.modified.extend(hashes);
-                        Replaced::Nothing(ActionOutcome::FailedNeedsReview)
-                    }
-                }
-            }
-        })
+        if self.simulated {
+            self.result(
+                intent,
+                it.action.index,
+                JournalStep::FsReplaceWithHardlink,
+                StepOutcome::Simulated,
+            )
+            .await?;
+            b.tx.modified.extend(hashes);
+            return Ok(Replaced::Simulated);
+        }
+        let call = self
+            .blocking(move || {
+                fs.replace_with_hardlink(&p.source, &p.target, &p.expect_source, &p.expect_target)
+            })
+            .await;
+        // The journal records what the disk shows, never only what the call returned
+        // (CP2T3-F01): a failed call after the rename is a mutation that happened.
+        let (outcome, replaced) = match call {
+            Ok(phys) => (
+                StepOutcome::Done {
+                    final_state: json(&ReplaceObserved {
+                        replaced: true,
+                        phys: Some(phys),
+                        error: None,
+                    }),
+                },
+                Replaced::Mutated(None),
+            ),
+            Err(e) => match self.observe_replaced(it).await {
+                Some(true) => (
+                    StepOutcome::Done {
+                        final_state: json(&ReplaceObserved {
+                            replaced: true,
+                            phys: Some(it.expect_source.phys()),
+                            error: Some(e.detail.clone()),
+                        }),
+                    },
+                    Replaced::Mutated(Some(e)),
+                ),
+                Some(false) => (
+                    StepOutcome::Failed {
+                        class: e.class.clone(),
+                        message: format!("{} (target unchanged)", e.detail),
+                    },
+                    Replaced::Nothing(ActionOutcome::Failed { class: e.class }),
+                ),
+                None => (
+                    StepOutcome::Failed {
+                        class: e.class.clone(),
+                        message: format!("{} (target could not be observed)", e.detail),
+                    },
+                    Replaced::Nothing(ActionOutcome::FailedNeedsReview),
+                ),
+            },
+        };
+        self.result(
+            intent,
+            it.action.index,
+            JournalStep::FsReplaceWithHardlink,
+            outcome,
+        )
+        .await?;
+        if matches!(
+            replaced,
+            Replaced::Mutated(_) | Replaced::Nothing(ActionOutcome::FailedNeedsReview)
+        ) {
+            b.tx.modified.extend(hashes);
+        }
+        Ok(replaced)
     }
 
     /// The bounded full comparison, off the async runtime. `live_gate` selects the hardlink

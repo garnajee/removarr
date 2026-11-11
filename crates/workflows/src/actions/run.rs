@@ -126,6 +126,13 @@ pub async fn execute(
             ),
         ));
     }
+    // CP2T3-F04: a simulation never holds a live adapter, whatever the caller passed. The
+    // recording set replaces the mutators before the context exists.
+    let recording = simulated.then(|| {
+        let services: Vec<_> = mutators.arr.iter().map(|(s, _)| *s).collect();
+        Mutators::recording(&services).0
+    });
+    let mutators = recording.as_ref().unwrap_or(mutators);
     let ctx = Ctx {
         ports,
         mutators,

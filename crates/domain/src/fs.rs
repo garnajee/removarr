@@ -140,7 +140,8 @@ impl RootInventory {
     }
 }
 
-/// Signatures of a directory and its direct entries (key `""` is the directory itself).
+/// Signatures of a directory and of everything below it, recursively (keys relative to the
+/// directory; `""` is the directory itself). Folder removal revalidates this whole subtree.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DirSnapshot {
     pub dir: RootedPath,

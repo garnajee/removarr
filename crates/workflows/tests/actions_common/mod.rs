@@ -82,21 +82,42 @@ pub enum CrashPoint {
 #[derive(Debug, Default)]
 pub struct Hang {
     pub at: Mutex<Option<CrashPoint>>,
+    /// Occurrences of the point to let through before hanging.
+    pub skip: Mutex<usize>,
     pub hit: Notify,
     pub reached: Mutex<Option<CrashPoint>>,
 }
 
 impl Hang {
     pub fn arm(&self, p: CrashPoint) {
+        self.arm_nth(p, 0);
+    }
+
+    /// Hangs at the `skip + 1`-th occurrence of `p`.
+    pub fn arm_nth(&self, p: CrashPoint, skip: usize) {
         *self.at.lock().unwrap() = Some(p);
+        *self.skip.lock().unwrap() = skip;
     }
 
     pub fn disarm(&self) {
         *self.at.lock().unwrap() = None;
     }
 
+    /// True when this occurrence must hang (consumes one skip otherwise).
+    fn should_hang(&self, p: CrashPoint) -> bool {
+        if *self.at.lock().unwrap() != Some(p) {
+            return false;
+        }
+        let mut skip = self.skip.lock().unwrap();
+        if *skip > 0 {
+            *skip -= 1;
+            return false;
+        }
+        true
+    }
+
     async fn maybe(&self, p: CrashPoint) {
-        if *self.at.lock().unwrap() == Some(p) {
+        if self.should_hang(p) {
             *self.reached.lock().unwrap() = Some(p);
             self.hit.notify_one();
             std::future::pending::<()>().await;
@@ -108,6 +129,9 @@ impl Hang {
 pub struct HangJournal {
     inner: Arc<dyn JournalStore>,
     pub hang: Arc<Hang>,
+    /// Test seam (CP2T3-F01): a `Done` result of this step is stored as `Failed`, so the
+    /// journal says the mutation failed while the disk says it happened.
+    pub rewrite_done_as_failed: Arc<Mutex<Option<JournalStep>>>,
 }
 
 #[async_trait]
@@ -119,8 +143,24 @@ impl JournalStore for HangJournal {
         Ok(())
     }
     async fn record_result(&self, r: &ResultRecord) -> Result<(), PortError> {
-        if let Some(step) = self.step_of(r.intent_id).await {
+        let step = self.step_of(r.intent_id).await;
+        if let Some(step) = step {
             self.hang.maybe(CrashPoint::BeforeResult(step)).await;
+        }
+        let rewrite = *self.rewrite_done_as_failed.lock().unwrap();
+        if rewrite.is_some()
+            && step == rewrite
+            && matches!(
+                r.outcome,
+                removarr_domain::journal::StepOutcome::Done { .. }
+            )
+        {
+            let mut failed = r.clone();
+            failed.outcome = removarr_domain::journal::StepOutcome::Failed {
+                class: ErrorClass::Io(removarr_domain::fs::IoKind::Other),
+                message: "recorded as failed by the test seam".into(),
+            };
+            return self.inner.record_result(&failed).await;
         }
         self.inner.record_result(r).await
     }
@@ -146,11 +186,14 @@ impl JournalStore for HangJournal {
 
 impl HangJournal {
     async fn step_of(&self, id: removarr_domain::ids::IntentId) -> Option<JournalStep> {
-        let armed = (*self.hang.at.lock().unwrap())?;
-        let CrashPoint::BeforeResult(_) = armed else {
+        let armed = *self.hang.at.lock().unwrap();
+        let wanted = matches!(armed, Some(CrashPoint::BeforeResult(_)))
+            || self.rewrite_done_as_failed.lock().unwrap().is_some();
+        if !wanted {
             return None;
-        };
-        // Only a hang on results needs the step: look it up through the unfinished list.
+        }
+        // Only a hang on results or the rewrite seam needs the step: look it up through the
+        // unfinished list.
         self.inner
             .unfinished()
             .await
@@ -250,6 +293,29 @@ impl FakeQbit {
                 checking: None,
             },
         );
+    }
+
+    /// A torrent whose paths have no mapping rule (fail-closed case).
+    pub fn add_unmapped(&self, h: char) {
+        self.add(
+            h,
+            &RootId::completed(),
+            "Other",
+            &[("Other/x.mkv", "Other/x.mkv")],
+        );
+        let mut t = self.torrents.lock().unwrap();
+        let e = t.get_mut(&hash(h)).unwrap();
+        e.info.save_path = MappedPath::NoRule {
+            raw: "/srv/elsewhere".into(),
+        };
+        e.info.content_path = MappedPath::NoRule {
+            raw: "/srv/elsewhere/Other".into(),
+        };
+        for f in &mut e.files {
+            f.candidates = vec![MappedPath::NoRule {
+                raw: "/srv/elsewhere/Other/x.mkv".into(),
+            }];
+        }
     }
 
     pub fn set_state(&self, h: char, state: &str) {
@@ -401,6 +467,187 @@ impl QbitControl for FakeQbit {
     }
 }
 
+// ------------------------------------------------------------------ ARR / Jellyfin fakes
+
+/// Counting ARR commands (CP2T3-F05): every call is a mutation the guards must not see.
+#[derive(Debug, Default)]
+pub struct CountingArr(pub AtomicUsize);
+
+#[async_trait]
+impl removarr_domain::ports::ArrCommands for CountingArr {
+    async fn rescan(&self, _: &removarr_domain::arr::ArrMediaRef) -> Result<i64, PortError> {
+        self.0.fetch_add(1, Ordering::SeqCst);
+        Ok(1)
+    }
+    async fn rescan_all(&self) -> Result<i64, PortError> {
+        self.0.fetch_add(1, Ordering::SeqCst);
+        Ok(1)
+    }
+    async fn manual_import(
+        &self,
+        _: &removarr_domain::arr::ManualImportRequest,
+    ) -> Result<i64, PortError> {
+        self.0.fetch_add(1, Ordering::SeqCst);
+        Ok(1)
+    }
+    async fn grab(&self, _: &removarr_domain::arr::ReleaseRef) -> Result<(), PortError> {
+        self.0.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    async fn remove_queue_item_keep_media(&self, _: i64) -> Result<(), PortError> {
+        self.0.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    async fn set_monitored(
+        &self,
+        _: &removarr_domain::arr::ArrMediaRef,
+        _: bool,
+    ) -> Result<(), PortError> {
+        self.0.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct CountingJellyfin(pub AtomicUsize);
+
+#[async_trait]
+impl removarr_domain::ports::JellyfinCommands for CountingJellyfin {
+    async fn refresh_library(&self) -> Result<(), PortError> {
+        self.0.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    async fn refresh_item(&self, _: &str) -> Result<(), PortError> {
+        self.0.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+}
+
+/// A reachable Sonarr with an empty queue (read side only).
+#[derive(Debug)]
+pub struct ArrReadFake;
+
+#[async_trait]
+impl removarr_domain::ports::ArrRead for ArrReadFake {
+    fn service(&self) -> removarr_domain::arr::ArrService {
+        removarr_domain::arr::ArrService::Sonarr
+    }
+    async fn status(&self) -> Result<String, PortError> {
+        Ok("4.0".into())
+    }
+    async fn library(&self) -> Result<Vec<removarr_domain::arr::ArrLibraryEntry>, PortError> {
+        Ok(vec![])
+    }
+    async fn queue(&self) -> Result<Vec<removarr_domain::arr::ArrQueueItem>, PortError> {
+        Ok(vec![])
+    }
+    async fn history_for_download(
+        &self,
+        _: &TorrentHash,
+    ) -> Result<Vec<removarr_domain::arr::ArrHistoryRecord>, PortError> {
+        Ok(vec![])
+    }
+    async fn quality_snapshot(
+        &self,
+        _: &removarr_domain::arr::ArrMediaRef,
+    ) -> Result<removarr_domain::arr::ArrQualitySnapshot, PortError> {
+        Err(PortError::new(ErrorClass::NotFound, "no media in the fake"))
+    }
+    async fn manual_import_preview(
+        &self,
+        _: &RootedPath,
+        _: Option<&removarr_domain::arr::ArrMediaRef>,
+    ) -> Result<Vec<removarr_domain::arr::ArrCandidateDecision>, PortError> {
+        Ok(vec![])
+    }
+    async fn episodes(
+        &self,
+        _: i64,
+        _: Option<i32>,
+    ) -> Result<Vec<removarr_domain::arr::ArrEpisode>, PortError> {
+        Ok(vec![])
+    }
+    async fn search_releases(
+        &self,
+        _: &removarr_domain::arr::ArrMediaRef,
+    ) -> Result<Vec<removarr_domain::arr::ReleaseSearchResult>, PortError> {
+        Ok(vec![])
+    }
+    async fn command_status(
+        &self,
+        _: i64,
+    ) -> Result<removarr_domain::arr::CommandState, PortError> {
+        Ok(removarr_domain::arr::CommandState::Completed)
+    }
+    async fn media_management(
+        &self,
+    ) -> Result<removarr_domain::arr::ArrMediaManagement, PortError> {
+        Err(PortError::new(ErrorClass::NotFound, "not in the fake"))
+    }
+}
+
+#[derive(Debug)]
+pub struct JellyfinReadFake;
+
+#[async_trait]
+impl removarr_domain::ports::JellyfinRead for JellyfinReadFake {
+    async fn status(&self) -> Result<String, PortError> {
+        Ok("10.9".into())
+    }
+    async fn libraries(
+        &self,
+    ) -> Result<Vec<removarr_domain::jellyfin::JellyfinLibrary>, PortError> {
+        Ok(vec![])
+    }
+    async fn items_by_paths(
+        &self,
+        _: &[RootedPath],
+    ) -> Result<BTreeMap<RootedPath, Option<removarr_domain::jellyfin::JellyfinItemRef>>, PortError>
+    {
+        Ok(BTreeMap::new())
+    }
+    async fn library_refresh_running(&self) -> Result<bool, PortError> {
+        Ok(false)
+    }
+}
+
+/// `ScanStore` wrapper whose `latest_session` fails after `allow` calls (CP2T3-F11).
+pub struct FailingScans {
+    inner: removarr_storage::ScanRepo,
+    pub allow: AtomicUsize,
+    pub calls: AtomicUsize,
+}
+
+#[async_trait]
+impl ScanStore for FailingScans {
+    async fn begin_session(&self, s: &AuditSession) -> Result<(), PortError> {
+        self.inner.begin_session(s).await
+    }
+    async fn save_inventory(
+        &self,
+        session: SessionId,
+        inv: &removarr_domain::fs::RootInventory,
+    ) -> Result<removarr_domain::fs::DiffStats, PortError> {
+        self.inner.save_inventory(session, inv).await
+    }
+    async fn finish_session(&self, s: &AuditSession) -> Result<(), PortError> {
+        self.inner.finish_session(s).await
+    }
+    async fn latest_session(&self) -> Result<Option<AuditSession>, PortError> {
+        let n = self.calls.fetch_add(1, Ordering::SeqCst);
+        if n >= self.allow.load(Ordering::SeqCst) {
+            return Err(PortError::new(ErrorClass::Storage, "database read failed"));
+        }
+        self.inner.latest_session().await
+    }
+    async fn load_inventory(
+        &self,
+        root: &RootId,
+    ) -> Result<removarr_domain::fs::RootInventory, PortError> {
+        self.inner.load_inventory(root).await
+    }
+}
+
 // ------------------------------------------------------------------ fs wrappers
 
 /// Counts mutator calls; can run a hook after a replacement and fail it afterwards.
@@ -536,6 +783,10 @@ pub struct Lab {
     pub hang: Arc<Hang>,
     pub qbit: Arc<FakeQbit>,
     pub session: SessionId,
+    pub arr_cmd: Arc<CountingArr>,
+    pub jellyfin_cmd: Arc<CountingJellyfin>,
+    pub scans: Arc<FailingScans>,
+    pub rewrite_done_as_failed: Arc<Mutex<Option<JournalStep>>>,
 }
 
 impl Lab {
@@ -571,6 +822,7 @@ impl Lab {
         let db = Db::open(&base.join("removarr.db")).await.unwrap();
         let clock = Arc::new(FakeClock::new(NOW));
         let repos = Repos::new(&db, clock.clone());
+        let repos_scans = repos.scans.clone();
         let hang = Arc::new(Hang::default());
         let qbit = FakeQbit::new(hang.clone());
         qbit.add(
@@ -598,6 +850,14 @@ impl Lab {
             hang,
             qbit,
             session: SessionId::new(RawUuid::from_u128(7)),
+            arr_cmd: Arc::new(CountingArr::default()),
+            jellyfin_cmd: Arc::new(CountingJellyfin::default()),
+            scans: Arc::new(FailingScans {
+                inner: repos_scans,
+                allow: AtomicUsize::new(usize::MAX),
+                calls: AtomicUsize::new(0),
+            }),
+            rewrite_done_as_failed: Arc::new(Mutex::new(None)),
         };
         lab.store_observation().await;
         lab
@@ -605,6 +865,16 @@ impl Lab {
 
     /// Stores a complete session with the real inventories and the fake's torrent snapshot.
     pub async fn store_observation(&self) {
+        self.store_session(self.session).await;
+    }
+
+    /// Stores a newer complete session (the filesystem changed since the first one).
+    pub async fn store_observation_again(&self) {
+        self.store_session(SessionId::new(RawUuid::from_u128(8)))
+            .await;
+    }
+
+    async fn store_session(&self, id: SessionId) {
         let ok = |k: ServiceKind| ServiceStatus {
             service: k,
             state: ServiceState::Ok {
@@ -613,8 +883,8 @@ impl Lab {
             observed_at: NOW,
         };
         let mut s = AuditSession {
-            id: self.session,
-            started_at: NOW,
+            id,
+            started_at: Timestamp(NOW.0 + i64::try_from(id.0.as_u128()).unwrap()),
             finished_at: None,
             status: SessionStatus::Running,
             roots: [RootId::completed(), self.media.clone()]
@@ -847,15 +1117,16 @@ impl Lab {
             journal: Arc::new(HangJournal {
                 inner: Arc::new(self.repos.journal.clone()),
                 hang: self.hang.clone(),
+                rewrite_done_as_failed: self.rewrite_done_as_failed.clone(),
             }),
             gains: Arc::new(self.repos.gains.clone()),
-            scans: Arc::new(self.repos.scans.clone()),
+            scans: self.scans.clone(),
             snapshots: Arc::new(self.repos.snapshots.clone()),
             fs: self.fs.clone(),
             content: self.content.clone(),
             qbit: Some(self.qbit.clone()),
-            arr: vec![],
-            jellyfin: None,
+            arr: vec![Arc::new(ArrReadFake)],
+            jellyfin: Some(Arc::new(JellyfinReadFake)),
             clock: self.clock.clone(),
             ids: self.ids.clone(),
         }
@@ -874,7 +1145,35 @@ impl Lab {
     pub fn live(&self) -> (Mutators, Arc<CountingMutator>) {
         let live = LiveMode::for_tests();
         let counting = CountingMutator::new(Arc::new(LiveFsMutator::new(&self.roots, &live)));
-        let m = Mutators::live(counting.clone(), Some(self.qbit.clone()), vec![], None);
+        let m = Mutators::live(
+            counting.clone(),
+            Some(self.qbit.clone()),
+            vec![(
+                removarr_domain::arr::ArrService::Sonarr,
+                self.arr_cmd.clone(),
+            )],
+            Some(self.jellyfin_cmd.clone()),
+        );
         (m, counting)
+    }
+
+    /// Calls seen by the live ARR and Jellyfin command fakes (must stay zero in every guard).
+    pub fn service_mutations(&self) -> usize {
+        self.arr_cmd.0.load(Ordering::SeqCst) + self.jellyfin_cmd.0.load(Ordering::SeqCst)
+    }
+
+    /// Adds a torrent `h` that also holds `rel` under `root` (a cross-seed after planning).
+    pub fn add_holder(&self, h: char, root: &RootId, rel: &str) {
+        self.qbit.add(h, root, rel, &[(rel, rel)]);
+    }
+
+    /// The journaled `observed` payload of the last `QbitStart` intent.
+    pub async fn last_start_observed(&self, id: PlanId) -> Option<serde_json::Value> {
+        self.journal(id)
+            .await
+            .into_iter()
+            .rev()
+            .find(|(i, _)| i.step == JournalStep::QbitStart)
+            .map(|(i, _)| i.observed)
     }
 }

@@ -258,3 +258,75 @@ fn tier_three_mutations_are_explicit_refusals_in_stage_a() {
     let md = fs::metadata(lab.roots.completed().as_path().join("Rel/a.mkv")).unwrap();
     assert_eq!(md.nlink(), 1, "nothing changed");
 }
+
+#[test]
+fn f08_the_mutator_refuses_any_direction_but_completed_to_media() {
+    let lab = lab();
+    let completed = RootId::completed();
+    let m = mutator(&lab);
+    let media_file = rp(&lab.media, "Movies/Rel/a.mkv");
+    let completed_file = rp(&completed, "Rel/a.mkv");
+    let (s, t) = (
+        sig(&lab, &lab.media, "Movies/Rel/a.mkv"),
+        sig(&lab, &completed, "Rel/a.mkv"),
+    );
+    // media -> completed
+    let e = m
+        .replace_with_hardlink(&media_file, &completed_file, &s, &t)
+        .unwrap_err();
+    assert_eq!(e.class, ErrorClass::Confinement, "{e:?}");
+    let e = m
+        .probe_hardlink(&media_file, &rp(&completed, "Rel"))
+        .unwrap_err();
+    assert_eq!(e.class, ErrorClass::Confinement);
+    // completed -> completed and media -> media
+    let e = m
+        .replace_with_hardlink(&completed_file, &rp(&completed, "Rel/b.mkv"), &t, &t)
+        .unwrap_err();
+    assert_eq!(e.class, ErrorClass::Confinement);
+    let e = m
+        .probe_hardlink(&media_file, &rp(&lab.media, "Movies/Rel"))
+        .unwrap_err();
+    assert_eq!(e.class, ErrorClass::Confinement);
+    assert_eq!(
+        sig(&lab, &completed, "Rel/a.mkv").phys(),
+        t.phys(),
+        "nothing changed"
+    );
+    assert_eq!(sig(&lab, &lab.media, "Movies/Rel/a.mkv").phys(), s.phys());
+    let completed_dir = lab.roots.completed().as_path().join("Rel");
+    assert_eq!(
+        entries(&completed_dir),
+        vec!["a.mkv"],
+        "no temporary link anywhere"
+    );
+}
+
+#[test]
+fn f13_long_names_get_a_temporary_name_within_name_max() {
+    let lab = lab();
+    let completed = RootId::completed();
+    let long = format!("{}.mkv", "x".repeat(246)); // 250 bytes
+    assert_eq!(long.len(), 250);
+    let completed_dir = lab.roots.completed().as_path().join("Rel");
+    let media_dir = lab.roots.media()[0].as_path().join("Movies/Rel");
+    fs::write(completed_dir.join(&long), b"long name bytes").unwrap();
+    fs::write(media_dir.join(&long), b"long name bytes").unwrap();
+    let src = rp(&completed, &format!("Rel/{long}"));
+    let tgt = rp(&lab.media, &format!("Movies/Rel/{long}"));
+    let (s, t) = (
+        sig(&lab, &completed, &src.rel.to_string()),
+        sig(&lab, &lab.media, &tgt.rel.to_string()),
+    );
+    let m = mutator(&lab);
+    m.probe_hardlink(&src, &rp(&lab.media, "Movies/Rel"))
+        .expect("probe with a long name");
+    let phys = m
+        .replace_with_hardlink(&src, &tgt, &s, &t)
+        .expect("replace with a long name");
+    assert_eq!(phys, s.phys());
+    assert_eq!(sig(&lab, &lab.media, &tgt.rel.to_string()).phys(), s.phys());
+    let mut names = entries(&media_dir);
+    names.retain(|n| n.starts_with('.'));
+    assert!(names.is_empty(), "no temporary link left: {names:?}");
+}

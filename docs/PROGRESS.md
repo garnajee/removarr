@@ -28,7 +28,10 @@ Status values: `todo`, `running`, `done`, `blocked`.
 | 8 | `12-plan-engine` | done | plans for all tiers, tier-tagged and capability-gated; no mutation port referenced |
 | 8 | `03-domain-model` patch 2 (ARR-validated auto deletion evidence, service-command verification steps) | done | 603 tests; golden hash unchanged; gap 3 accepted as deviation |
 | 8 | `12-plan-engine` follow-up (adopt patch 2, torrent staleness by eligibility class) | done | 607 tests; wanted-file set checked live by 13 at revalidation (accepted); auto plans omit companion actions (confirmed, cleanup stays manual) |
-| 9 | `13-action-runner` | running | stage A done (tiers 1-2, 634 tests); CP2-tier3 PASS w/ condition; stage B running (F01-F04 then tier 3) |
+| 9 | `13-action-runner` | running | stage A done (tiers 1-2, 634 tests); CP2-tier3 PASS w/ condition; stage B step 1 done (F01, F02, F04-F14 fixed, 647 tests); F03 needs domain patch 3; tier 3 pending |
+| 9 | `03-domain-model` patch 3 (TorrentWantedFiles precondition, ChangedSincePlanning/Interrupted blocker codes) | running | required by CP2T3-F03/F10 |
+| 9 | `12-plan-engine` emit TorrentWantedFiles | todo | |
+| 9 | `13-action-runner` stage B step 2 (tier 3) | todo | |
 | 10 | `14-job-runner` | todo | |
 | 11 | `15-reporting` | todo | |
 | 12 | `16-backend-api` | todo | |

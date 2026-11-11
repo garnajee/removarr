@@ -52,6 +52,15 @@ pub struct RecoveryReport {
     pub events: Vec<ActionEvent>,
 }
 
+/// What recovery concluded about an action's mutation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Executed {
+    Untouched,
+    Mutated,
+    /// The target could not be observed: possibly modified, manual review.
+    Unobservable,
+}
+
 fn interrupted() -> ActionOutcome {
     ActionOutcome::NotExecuted {
         blockers: vec![Blocker::new(
@@ -126,7 +135,7 @@ async fn recover_plan(ctx: &Ctx<'_>, plan: &ActionPlan) -> Result<RecoveredPlan,
     };
     let mut tx = TorrentTx::default();
     let mut stopped: BTreeSet<TorrentHash> = BTreeSet::new();
-    let mut executed: BTreeMap<u32, bool> = BTreeMap::new(); // action -> mutation observed
+    let mut executed: BTreeMap<u32, Executed> = BTreeMap::new();
     let mut unknown_restart: BTreeSet<TorrentHash> = BTreeSet::new();
 
     // 1. Read what the journal says; resolve filesystem intents from observations.
@@ -152,52 +161,82 @@ async fn recover_plan(ctx: &Ctx<'_>, plan: &ActionPlan) -> Result<RecoveredPlan,
                 }
             }
             JournalStep::FsReplaceWithHardlink => {
-                let done = match result.as_ref().map(|r| &r.outcome) {
-                    Some(StepOutcome::Done { .. }) => true,
-                    Some(_) => false,
-                    None => {
+                // CP2T3-F01: decide from the disk, never from a recorded `Failed` result. Only
+                // a definitive `Skipped` ("target unchanged") rules the mutation out.
+                let (done, needs_review) = match result.as_ref().map(|r| &r.outcome) {
+                    Some(StepOutcome::Done { .. }) => (true, false),
+                    Some(StepOutcome::Skipped { .. } | StepOutcome::Simulated) => (false, false),
+                    Some(StepOutcome::Failed { .. }) | None => {
                         let observed = ctx.observe_replace(intent).await;
-                        let (outcome, mutated) = match observed {
+                        let (outcome, done, review) = match observed {
                             Some(true) => (
                                 StepOutcome::Done {
                                     final_state: serde_json::json!({"recovered": "target carries the source inode"}),
                                 },
                                 true,
-                            ),
-                            Some(false) => (
-                                StepOutcome::Skipped {
-                                    reason: "interrupted before the replacement; target unchanged"
-                                        .into(),
-                                },
                                 false,
                             ),
+                            Some(false) => {
+                                out.notes.push(format!(
+                                    "action {}: replacement interrupted before the rename; a \
+                                     temporary `.<name>.removarr-link-*` link may remain next to \
+                                     the target (remove it by hand)",
+                                    intent.action.index
+                                ));
+                                (
+                                    StepOutcome::Skipped {
+                                        reason:
+                                            "interrupted before the replacement; target unchanged"
+                                                .into(),
+                                    },
+                                    false,
+                                    false,
+                                )
+                            }
                             None => (
                                 StepOutcome::Failed {
                                     class: ErrorClass::StateChanged,
                                     message: "interrupted; the target could not be observed".into(),
                                 },
                                 true,
+                                true,
                             ),
                         };
-                        ctx.write_result(intent, outcome).await?;
-                        mutated
+                        if result.is_none() {
+                            ctx.write_result(intent, outcome).await?;
+                        }
+                        (done, review)
                     }
                 };
-                executed
+                let slot = executed
                     .entry(intent.action.index)
-                    .and_modify(|m| *m |= done)
-                    .or_insert(done);
+                    .or_insert(Executed::Untouched);
+                if needs_review {
+                    *slot = Executed::Unobservable;
+                } else if done && *slot != Executed::Unobservable {
+                    *slot = Executed::Mutated;
+                }
                 if done {
                     tx.modified.extend(intent.hashes.iter().cloned());
                 }
             }
             JournalStep::FsProbeHardlink => {
-                if result.is_none() {
+                let leftover = match result.as_ref().map(|r| &r.outcome) {
+                    None => true,
+                    Some(StepOutcome::Failed { message, .. }) => {
+                        message.contains("removing the probe link")
+                    }
+                    Some(_) => false,
+                };
+                if leftover {
                     out.notes.push(format!(
-                        "action {}: interrupted during a hardlink probe; a temporary \
-                         `.<name>.removarr-probe-*` link may remain in the target directory",
+                        "action {}: a hardlink probe did not complete; a temporary \
+                         `.<name>.removarr-probe-*` link may remain in the target directory \
+                         (remove it by hand)",
                         intent.action.index
                     ));
+                }
+                if result.is_none() {
                     ctx.write_result(
                         intent,
                         StepOutcome::Skipped {
@@ -232,15 +271,27 @@ async fn recover_plan(ctx: &Ctx<'_>, plan: &ActionPlan) -> Result<RecoveredPlan,
                 }
             }
             _ => {
-                if result.is_none() {
+                // Any other mutation step (none is reachable in this build): unless the
+                // result rules the mutation out, treat it as possibly done (F01 rule).
+                let ruled_out = matches!(
+                    result.as_ref().map(|r| &r.outcome),
+                    Some(StepOutcome::Skipped { .. } | StepOutcome::Simulated)
+                );
+                if !ruled_out {
                     out.notes.push(format!(
-                        "action {}: unfinished {:?} intent is not resolvable in this build",
+                        "action {}: {:?} intent cannot be re-observed in this build; treated as \
+                         possibly executed",
                         intent.action.index, intent.step
                     ));
+                    tx.modified.extend(intent.hashes.iter().cloned());
+                    executed.insert(intent.action.index, Executed::Unobservable);
+                }
+                if result.is_none() {
                     ctx.write_result(
                         intent,
-                        StepOutcome::Skipped {
-                            reason: "interrupted; not resolvable in this build".into(),
+                        StepOutcome::Failed {
+                            class: ErrorClass::StateChanged,
+                            message: "interrupted; not re-observable in this build".into(),
                         },
                     )
                     .await?;
@@ -306,10 +357,11 @@ async fn recover_plan(ctx: &Ctx<'_>, plan: &ActionPlan) -> Result<RecoveredPlan,
     // 3. Action outcomes and the plan status. Outcomes already final stay (Conflict ignored).
     for a in &plan.actions {
         let outcome = match executed.get(&a.index) {
-            Some(true) => ActionOutcome::ExecutedUnverified {
+            Some(Executed::Mutated) => ActionOutcome::ExecutedUnverified {
                 reason: "interrupted before verification".into(),
             },
-            _ => interrupted(),
+            Some(Executed::Unobservable) => ActionOutcome::FailedNeedsReview,
+            Some(Executed::Untouched) | None => interrupted(),
         };
         match ports
             .journal

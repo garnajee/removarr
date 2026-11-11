@@ -240,44 +240,56 @@ impl Ctx<'_> {
         }
     }
 
-    /// Journaled restoration: starts the hashes `plan_restore` allows, records the rest as
-    /// left stopped. A failed start leaves its hashes stopped (`StartFailed`).
+    /// Journaled restoration: starts the hashes `plan_restore` allows and records, durably,
+    /// which hashes stay stopped and why (CP2T3-F09): the `QbitStart` intent carries the start
+    /// set as target and `{ recheck, left_stopped }` as observed, and is written even when
+    /// nothing is started. A failed start leaves its hashes stopped (`StartFailed`).
     pub async fn restore(&self, action: u32, tx: &mut TorrentTx) -> Result<(), PortError> {
         if tx.initial.is_empty() && tx.modified.is_empty() {
             return Ok(());
         }
         let restore = plan_restore(&tx.initial, &tx.modified, &tx.recheck);
         tx.left_stopped.extend(restore.left_stopped.clone());
-        if !restore.start.is_empty() {
-            let ctl = self.mutators.qbit.clone();
-            let set = restore.start.clone();
-            let run = self
-                .step(
-                    action,
-                    JournalStep::QbitStart,
-                    json(&restore.start),
-                    json(&tx.recheck),
-                    restore.start.clone(),
-                    || async move {
-                        let ctl = ctl.ok_or_else(no_controller)?;
-                        ctl.start(&set).await
-                    },
-                )
-                .await?;
-            match run {
-                StepRun::Done(()) => {
-                    tx.started.extend(restore.start.iter().cloned());
+        let observed = RestoreObserved {
+            recheck: tx.recheck.clone(),
+            left_stopped: tx.left_stopped.clone(),
+        };
+        let ctl = self.mutators.qbit.clone();
+        let set = restore.start.clone();
+        let run = self
+            .step(
+                action,
+                JournalStep::QbitStart,
+                json(&restore.start),
+                json(&observed),
+                restore.start.clone(),
+                || async move {
+                    if set.is_empty() {
+                        return Ok(RestoreResult {
+                            started: BTreeSet::new(),
+                        });
+                    }
+                    let ctl = ctl.ok_or_else(no_controller)?;
+                    ctl.start(&set).await?;
+                    Ok(RestoreResult { started: set })
+                },
+            )
+            .await?;
+        match run {
+            StepRun::Done(r) => {
+                if !r.started.is_empty() {
+                    tx.started.extend(r.started.iter().cloned());
                     self.reporter.emit(ActionEvent::TorrentsStarted {
                         plan: self.plan.id,
-                        hashes: restore.start.clone(),
+                        hashes: r.started,
                     });
                 }
-                StepRun::Simulated => {}
-                StepRun::Failed(_) => {
-                    for h in &restore.start {
-                        tx.left_stopped
-                            .insert(h.clone(), LeftStoppedReason::StartFailed);
-                    }
+            }
+            StepRun::Simulated => {}
+            StepRun::Failed(_) => {
+                for h in &restore.start {
+                    tx.left_stopped
+                        .insert(h.clone(), LeftStoppedReason::StartFailed);
                 }
             }
         }
@@ -289,6 +301,19 @@ impl Ctx<'_> {
         }
         Ok(())
     }
+}
+
+/// The `observed` payload of a `QbitStart` intent (durable left-stopped record).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct RestoreObserved {
+    pub recheck: BTreeMap<TorrentHash, RecheckStatus>,
+    pub left_stopped: BTreeMap<TorrentHash, LeftStoppedReason>,
+}
+
+/// The `final_state` of a `QbitStart` result.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct RestoreResult {
+    pub started: BTreeSet<TorrentHash>,
 }
 
 #[cfg(test)]

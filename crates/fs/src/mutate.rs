@@ -21,7 +21,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use removarr_config::{LiveMode, Roots};
 use removarr_domain::error::{ErrorClass, PortError};
 use removarr_domain::fs::{DirSnapshot, EntryKind, EntrySignature, IoKind, PhysicalId};
-use removarr_domain::path::{RootId, RootedPath};
+use removarr_domain::path::{RootId, RootKind, RootedPath};
 use removarr_domain::ports::FsMutator;
 use rustix::fs::{AtFlags, fsync, linkat, renameat, unlinkat};
 use rustix::io::Errno;
@@ -42,6 +42,9 @@ pub const CROSS_DEVICE_HINT: &str = "source and target are not on the same devic
 
 const NOT_IN_BUILD: &str = "not in this build: deletions and mode changes belong to risk tier \
     3, which is not implemented in stage A";
+
+/// Longest prefix of the target name kept in a temporary name.
+pub const TEMP_BASE_MAX: usize = 64;
 
 static SEQ: AtomicU64 = AtomicU64::new(0);
 
@@ -100,6 +103,17 @@ impl LiveFsMutator {
     }
 }
 
+/// Defense in depth (CP2T3-F08): a hardlink always goes from the completed root to a media
+/// root, whatever the plan says.
+fn check_direction(source: &RootedPath, target_root: &RootId) -> Result<(), PortError> {
+    if source.root.kind() != RootKind::Completed || target_root.kind() != RootKind::Media {
+        return Err(handle::confinement_error(
+            "a hardlink repair goes from the completed root to a media root only",
+        ));
+    }
+    Ok(())
+}
+
 /// `lstat` of a regular file that must still match what the plan captured (`nlink` ignored:
 /// the plan pins consolidation pairs with `compare_nlink = false`).
 fn expect_file(
@@ -143,21 +157,24 @@ fn lstat_regular(dir: impl AsFd, name: &CStr, what: &str) -> Result<EntrySignatu
     }
 }
 
-/// Temporary name next to the target: `.<name>.removarr-<tag>-<pid>-<seq>-<ns>`.
+/// Temporary name next to the target: `.<base>.removarr-<tag>-<seq>-<ns>`, where `<base>` is
+/// the target name truncated to [`TEMP_BASE_MAX`] bytes (on a char boundary) so the result
+/// stays well under `NAME_MAX` (255) for long release names (CP2T3-F13).
 fn temp_name(name: &CStr, tag: &str) -> Result<CString, PortError> {
     let base = name
         .to_str()
         .map_err(|_| PortError::new(ErrorClass::Validation, "file name is not valid UTF-8"))?;
+    let mut cut = base.len().min(TEMP_BASE_MAX);
+    while !base.is_char_boundary(cut) {
+        cut -= 1;
+    }
     let ns = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
     let seq = SEQ.fetch_add(1, Ordering::SeqCst);
-    CString::new(format!(
-        ".{base}.removarr-{tag}-{}-{seq}-{ns}",
-        std::process::id()
-    ))
-    .map_err(|_| PortError::new(ErrorClass::Validation, "NUL in temporary name"))
+    CString::new(format!(".{}.removarr-{tag}-{seq}-{ns}", &base[..cut]))
+        .map_err(|_| PortError::new(ErrorClass::Validation, "NUL in temporary name"))
 }
 
 fn link_error(e: Errno) -> PortError {
@@ -222,6 +239,7 @@ impl FsMutator for LiveFsMutator {
         source: &RootedPath,
         target_dir: &RootedPath,
     ) -> Result<(), PortError> {
+        check_direction(source, &target_dir.root)?;
         let (src_dir, src_name) = self.open_parent(source)?;
         let src = lstat_regular(&src_dir, &src_name, "source")?;
         let tgt_dir = self.open_dir(target_dir)?;
@@ -234,8 +252,9 @@ impl FsMutator for LiveFsMutator {
 
     /// `linkat(source -> .<name>.removarr-link-...)` in the target's directory, `renameat` over
     /// the target, `lstat` proving the target now carries the source inode, `fsync` of the
-    /// directory. Both signatures are re-checked right before the link and right before the
-    /// rename; any difference refuses with `StateChanged` and leaves nothing behind.
+    /// directory. Both signatures are checked right before the link; the target is checked
+    /// again right before the rename, while the source is proven by the inode of the temporary
+    /// link itself. Any difference refuses with `StateChanged` and leaves nothing behind.
     fn replace_with_hardlink(
         &self,
         source: &RootedPath,
@@ -243,6 +262,7 @@ impl FsMutator for LiveFsMutator {
         expect_source: &EntrySignature,
         expect_target: &EntrySignature,
     ) -> Result<PhysicalId, PortError> {
+        check_direction(source, &target.root)?;
         let (src_dir, src_name) = self.open_parent(source)?;
         let src = expect_file(&src_dir, &src_name, expect_source, "source")?;
         let (tgt_dir, tgt_name) = self.open_parent(target)?;

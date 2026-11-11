@@ -22,9 +22,11 @@
 //! 8. unfinished live intents found at startup are resolved by [`recovery::recover`] without
 //!    ever redoing a mutation; the plan becomes `Interrupted`.
 //!
-//! Stage A (risk tiers 1-2): the full pipeline in simulation for every kind, and the live
-//! exact-copy consolidation. Tier-3, tier-4 and tier-5 kinds are explicit refusals until their
-//! CP2 review (MASTER section 10).
+//! Stage A/B (risk tiers 1-2): the live exact-copy consolidation and its simulation. Every
+//! other kind (tier-2 service commands, tiers 3-5) is an explicit `NotInBuild` refusal, live
+//! and simulated alike, until its stage ships and its CP2 review passes (MASTER section 10).
+//! A simulation (`simulate = true`, or any run of a dry-run process) always executes on the
+//! recording adapters: `execute` swaps them in before the context exists (CP2T3-F04).
 
 mod consolidate;
 pub mod dry_run;
