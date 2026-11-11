@@ -766,6 +766,9 @@ pub(crate) fn torrent_removals<'a>(
         let Some(files) = snap.files.get(&h).filter(|fs| !fs.is_empty()) else {
             continue;
         };
+        if f.wanted_files(&h).is_none() {
+            continue;
+        }
         let mut deps = BTreeSet::new();
         let all_gone = files.iter().filter(|x| x.is_wanted()).all(|x| {
             x.candidates.iter().filter_map(|c| c.as_rooted()).any(|p| {

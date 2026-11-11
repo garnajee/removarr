@@ -38,6 +38,7 @@ pub enum StaleReason {
     TorrentChanged { hash: TorrentHash },
     TorrentMissing { hash: TorrentHash },
     MappingChanged { hash: TorrentHash },
+    WantedFilesChanged { hash: TorrentHash },
     TorrentReferences { path: RootedPath },
     ServiceNotOk { service: ServiceKind },
     ArrChanged { media: ArrMediaRef },
@@ -183,8 +184,13 @@ fn check(
                 }),
             }
         }
-        // Compared by the runner (and by plan-engine once it emits the pin); no stale check yet.
-        Precondition::TorrentWantedFiles { .. } => {}
+        // The latest stored snapshot must show the same wanted files (domain patch 3); a missing
+        // torrent or file list is a change too. The runner compares the live list again.
+        Precondition::TorrentWantedFiles { hash, wanted } => {
+            if f.wanted_files(hash).as_ref() != Some(wanted) {
+                out.push(StaleReason::WantedFilesChanged { hash: hash.clone() });
+            }
+        }
         Precondition::OldCoverageRecoverable { old_files } => {
             for (path, phys, _) in old_files {
                 match f.sig(path) {

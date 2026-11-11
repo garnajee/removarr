@@ -199,6 +199,39 @@ fn torrents_keep_a_plan_valid_while_their_eligibility_class_and_progress_hold() 
 }
 
 #[test]
+fn the_pinned_wanted_file_set_must_be_unchanged() {
+    let (movie, _) = plans();
+    assert!(movie.actions[0].preconditions.iter().any(|p| matches!(
+        p,
+        removarr_domain::plan::Precondition::TorrentWantedFiles { .. }
+    )));
+    // Unchanged set (only a state flip inside the eligible class): still valid.
+    assert!(stale(&movie, &with_state("stalledUP", 1.0)).is_empty());
+    // A file that is no longer wanted, or a new wanted file: the plan is stale.
+    let mut o = world();
+    if let QbitObservation::Available(snap) = &mut o.qbit {
+        let files = snap.files.get_mut(&hash('a')).unwrap();
+        let mut extra = files[0].clone();
+        extra.index = 1;
+        extra.name = "Movie.A.2020.nfo".into();
+        files.push(extra);
+    }
+    let r = stale(&movie, &input(&o));
+    assert!(
+        r.contains(&StaleReason::WantedFilesChanged { hash: hash('a') }),
+        "{r:?}"
+    );
+    assert_eq!(verdict(&r), Some(PlanStatus::Invalidated));
+    let mut o = world();
+    if let QbitObservation::Available(snap) = &mut o.qbit {
+        snap.files.get_mut(&hash('a')).unwrap()[0].priority = 0;
+    }
+    assert!(
+        stale(&movie, &input(&o)).contains(&StaleReason::WantedFilesChanged { hash: hash('a') })
+    );
+}
+
+#[test]
 fn torrent_and_service_changes_invalidate() {
     let (movie, folder) = plans();
     let c = completed();

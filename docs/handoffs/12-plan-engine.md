@@ -240,3 +240,31 @@ mod,service,validate}.rs`, tests `plans_arr.rs`, `plans_expiry.rs`, `plans_gate.
 
 Commands: `cargo fmt --all --check` pass; `cargo clippy --workspace --all-targets -- -D warnings` pass; `cargo test --workspace`
 pass, 607 passed, 0 failed, 1 ignored (opt-in real ffprobe); the workflows dependency gate prints nothing. Not committed.
+
+## Wave 9: TorrentWantedFiles
+
+Closes CP2T3-F03 on the plan side (domain patch 3). Files: `plans/{build,expiry,facts,fsplans,validate}.rs`, tests
+`plans_build.rs`, `plans_expiry.rs`. Nothing under `actions/**` was touched.
+
+* **Emission.** Every action that carries `torrent_hashes` gets exactly one `Precondition::TorrentWantedFiles { hash, wanted }`
+  per hash, for every kind with qBittorrent-affected hashes (consolidation, torrent-held deletions, `CleanupStalledIncomplete`,
+  `RemoveTorrentTask`, `ReplaceRelease`). `wanted` = `(TorrentFile.index, TorrentFile.name)` of the files with `priority > 0` in
+  the planning snapshot (`Facts::wanted_files`); `name` is the file name inside the torrent, as the domain and handoff 13 F03
+  define it (the mapped path is not part of the pin). Exception: `ArrRemoveQueueItem`, whose hash is only ARR's download id and
+  whose torrent is not touched, carries no pin. A hash whose file list or wanted set is missing cannot be pinned: the unit is
+  excluded with `TorrentProtectedState` ("wanted files are unknown"); a `RemoveTorrentTask` companion is not emitted for it.
+* **Validation.** `check_plan` requires the pins to match `torrent_hashes` exactly (one per hash, none extra); the domain rejects
+  empty sets, foreign hashes and duplicates when sealing.
+* **Staleness.** `expiry` compares each pin with the wanted set of the latest stored snapshot; a different set (file added,
+  file no longer wanted, torrent or file list gone) gives `StaleReason::WantedFilesChanged { hash }` and the plan is
+  `Invalidated` (it is a state change, not a timeout).
+* **Tests.** `plans_build.rs::every_affected_torrent_gets_exactly_one_wanted_file_pin` (cross-seed: two pins, `check_plan`
+  passes, same hash on rebuild, a missing or duplicate pin is rejected, an unknown wanted set blocks the unit);
+  `plans_expiry.rs::the_pinned_wanted_file_set_must_be_unchanged` (unchanged set and an eligible state flip stay valid, an extra
+  wanted file or a file set to priority 0 invalidates). The existing determinism tests
+  (`same_selection_gives_the_same_plan_and_hash_in_any_order`, domain golden hash) still pass.
+* **For 13.** Until `revalidate.rs` compares the live `files()` set with the pin, its fail-closed arm refuses every plan that
+  touches a torrent (they all carry pins now). Action-runner tests build their plans by hand, so none changed.
+
+Commands: `cargo fmt --all --check` pass; `cargo clippy --workspace --all-targets -- -D warnings` pass; `cargo test --workspace`
+pass, 651 passed, 0 failed, 1 ignored (opt-in real ffprobe). Not committed.

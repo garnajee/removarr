@@ -48,6 +48,21 @@ pub fn check_plan(plan: &ActionPlan) -> Vec<String> {
         if a.verification.is_empty() {
             bad("no verification step");
         }
+        if super::build::pins_torrents(a.kind) {
+            let pinned: Vec<&removarr_domain::torrent::TorrentHash> = a
+                .preconditions
+                .iter()
+                .filter_map(|p| match p {
+                    Precondition::TorrentWantedFiles { hash, .. } => Some(hash),
+                    _ => None,
+                })
+                .collect();
+            let exact = pinned.len() == a.torrent_hashes.len()
+                && a.torrent_hashes.iter().all(|h| pinned.contains(&h));
+            if !exact {
+                bad("every affected torrent needs exactly one wanted-file pin");
+            }
+        }
         if a.completeness == Completeness::Unknown {
             bad("no evidence");
         }

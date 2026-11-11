@@ -157,6 +157,7 @@ pub fn build_plan(
                     include_specials: *include_specials,
                 };
                 for (subjects, result) in arrplans::replace_groups(&facts, &issues, opts) {
+                    let result = result.and_then(|u| pin_wanted_files(&facts, u));
                     let gated = gate::blockers(ActionKind::ReplaceRelease, ctx.origin, settings);
                     let carried: Vec<Blocker> = subjects
                         .iter()
@@ -187,6 +188,7 @@ pub fn build_plan(
                         IssueAction::RemoveQueueItem => service::remove_queue_item(&facts, issue),
                         IssueAction::ReplaceRelease { .. } => unreachable_unit(),
                     };
+                    let result = result.and_then(|u| pin_wanted_files(&facts, u));
                     let result = match (result, ctx.auto) {
                         (Ok(u), Some(auto)) if ctx.origin == PlanOrigin::AutoPolicy => {
                             let extra = auto_blockers(&facts, issue, &u, auto, ctx.now);
@@ -226,6 +228,55 @@ pub fn build_plan(
         return Err(PlanError::NothingPlannable { excluded });
     }
     assemble(&facts, units, excluded, remove_tasks, ctx)
+}
+
+/// Whether an action's `torrent_hashes` are qBittorrent-affected and get a wanted-file pin.
+/// A queue removal names the ARR download id only and touches no torrent.
+pub(crate) fn pins_torrents(kind: ActionKind) -> bool {
+    kind != ActionKind::ArrRemoveQueueItem
+}
+
+/// One `TorrentWantedFiles` per affected hash, taken from the planning snapshot (domain patch
+/// 3, CP2T3-F03). A hash whose wanted set is unknown cannot be pinned: the action is blocked.
+fn pin_draft(facts: &Facts<'_>, d: &mut Draft<'_>) -> Result<(), Vec<Blocker>> {
+    if !pins_torrents(d.kind) {
+        return Ok(());
+    }
+    let mut blockers = Vec::new();
+    for h in &d.hashes {
+        match facts.wanted_files(h) {
+            Some(wanted) => d.pre.push(Precondition::TorrentWantedFiles {
+                hash: h.clone(),
+                wanted,
+            }),
+            None => blockers.push(Blocker::new(
+                BlockerCode::TorrentProtectedState,
+                format!(
+                    "torrent {}: its wanted files are unknown and cannot be pinned",
+                    super::facts::short(h)
+                ),
+            )),
+        }
+    }
+    if blockers.is_empty() {
+        Ok(())
+    } else {
+        Err(blockers)
+    }
+}
+
+fn pin_wanted_files<'a>(facts: &Facts<'a>, mut u: UnitPlan<'a>) -> UnitResult<'a> {
+    let mut blockers = Vec::new();
+    for d in &mut u.drafts {
+        if let Err(b) = pin_draft(facts, d) {
+            blockers.extend(b);
+        }
+    }
+    if blockers.is_empty() {
+        Ok(u)
+    } else {
+        Err(blockers)
+    }
 }
 
 fn unreachable_unit<'a>() -> UnitResult<'a> {
@@ -450,7 +501,12 @@ fn assemble<'a>(
     }
     if remove_tasks && companion_origin_ok(ActionKind::RemoveTorrentTask) {
         let tasks = fsplans::torrent_removals(facts, &drafts, ctx.origin == PlanOrigin::AutoPolicy);
-        drafts.extend(tasks);
+        for mut t in tasks {
+            // `torrent_removals` only emits hashes with a non-empty wanted set.
+            if pin_draft(facts, &mut t).is_ok() {
+                drafts.push(t);
+            }
+        }
     }
 
     let (per_action, expected_gains) = gains(facts, &drafts);

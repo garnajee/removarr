@@ -233,6 +233,19 @@ impl<'a> Facts<'a> {
             .unwrap_or_default()
     }
 
+    /// Wanted files (`priority > 0`) of a torrent in the planning snapshot, as `(index, name)`
+    /// pairs (`name` = the file name inside the torrent, domain patch 3). `None` when the
+    /// torrent, its file list or every wanted file is missing: nothing can be pinned.
+    pub fn wanted_files(&self, hash: &TorrentHash) -> Option<BTreeSet<(u32, String)>> {
+        let files = self.snapshot?.files.get(hash)?;
+        let wanted: BTreeSet<(u32, String)> = files
+            .iter()
+            .filter(|f| f.is_wanted())
+            .map(|f| (f.index, f.name.clone()))
+            .collect();
+        (!wanted.is_empty()).then_some(wanted)
+    }
+
     /// qBittorrent service state (CP1-F10, CON-20).
     pub fn qbit_blockers(&self) -> Vec<Blocker> {
         match &self.input.observation.qbit {

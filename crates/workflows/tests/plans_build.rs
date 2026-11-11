@@ -720,3 +720,75 @@ fn plan_rules_require_direction_pins_and_verification() {
     // Plans expire after the configured TTL.
     assert_eq!(b.plan.plan().expires_at, Timestamp(NOW.0 + 24 * 3_600_000));
 }
+
+#[test]
+fn every_affected_torrent_gets_exactly_one_wanted_file_pin() {
+    // A cross-seed: two torrents hold the same completed source.
+    let mut o = world();
+    let c = completed();
+    if let QbitObservation::Available(snap) = &mut o.qbit {
+        let t = Tor::new('b', &c, "stalledUP", 1.0, MOVIE, &[(MOVIE, MOVIE)]);
+        snap.files.insert(t.info.hash.clone(), t.files);
+        snap.torrents.push(t.info);
+    }
+    let i = input(&o);
+    let id = id_of(&i, C::HardlinkMissing, &sub(&rp(&c, MOVIE)));
+    let r = req(C::HardlinkMissing, vec![id], A::Consolidate);
+    let b = build(&i, &live(), &r).unwrap();
+    let a = &b.plan.plan().actions[0];
+    assert_eq!(a.torrent_hashes, [hash('a'), hash('b')].into());
+    let pins: Vec<_> = a
+        .preconditions
+        .iter()
+        .filter_map(|p| match p {
+            Precondition::TorrentWantedFiles { hash, wanted } => {
+                Some((hash.clone(), wanted.clone()))
+            }
+            _ => None,
+        })
+        .collect();
+    let want = std::collections::BTreeSet::from([(0u32, MOVIE.to_string())]);
+    assert_eq!(pins, [(hash('a'), want.clone()), (hash('b'), want)]);
+    assert!(check_plan(b.plan.plan()).is_empty());
+    // Deterministic: the same input gives the same hash with the pins.
+    assert_eq!(build(&i, &live(), &r).unwrap().plan.hash(), b.plan.hash());
+    // A missing or duplicated pin breaks the rules (and the domain validation).
+    let mut missing = b.plan.plan().clone();
+    missing.actions[0].preconditions.retain(
+        |p| !matches!(p, Precondition::TorrentWantedFiles { hash: h, .. } if *h == hash('b')),
+    );
+    assert!(
+        check_plan(&missing)
+            .iter()
+            .any(|v| v.contains("wanted-file pin"))
+    );
+    let mut dup = b.plan.plan().clone();
+    let first = dup.actions[0]
+        .preconditions
+        .iter()
+        .find(|p| matches!(p, Precondition::TorrentWantedFiles { .. }))
+        .cloned()
+        .unwrap();
+    dup.actions[0].preconditions.push(first);
+    assert!(!check_plan(&dup).is_empty());
+    assert!(HashedPlan::seal(dup).is_err());
+    // A torrent without a known wanted set cannot be pinned: the action is blocked.
+    let mut o2 = o.clone();
+    if let QbitObservation::Available(snap) = &mut o2.qbit {
+        for f in snap.files.get_mut(&hash('b')).unwrap() {
+            f.priority = 0;
+        }
+    }
+    let i2 = input(&o2);
+    let id = id_of(&i2, C::HardlinkMissing, &sub(&rp(&c, MOVIE)));
+    let r2 = build(
+        &i2,
+        &live(),
+        &req(C::HardlinkMissing, vec![id], A::Consolidate),
+    );
+    assert!(has_code(
+        &r2,
+        &sub(&rp(&c, MOVIE)),
+        &B::TorrentProtectedState
+    ));
+}
