@@ -160,6 +160,44 @@ fn file_folder_and_scan_error_changes_invalidate() {
     );
 }
 
+fn with_state(state: &str, progress: f64) -> PlanInput {
+    let mut o = world();
+    if let QbitObservation::Available(snap) = &mut o.qbit {
+        snap.torrents[0].state = TorrentState::parse(state);
+        snap.torrents[0].progress = progress;
+    }
+    input(&o)
+}
+
+#[test]
+fn torrents_keep_a_plan_valid_while_their_eligibility_class_and_progress_hold() {
+    let (movie, _) = plans();
+    // Seeding torrents flip between allowlisted states: no change (version 4 snapshot).
+    for state in ["stalledUP", "queuedUP", "forcedUP", "pausedUP"] {
+        assert!(stale(&movie, &with_state(state, 1.0)).is_empty(), "{state}");
+    }
+    // Any move to a protected or unknown state, or a progress change, invalidates.
+    for state in [
+        "pausedDL",
+        "error",
+        "missingFiles",
+        "checkingUP",
+        "stoppedUP",
+        "somethingNew",
+    ] {
+        let r = stale(&movie, &with_state(state, 1.0));
+        assert!(
+            r.contains(&StaleReason::TorrentChanged { hash: hash('a') }),
+            "{state}: {r:?}"
+        );
+        assert_eq!(verdict(&r), Some(PlanStatus::Invalidated));
+    }
+    assert!(
+        stale(&movie, &with_state("uploading", 0.99))
+            .contains(&StaleReason::TorrentChanged { hash: hash('a') })
+    );
+}
+
 #[test]
 fn torrent_and_service_changes_invalidate() {
     let (movie, folder) = plans();

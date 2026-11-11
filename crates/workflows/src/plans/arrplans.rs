@@ -229,11 +229,18 @@ fn replaced_member(
     let mut b = Vec::new();
     for file in files {
         match present_file(f, file, targets) {
-            Ok(e) => pre.push(Precondition::EntryUnchanged {
-                path: e.path.clone(),
-                sig: e.sig,
-                compare_nlink: false,
-            }),
+            Ok(e) => {
+                pre.push(Precondition::ArrReplacementPresent {
+                    media: a.media.clone(),
+                    path: e.path.clone(),
+                    size: file.size,
+                });
+                pre.push(Precondition::EntryUnchanged {
+                    path: e.path.clone(),
+                    sig: e.sig,
+                    compare_nlink: false,
+                });
+            }
             Err(errs) => b.extend(errs.into_iter().map(|x| tag(v, x))),
         }
     }
@@ -307,6 +314,8 @@ pub(crate) fn delete_replaced<'a>(
                         d.pre.push(p);
                     }
                 }
+                // Every CP1-F02 check passed for every video: ARR-validated evidence (patch 2).
+                d.level = EvidenceLevel::ArrValidatedReplacement;
             }
             u.arr = refs;
             Ok(u)

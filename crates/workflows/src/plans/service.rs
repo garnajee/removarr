@@ -1,11 +1,12 @@
 //! One-action service commands: ARR queue removal and monitoring (tier 4), service rescans
-//! (tier 2). Live only: a dry-run process cannot plan them (`DryRunOnly`).
+//! (tier 2). Live only: a dry-run process cannot plan them (`DryRunOnly`). Each carries the
+//! service re-read that verifies it (domain patch 2).
 
 use removarr_domain::arr::{ArrMediaRef, ArrService};
 use removarr_domain::evidence::EvidenceLevel;
 use removarr_domain::ids::SubjectKey;
 use removarr_domain::issue::{Blocker, BlockerCode, Issue};
-use removarr_domain::plan::{ActionKind, ActionTarget, Precondition};
+use removarr_domain::plan::{ActionKind, ActionTarget, Precondition, VerificationStep};
 use removarr_domain::session::ServiceKind;
 
 use super::build::{Draft, UnitPlan, UnitResult, issue_completeness};
@@ -67,6 +68,7 @@ pub(crate) fn remove_queue_item<'a>(f: &Facts<'a>, issue: &Issue) -> UnitResult<
         ActionTarget::Queue { service, id },
     );
     d.pre = vec![Precondition::ServiceAvailable(kind)];
+    d.verify = vec![VerificationStep::ArrQueueItemAbsent { service, id }];
     d.hashes.clone_from(&issue.torrent_hashes);
     d.level = EvidenceLevel::None;
     d.completeness = issue_completeness(issue);
@@ -103,6 +105,10 @@ pub(crate) fn media_action<'a>(
             },
         );
         d.pre = vec![Precondition::ServiceAvailable(kind)];
+        d.verify = vec![VerificationStep::ArrMonitored {
+            media: media.clone(),
+            monitored,
+        }];
         Ok(one(d))
     } else {
         Err(b)
@@ -117,10 +123,11 @@ pub(crate) fn rescan<'a>(
     media: Option<&ArrMediaRef>,
 ) -> Result<(SubjectKey, ActionKind, UnitResult<'a>), PlanError> {
     let subject = SubjectKey(format!("s:{}", service.as_str()));
-    let (kind, target) = match (service, media) {
+    let (kind, target, verify) = match (service, media) {
         (ServiceKind::Jellyfin, None) => (
             ActionKind::JellyfinRefresh,
             ActionTarget::JellyfinRefresh { item_id: None },
+            VerificationStep::JellyfinRefreshed { item_id: None },
         ),
         (ServiceKind::Sonarr | ServiceKind::Radarr, m) => {
             let arr = if service == ServiceKind::Sonarr {
@@ -139,6 +146,10 @@ pub(crate) fn rescan<'a>(
                     service: arr,
                     media: m.cloned(),
                 },
+                VerificationStep::ArrCommandCompleted {
+                    service: arr,
+                    media: m.cloned(),
+                },
             )
         }
         _ => {
@@ -152,6 +163,7 @@ pub(crate) fn rescan<'a>(
     let result = if b.is_empty() {
         let mut d = Draft::new(kind, target);
         d.pre = vec![Precondition::ServiceAvailable(service)];
+        d.verify = vec![verify];
         Ok(one(d))
     } else {
         Err(b)

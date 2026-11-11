@@ -13,7 +13,9 @@ use removarr_domain::fs::EntryKind;
 use removarr_domain::ids::SubjectKey;
 use removarr_domain::issue::{BlockerCode as B, IssueCategory as C};
 use removarr_domain::path::RootedPath;
-use removarr_domain::plan::{ActionKind as K, PlanMode, PlanOrigin, Precondition};
+use removarr_domain::plan::{
+    ActionKind as K, PlanMode, PlanOrigin, Precondition, VerificationStep,
+};
 use removarr_domain::policy::{Capability, RiskTier};
 use removarr_domain::session::ServiceKind;
 use removarr_domain::torrent::MappedPath;
@@ -157,6 +159,13 @@ fn service_commands_are_live_only_and_need_a_configured_service() {
         b.plan.plan().actions[0]
             .preconditions
             .contains(&Precondition::ServiceAvailable(ServiceKind::Sonarr))
+    );
+    assert_eq!(
+        b.plan.plan().actions[0].verification,
+        [VerificationStep::ArrCommandCompleted {
+            service: ArrService::Sonarr,
+            media: None
+        }]
     );
     let mut dry = live();
     dry.mode = PlanMode::DryRun;
@@ -384,4 +393,44 @@ fn automatic_phases_select_only_eligible_candidates() {
             ..
         }
     )));
+}
+
+#[test]
+fn service_commands_carry_their_verification_reads() {
+    let mut o = world();
+    o.arr = vec![arr_ok(ArrService::Sonarr, vec![], vec![])];
+    let mut i = input(&o);
+    i.session.services.push(ok(ServiceKind::Jellyfin));
+    let series = arr_media(ArrService::Sonarr, 1);
+    i.arr.insert(
+        (ArrService::Sonarr, 1),
+        Ok(facts(
+            arr_snapshot(&series, vec![], None, 0),
+            vec![],
+            vec![],
+            vec![],
+        )),
+    );
+    let monitor = PlanRequest::Media {
+        media: series.clone(),
+        action: removarr_workflows::plans::MediaAction::SetMonitored { monitored: false },
+    };
+    let b = build(&i, &live(), &monitor).unwrap();
+    assert_eq!(
+        action(&b, K::ArrSetMonitored).verification,
+        [VerificationStep::ArrMonitored {
+            media: series,
+            monitored: false
+        }]
+    );
+    let jf = PlanRequest::ServiceRescan {
+        service: ServiceKind::Jellyfin,
+        media: None,
+    };
+    let b = build(&i, &live(), &jf).unwrap();
+    assert_eq!(
+        action(&b, K::JellyfinRefresh).verification,
+        [VerificationStep::JellyfinRefreshed { item_id: None }]
+    );
+    assert!(removarr_workflows::plans::check_plan(b.plan.plan()).is_empty());
 }

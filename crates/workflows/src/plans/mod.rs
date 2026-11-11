@@ -44,4 +44,4 @@ pub use request::{
     ALL_CAPABILITIES, IssueAction, MediaAction, PlanError, PlanRequest, PlanSettings,
     SelectionFault,
 };
-pub use validate::{UNVERIFIABLE_KINDS, check_plan};
+pub use validate::check_plan;

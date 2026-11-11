@@ -13,13 +13,15 @@ use removarr_domain::path::RootedPath;
 use removarr_domain::plan::{ActionPlan, ActionTarget, PlanStatus, Precondition};
 use removarr_domain::session::{AuditSession, ServiceKind};
 use removarr_domain::time::Timestamp;
-use removarr_domain::torrent::TorrentHash;
+use removarr_domain::torrent::{
+    TorrentHash, TorrentInfo, TorrentState, is_busy_for_incomplete_cleanup,
+};
 use serde::{Deserialize, Serialize};
 
 use super::facts::Facts;
 use super::input::{MediaKey, PlanInput};
 use super::request::PlanSettings;
-use crate::issues::{MappingFault, QbitObservation, mapping_faults};
+use crate::issues::{MappingFault, QbitObservation, mapping_faults, protection};
 
 /// One reason a plan no longer matches the world.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -138,17 +140,17 @@ fn check(
         }
         Precondition::TorrentStates { states } => {
             for (hash, (state, progress)) in states {
-                match f
-                    .snapshot
-                    .and_then(|s| s.torrents.iter().find(|t| &t.hash == hash))
-                {
-                    None => out.push(StaleReason::TorrentMissing { hash: hash.clone() }),
-                    Some(t)
-                        if &t.state != state || (t.progress - progress).abs() > f64::EPSILON =>
-                    {
-                        out.push(StaleReason::TorrentChanged { hash: hash.clone() });
-                    }
-                    Some(_) => {}
+                let Some((t, major)) = f.snapshot.and_then(|s| {
+                    s.torrents
+                        .iter()
+                        .find(|t| &t.hash == hash)
+                        .map(|t| (t, s.major))
+                }) else {
+                    out.push(StaleReason::TorrentMissing { hash: hash.clone() });
+                    continue;
+                };
+                if torrent_changed(t, major, state, *progress) {
+                    out.push(StaleReason::TorrentChanged { hash: hash.clone() });
                 }
             }
         }
@@ -197,6 +199,20 @@ fn check(
         | Precondition::ArrReplacementPresent { .. }
         | Precondition::ConfigFingerprint(_) => {}
     }
+}
+
+/// Orchestrator rule (after domain patch 2): a torrent stays valid while it keeps the same
+/// eligibility class under the version-aware allowlist (eligible or protected) and the same
+/// progress; `uploading` <-> `stalledUP` is no change. A protected torrent that became busy
+/// (checking, moving, allocating, unknown) also changes (stalled cleanup refuses those states).
+fn torrent_changed(t: &TorrentInfo, major: u8, state: &TorrentState, progress: f64) -> bool {
+    let mut planned = t.clone();
+    planned.state = state.clone();
+    planned.progress = progress;
+    let eligible = |x: &TorrentInfo| protection(x, major, false).is_none();
+    eligible(&planned) != eligible(t)
+        || (t.progress - progress).abs() > f64::EPSILON
+        || (is_busy_for_incomplete_cleanup(&t.state) && !is_busy_for_incomplete_cleanup(state))
 }
 
 /// Status a stale plan moves to: `Expired` when time is the only reason, `Invalidated`

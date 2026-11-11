@@ -7,15 +7,6 @@ use removarr_domain::path::{RelPath, RootKind, RootedPath};
 use removarr_domain::plan::{ActionKind, ActionPlan, ActionTarget, PlannedAction, Precondition};
 use removarr_domain::policy::is_sample;
 
-/// Kinds for which the domain has no verification step yet (service commands). Their best
-/// outcome is `ExecutedUnverified` until the domain gains matching steps (handoff gap).
-pub const UNVERIFIABLE_KINDS: [ActionKind; 4] = [
-    ActionKind::ArrRemoveQueueItem,
-    ActionKind::ArrSetMonitored,
-    ActionKind::ArrRescan,
-    ActionKind::JellyfinRefresh,
-];
-
 fn pins(a: &PlannedAction, path: &RootedPath) -> bool {
     a.preconditions.iter().any(|p| match p {
         Precondition::EntryUnchanged { path: q, .. } => q == path,
@@ -54,7 +45,7 @@ pub fn check_plan(plan: &ActionPlan) -> Vec<String> {
         if a.preconditions.len() < 2 {
             bad("no state precondition");
         }
-        if a.verification.is_empty() && !UNVERIFIABLE_KINDS.contains(&a.kind) {
+        if a.verification.is_empty() {
             bad("no verification step");
         }
         if a.completeness == Completeness::Unknown {

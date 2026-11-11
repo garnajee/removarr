@@ -445,11 +445,11 @@ fn assemble<'a>(
     }
     let companion_origin_ok = |k: ActionKind| gate::blockers(k, ctx.origin, settings).is_empty();
     if companion_origin_ok(ActionKind::RemoveEmptyParent) {
-        let parents = fsplans::empty_parents(facts, &drafts);
+        let parents = fsplans::empty_parents(facts, &drafts, ctx.origin == PlanOrigin::AutoPolicy);
         drafts.extend(parents);
     }
     if remove_tasks && companion_origin_ok(ActionKind::RemoveTorrentTask) {
-        let tasks = fsplans::torrent_removals(facts, &drafts);
+        let tasks = fsplans::torrent_removals(facts, &drafts, ctx.origin == PlanOrigin::AutoPolicy);
         drafts.extend(tasks);
     }
 

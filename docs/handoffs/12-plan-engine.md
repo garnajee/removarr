@@ -20,7 +20,7 @@ or `LiveMode` (grep-verified). The only writes are plans, approvals, plan status
 | `plans::service` | `ArrRemoveQueueItem`, `ArrSetMonitored`, `ArrRescan`, `JellyfinRefresh` |
 | `plans::gate` | `action_tier`, `live_only`, `blockers` (tier, capability, A8/A9, dry-run) |
 | `plans::auto` | `AutoContext`, `AutoPhase`, `auto_requests`, rules A2-A8 per unit |
-| `plans::validate` | `check_plan` (plan-engine rules on top of `ActionPlan::validate`), `UNVERIFIABLE_KINDS` |
+| `plans::validate` | `check_plan` (plan-engine rules on top of `ActionPlan::validate`; every action needs a verification step) |
 | `plans::preview` | `preview(&HashedPlan, status) -> PlanPreview` (tiers, annexes, warnings, typed counts, acknowledgements) |
 | `plans::expiry` | `staleness`, `verdict`, `StaleReason`, `ArrFingerprints` |
 | `plans::planner` | `Planner` (ports, load, preview, create, create_auto, approve, discard, refresh_status, ticket), `PlanPorts`, `ArrNeeds`/`arr_needs`, `ExecutionTicket`, `StoredPlan`, `AutoOutcome` |
@@ -104,7 +104,7 @@ Precondition semantics (revalidate all before the first service mutation; any di
 | `EntryUnchanged { path, sig, compare_nlink }` | `stat` equals `sig` (`compare_nlink = true` for deletion targets, false for consolidation pairs, replacement media files, other links, `FixMode`). For `RemoveEmptyParent` it is checked at revalidation, before the children are removed (the runner checks kind/dev/ino again before `remove_empty_dir`). |
 | `DirUnchanged { snapshot }` | `snapshot_dir` equals the snapshot (keys relative to the dir, `""` = the dir); includes symlinks, which are unlinked, never followed. |
 | `NoScanErrorUnder { path }` | no scan error or protected zone at, above or below `path`. |
-| `TorrentStates { states }` | every hash still listed with an allowlisted state and progress 1 (stalled cleanup: still progress < 1 and not busy). The plan-side staleness check compares `(state, progress)` exactly. |
+| `TorrentStates { states }` | every hash still listed, in the same eligibility class under the version-aware allowlist (eligible vs protected), with the same progress (stalled cleanup: still progress < 1 and not busy), and the same wanted-file set (live check by 13, see follow-up). `uploading` <-> `stalledUP` is no change. |
 | `NoTorrentReferences { path }` | after a fresh torrent read, no torrent (full ownership index) references `path` or anything below it. For `CleanupStalledIncomplete` the action's own hash is excepted (it is removed first). qBittorrent unreachable = failed. |
 | `ServiceAvailable(kind)` | the service answers now. Added for qBittorrent on every ownership-dependent action and for every configured ARR service on consolidations and completed deletions. |
 | `NoArrImport { media, hashes }` | no queue item of `media` in an importing/pending/unknown state and none whose download id is in `hashes` (ImportInProgress). Added when the media is identified. |
@@ -114,11 +114,10 @@ Precondition semantics (revalidate all before the first service mutation; any di
 
 Verification semantics: `InodeEquals { path, phys }` (consolidation: the target **and** the source carry the source inode);
 `Absent { path }`; `RecheckVerified { hashes }` (affected hashes; recheck the modified ones, `evaluate_recheck`);
-`TorrentAbsent`; `ModeEquals`; `ArrCurrentFile { media (with ARR's episode ids), path = completed source }` = ARR's current
+`TorrentAbsent`; `ModeEquals`; `ArrQueueItemAbsent`, `ArrMonitored`, `ArrCommandCompleted`, `JellyfinRefreshed` (service re-reads,
+fed to `journal::evaluate_service_step`); `ArrCurrentFile { media (with ARR's episode ids), path = completed source }` = ARR's current
 file for those episodes is a new path whose inode is the source inode (3a + 3c); `PathStillHasInode` (3b; a move ->
 `FailedNeedsReview` + `ArrImportMoved`); `OldFileAccounted { path, recovery }`; `ArrQueueHasRelease`.
-`UNVERIFIABLE_KINDS` (`ArrRemoveQueueItem`, `ArrSetMonitored`, `ArrRescan`, `JellyfinRefresh`) have no verification step in the
-domain: their best outcome is `ExecutedUnverified` (gap below).
 
 Gains: `expected_gain.logical` = sizes of the action's own targets; `attributable` = allocated bytes of each inode whose every
 link seen (and at least `nlink`) is removed by the plan, attributed once to the action removing the last link (sum of actions
@@ -175,14 +174,10 @@ cache and refuse when the token is absent (09 handoff).
 
 ## Domain gaps (frozen domain; for an orchestrator patch)
 
-1. **Automatic deletions can never be approved**: `HashedPlan::approve_auto` requires `evidence_level != None`, but a
-   `DeleteReplaced` deletion has no content proof (its evidence is ARR quality + presence). The plan engine builds such auto
-   plans and `create_auto` reports them as refused (`IncompleteEvidence`): fail closed, tested
-   (`folder_deletion_with_arr_evidence_*`). Proposed patch: accept `QualityEvidence::ArrSnapshot` (or a new level) for
-   deletion kinds in `approve_auto`.
-2. No `VerificationStep` for queue removal, monitoring, rescans and Jellyfin refresh (see `UNVERIFIABLE_KINDS`). Proposed:
-   `ArrQueueItemAbsent`, `ArrMonitored`, `ArrCommandCompleted`, `JellyfinRefreshed`.
-3. No `ActionPlan` slot for the `CoverageProof` and for plan warnings; no `Precondition` binding an action to its issue subject.
+1. ~~Automatic deletions can never be approved~~: closed by domain patch 2 (see the follow-up section).
+2. ~~No verification step for service commands~~: closed by domain patch 2 (see the follow-up section).
+3. No `ActionPlan` slot for the `CoverageProof` and for plan warnings (accepted as a deviation by the orchestrator); no
+   `Precondition` binding an action to its issue subject; no wanted-file set in `TorrentStates` (follow-up item 4).
 4. `EvidenceKind` has no note variant (11 convention `note:` reused by `evaluate`).
 
 ## Open TODOs
@@ -192,9 +187,7 @@ cache and refuse when the token is absent (09 handoff).
   journal), pass the triggering session's active issue ids to `create_auto`, call `refresh_status` on stored plans after scans.
 * 16: build `PlanSettings` (config fingerprint, TTL, capabilities, `IMPLEMENTED_TIER`, process uid) and `PlanPorts`; map
   `PlanError::class()` to HTTP; `ApprovalRequest` from the approve form.
-* Orchestrator decisions: domain gaps above; whether `TorrentStates` should compare `(state, progress)` exactly (current
-  plan-side rule, per INV-13) or only "still allowlisted" (a seeding torrent flips `uploading`/`stalledUP` often, which
-  invalidates plans after the hourly qBittorrent refresh).
+* Orchestrator decisions: taken after wave 8 (see the follow-up section).
 * Not run: `cargo build --workspace --release` (no release-only code).
 
 ## Commands run and results (host target, rustc 1.98)
@@ -207,3 +200,43 @@ cache and refuse when the token is absent (09 handoff).
 * Dependency gates of `docs/development.md` (domain deps, `std::(fs|process|net)` in domain, workflows normal deps): print nothing.
 * `grep -rnE "FsMutator|QbitControl|ArrCommands|JellyfinCommands|HardlinkProbeGate|LiveMode" crates/workflows/src/{plans,evaluate}`: nothing.
 * No network beyond crates.io; nothing committed.
+
+## Follow-up after domain patch 2
+
+Adopted `docs/handoffs/03-domain-model.md` "Patch 2" and the orchestrator decisions. Files: `plans/{arrplans,build,expiry,fsplans,
+mod,service,validate}.rs`, tests `plans_arr.rs`, `plans_expiry.rs`, `plans_gate.rs`. Normal dependencies unchanged.
+
+1. **Automatic ARR-validated deletions (gap 1, closed).** After every CP1-F02 check passes for every video of the unit,
+   `DeleteReplaced` sets `evidence_level = ArrValidatedReplacement` on the `DeleteCompletedFile`/`DeleteCompletedFolder` action
+   and emits, per replacement, `Precondition::ArrReplacementPresent { media (whole media, same ref as the fingerprint), path,
+   size = ARR's size }` with its pin `EntryUnchanged { compare_nlink: false }`, plus the `ArrFingerprint`. Target pins stay
+   `EntryUnchanged { compare_nlink: true }` (file) or `DirUnchanged` (folder). Manual `DeleteReplaced` plans carry the same
+   evidence. `approve_auto` now approves such plans; any failed check excludes the unit (never planned), and any missing pinned
+   evidence makes `approve_auto` refuse. Media-root targets, samples, other kinds and plain `Delete` stay non-automatic.
+   Tests: `plans_arr.rs::automatic_arr_validated_deletion_is_approved_when_every_condition_holds`,
+   `::automatic_arr_validated_deletion_is_refused_when_any_condition_is_missing` (ARR would import, other rejection, size
+   mismatch, ARR down, recent, plain delete; stripped `ArrReplacementPresent`/fingerprint/replacement pin; sample; media-root
+   target; other kind), and the T-21 folder test now ends with an approved automatic folder plan.
+   **Companions in automatic plans**: `RemoveEmptyParent`/`RemoveTorrentTask` following an ARR-validated deletion have no
+   evidence level `approve_auto` accepts (they would be `None`), so automatic plans omit them (the empty parent or the torrent
+   task is left for a later manual plan); manual plans keep them. Their level is now the weakest content level of the actions
+   they follow, `None` when one of them is ARR-validated. Remaining domain gap if automatic parent cleanup is wanted: let
+   `approve_auto` accept a companion whose dependencies are all approvable.
+2. **Service-command verification (gap 2, closed).** `ArrRemoveQueueItem` -> `ArrQueueItemAbsent { service, id }`,
+   `ArrSetMonitored` -> `ArrMonitored { media, monitored }`, `ArrRescan` -> `ArrCommandCompleted { service, media }`,
+   `JellyfinRefresh` -> `JellyfinRefreshed { item_id: None }`. `UNVERIFIABLE_KINDS` is removed: `check_plan` requires a
+   verification step on every action. Tests: `plans_gate.rs::service_commands_carry_their_verification_reads`, rescan assertion
+   in `service_commands_are_live_only_and_need_a_configured_service`.
+3. **Gap 3 (no plan slot for the `CoverageProof` and warnings)**: accepted deviation, unchanged (deviations 3 and 4 above).
+4. **Torrent staleness.** `expiry` no longer compares the state string: a torrent stays valid while it keeps the same
+   eligibility class under the version-aware allowlist (`issues::protection`) and the same progress; a protected torrent that
+   became busy (checking, moving, allocating, unknown) also changes. Tests:
+   `plans_expiry.rs::torrents_keep_a_plan_valid_while_their_eligibility_class_and_progress_hold` (`uploading` -> `stalledUP`,
+   `queuedUP`, `forcedUP`, `pausedUP` on 4.x keep the plan; `pausedDL`, `error`, `missingFiles`, `checkingUP`, `stoppedUP` on
+   4.x, an unknown state or progress 0.99 invalidate).
+   **Deviation (wanted-file set)**: the plan has no slot for a torrent's wanted-file set (`TorrentStates` holds only
+   `(state, progress)`), so the stored-state check cannot compare it. The action runner must compare the live wanted-file set
+   with the plan's targets at revalidation; a domain patch could add the set (or a digest) to `TorrentStates`.
+
+Commands: `cargo fmt --all --check` pass; `cargo clippy --workspace --all-targets -- -D warnings` pass; `cargo test --workspace`
+pass, 607 passed, 0 failed, 1 ignored (opt-in real ffprobe); the workflows dependency gate prints nothing. Not committed.

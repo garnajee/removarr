@@ -628,6 +628,22 @@ pub(crate) fn fix_mode<'a>(f: &Facts<'a>, issue: &Issue) -> UnitResult<'a> {
     })
 }
 
+/// Evidence level of a companion: the weakest content level of the actions it follows. A
+/// companion of an ARR-validated deletion has no content proof of its own (`None`).
+fn companion_level(levels: impl Iterator<Item = EvidenceLevel>) -> EvidenceLevel {
+    let mut out: Option<EvidenceLevel> = None;
+    for l in levels {
+        if matches!(
+            l,
+            EvidenceLevel::None | EvidenceLevel::ArrValidatedReplacement
+        ) {
+            return EvidenceLevel::None;
+        }
+        out = Some(out.map_or(l, |o| o.min(l)));
+    }
+    out.unwrap_or(EvidenceLevel::None)
+}
+
 /// Paths removed by deletion drafts: `(path, is a whole subtree)`.
 fn removed(drafts: &[Draft<'_>]) -> Vec<(RootedPath, usize)> {
     let mut out = Vec::new();
@@ -653,7 +669,7 @@ fn is_removed(p: &RootedPath, removed: &[(RootedPath, usize)]) -> bool {
 
 /// `RemoveEmptyParent` companions (CP1-F12, INV-49): every directory under a completed root
 /// (never the root itself) that the plan leaves empty, deepest first.
-pub(crate) fn empty_parents<'a>(f: &Facts<'a>, drafts: &[Draft<'a>]) -> Vec<Draft<'a>> {
+pub(crate) fn empty_parents<'a>(f: &Facts<'a>, drafts: &[Draft<'a>], auto: bool) -> Vec<Draft<'a>> {
     let rem = removed(drafts);
     let mut candidates: BTreeSet<RootedPath> = BTreeSet::new();
     for (p, _) in &rem {
@@ -709,12 +725,15 @@ pub(crate) fn empty_parents<'a>(f: &Facts<'a>, drafts: &[Draft<'a>]) -> Vec<Draf
             .map(|(_, i)| *i)
             .chain(index_of.iter().filter(|(p, _)| inside(p)).map(|(_, i)| *i))
             .collect();
-        d.level = d
-            .deps
-            .iter()
-            .filter_map(|i| drafts.get(*i).map(|x| x.level))
-            .min()
-            .unwrap_or(EvidenceLevel::None);
+        d.level = companion_level(
+            d.deps
+                .iter()
+                .filter_map(|i| drafts.get(*i).map(|x| x.level)),
+        );
+        if auto && d.level == EvidenceLevel::None {
+            // No evidence level the automatic approval accepts (handoff gap): left for later.
+            continue;
+        }
         d.completeness = d
             .deps
             .iter()
@@ -728,7 +747,11 @@ pub(crate) fn empty_parents<'a>(f: &Facts<'a>, drafts: &[Draft<'a>]) -> Vec<Draf
 
 /// Opt-in `RemoveTorrentTask` companions (CP1-F12, INV-19): only for a hash whose every wanted
 /// file is planned for deletion. `deleteFiles=false` is the adapter's literal.
-pub(crate) fn torrent_removals<'a>(f: &Facts<'a>, drafts: &[Draft<'a>]) -> Vec<Draft<'a>> {
+pub(crate) fn torrent_removals<'a>(
+    f: &Facts<'a>,
+    drafts: &[Draft<'a>],
+    auto: bool,
+) -> Vec<Draft<'a>> {
     let rem = removed(drafts);
     let Some(snap) = f.snapshot else {
         return Vec::new();
@@ -774,11 +797,10 @@ pub(crate) fn torrent_removals<'a>(f: &Facts<'a>, drafts: &[Draft<'a>]) -> Vec<D
         d.verify = vec![VerificationStep::TorrentAbsent {
             hashes: [h.clone()].into(),
         }];
-        d.level = deps
-            .iter()
-            .filter_map(|i| drafts.get(*i).map(|x| x.level))
-            .min()
-            .unwrap_or(EvidenceLevel::None);
+        d.level = companion_level(deps.iter().filter_map(|i| drafts.get(*i).map(|x| x.level)));
+        if auto && d.level == EvidenceLevel::None {
+            continue;
+        }
         d.completeness = deps
             .iter()
             .filter_map(|i| drafts.get(*i).map(|x| x.completeness.clone()))

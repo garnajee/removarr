@@ -14,7 +14,7 @@ use removarr_domain::arr::{
     ArrHistoryRecord, ArrService, OldFileRecovery, ReleaseRef, ReleaseSearchResult,
 };
 use removarr_domain::error::{DomainError, ErrorClass, PortError};
-use removarr_domain::evidence::ContentProof;
+use removarr_domain::evidence::{ContentProof, EvidenceLevel};
 use removarr_domain::fs::EntryKind;
 use removarr_domain::ids::SubjectKey;
 use removarr_domain::issue::{BlockerCode as B, IssueCategory as C};
@@ -367,8 +367,7 @@ fn folder_deletion_with_arr_evidence_is_all_or_nothing_and_names_the_failing_mem
         .filter(|p| matches!(p, Precondition::EntryUnchanged { path, .. } if path.root == media()))
         .count();
     assert_eq!(pinned, 2, "both replacements are pinned");
-    // Automatic mode: the unit satisfies the rules, but the domain refuses automatic approval of
-    // an action without a content-proof level (documented gap: fail closed).
+    // Automatic mode (domain patch 2): an ARR-validated folder deletion is approved by policy.
     let auto = build_auto(
         &i,
         &s,
@@ -376,10 +375,161 @@ fn folder_deletion_with_arr_evidence_is_all_or_nothing_and_names_the_failing_mem
         &auto_on(),
     )
     .unwrap();
-    assert!(matches!(
-        auto.plan.approve_auto(NOW),
-        Err(DomainError::IncompleteEvidence { .. })
+    assert_eq!(
+        action(&auto, K::DeleteCompletedFolder).evidence_level,
+        EvidenceLevel::ArrValidatedReplacement
+    );
+    assert!(auto.plan.approve_auto(NOW).is_ok());
+}
+
+// ---- Automatic ARR-validated deletions (domain patch 2) -------------------------------------
+
+fn auto_movie(
+    f: Result<removarr_workflows::evaluate::ArrFacts, PortError>,
+) -> Result<removarr_workflows::plans::Built, removarr_workflows::plans::PlanError> {
+    let i = with_facts(&movie_world(), f);
+    let r = delete_replaced(&i);
+    build_auto(&i, &live(), &r, &auto_on())
+}
+
+fn reseal(plan: removarr_domain::plan::ActionPlan) -> removarr_domain::plan::HashedPlan {
+    removarr_domain::plan::HashedPlan::seal(plan).unwrap()
+}
+
+#[test]
+fn automatic_arr_validated_deletion_is_approved_when_every_condition_holds() {
+    let b = auto_movie(Ok(movie_facts(
+        false,
+        &["Not an upgrade for existing movie file"],
+        3000,
+    )))
+    .unwrap();
+    assert_eq!(
+        kinds(&b),
+        [K::DeleteCompletedFile],
+        "companions without a proof level are left out of auto plans"
+    );
+    let a = action(&b, K::DeleteCompletedFile);
+    let (c, m) = (completed(), media());
+    assert_eq!(a.evidence_level, EvidenceLevel::ArrValidatedReplacement);
+    assert!(
+        a.preconditions
+            .contains(&Precondition::ArrReplacementPresent {
+                media: arr_media(ArrService::Radarr, 7),
+                path: rp(&m, LIB),
+                size: 3000,
+            })
+    );
+    assert!(a.preconditions.iter().any(|p| matches!(p,
+        Precondition::EntryUnchanged { path, compare_nlink: false, .. } if *path == rp(&m, LIB))));
+    assert!(a.preconditions.iter().any(|p| matches!(p,
+        Precondition::EntryUnchanged { path, compare_nlink: true, .. } if *path == rp(&c, OLD))));
+    assert!(a.preconditions.iter().any(|p| matches!(p,
+        Precondition::ArrFingerprint { media, .. } if *media == arr_media(ArrService::Radarr, 7))));
+    let approval = b.plan.approve_auto(NOW).unwrap();
+    assert_eq!(approval.by, removarr_domain::plan::Approver::AutoPolicy);
+}
+
+#[test]
+fn automatic_arr_validated_deletion_is_refused_when_any_condition_is_missing() {
+    let subject = sub(&rp(&completed(), OLD));
+    // CP1-F02 checks fail: the unit is never planned automatically.
+    for (f, code) in [
+        (Ok(movie_facts(true, &[], 3000)), B::ArrNotUpgradeEvidence),
+        (
+            Ok(movie_facts(false, &["Unknown movie"], 3000)),
+            B::ArrRejected,
+        ),
+        (
+            Ok(movie_facts(false, &["Not an upgrade"], 2999)),
+            B::ArrAmbiguous,
+        ),
+        (
+            Err(PortError::new(ErrorClass::Unavailable, "down")),
+            B::ServiceUnavailable(ServiceKind::Radarr),
+        ),
+    ] {
+        let r = auto_movie(f);
+        assert!(
+            has_code(&r, &subject, &code),
+            "{code:?}: {:?}",
+            excluded_codes(&r)
+        );
+    }
+    // A3: too recent.
+    let i = with_facts(
+        &movie_world(),
+        Ok(movie_facts(false, &["Not an upgrade"], 3000)),
+    );
+    let mut young = live();
+    young.auto_min_age_hours = 1000;
+    assert!(has_code(
+        &build_auto(&i, &young, &delete_replaced(&i), &auto_on()),
+        &subject,
+        &B::Recent
     ));
+    // The plain deletion is never automatic.
+    let plain = req(
+        C::HardlinkMissing,
+        vec![id_of(&i, C::HardlinkMissing, &subject)],
+        A::Delete,
+    );
+    assert!(matches!(
+        build_auto(&i, &live(), &plain, &auto_on()),
+        Err(removarr_workflows::plans::PlanError::AutoRefused(_))
+    ));
+
+    // Any missing piece of pinned evidence makes the domain refuse the automatic approval.
+    let good = auto_movie(Ok(movie_facts(false, &["Not an upgrade"], 3000))).unwrap();
+    let base = good.plan.plan().clone();
+    let strip = |f: &dyn Fn(&Precondition) -> bool| {
+        let mut p = base.clone();
+        p.actions[0].preconditions.retain(|x| !f(x));
+        reseal(p)
+    };
+    let present = |x: &Precondition| matches!(x, Precondition::ArrReplacementPresent { .. });
+    let fingerprint = |x: &Precondition| matches!(x, Precondition::ArrFingerprint { .. });
+    let replacement_pin = |x: &Precondition| {
+        matches!(
+            x,
+            Precondition::EntryUnchanged {
+                compare_nlink: false,
+                ..
+            }
+        )
+    };
+    for (name, f) in [
+        ("present", &present as &dyn Fn(&Precondition) -> bool),
+        ("fingerprint", &fingerprint),
+        ("pin", &replacement_pin),
+    ] {
+        assert!(
+            matches!(
+                strip(f).approve_auto(NOW),
+                Err(DomainError::IncompleteEvidence { .. })
+            ),
+            "{name}"
+        );
+    }
+    // A sample needing acknowledgement, or a media-root target, is never automatic.
+    let mut with_sample = base.clone();
+    with_sample
+        .samples
+        .push(rp(&completed(), "Old.Movie.2020.720p/Sample/s.mkv"));
+    assert!(matches!(
+        reseal(with_sample).approve_auto(NOW),
+        Err(DomainError::AutoApprovalForbidden(_))
+    ));
+    let mut media_target = base.clone();
+    media_target.actions[0].target = ActionTarget::Path {
+        path: rp(&media(), LIB),
+    };
+    assert!(reseal(media_target).approve_auto(NOW).is_err());
+    // The same evidence level on any other kind is refused.
+    let mut other = base;
+    other.actions[0].kind = K::DeleteJunk;
+    other.origin = removarr_domain::plan::PlanOrigin::User;
+    assert!(reseal(other).approve_auto(NOW).is_err());
 }
 
 // ---- ReplaceRelease: Sonarr season with an episode without a file -----------------------

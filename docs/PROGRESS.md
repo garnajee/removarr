@@ -27,8 +27,8 @@ Status values: `todo`, `running`, `done`, `blocked`.
 | 7 | `11-issue-engine` | done | 96 tests; 13 categories; refresh zero fs calls; orchestrator confirmed strict per-version qBit allowlist (pausedUP 4.x only, stoppedUP 5.x only) and `note:` evidence convention |
 | 8 | `12-plan-engine` | done | plans for all tiers, tier-tagged and capability-gated; no mutation port referenced |
 | 8 | `03-domain-model` patch 2 (ARR-validated auto deletion evidence, service-command verification steps) | done | 603 tests; golden hash unchanged; gap 3 accepted as deviation |
-| 8 | `12-plan-engine` follow-up (adopt patch 2, torrent staleness by eligibility class) | running | |
-| 9 | `13-action-runner` | todo | |
+| 8 | `12-plan-engine` follow-up (adopt patch 2, torrent staleness by eligibility class) | done | 607 tests; wanted-file set checked live by 13 at revalidation (accepted); auto plans omit companion actions (confirmed, cleanup stays manual) |
+| 9 | `13-action-runner` | running | stage A: tiers 1-2; CP2 review before each of tiers 3, 4, 5 |
 | 10 | `14-job-runner` | todo | |
 | 11 | `15-reporting` | todo | |
 | 12 | `16-backend-api` | todo | |
@@ -56,4 +56,4 @@ Status values: `todo`, `running`, `done`, `blocked`.
 
 ## Last quality gate
 
-After wave 8: fmt OK, clippy -D warnings OK, tests OK (595 passed, 1 ignored = opt-in real-ffprobe test). Safety greps OK (deleteFiles literal false only in qbit/control.rs; importMode copy literal). Toolchain: cargo/rustc 1.98.0 (Homebrew, no rustup), Docker 29.7.2, ffprobe available.
+After wave 8 follow-ups: fmt OK, clippy -D warnings OK, tests OK (607 passed, 1 ignored = opt-in real-ffprobe test). Safety greps OK (deleteFiles literal false only in qbit/control.rs; importMode copy literal). Toolchain: cargo/rustc 1.98.0 (Homebrew, no rustup), Docker 29.7.2, ffprobe available.
