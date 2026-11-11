@@ -176,3 +176,26 @@ no-op in staleness, covered by its paired `EntryUnchanged` and `ArrFingerprint`)
 
 Commands: `cargo fmt --all --check` pass; `cargo clippy --workspace --all-targets -- -D warnings` pass;
 `cargo test --workspace` pass (603 passed, 0 failed); the three dependency-direction greps print nothing. Not committed.
+
+## Patch 3 (wave 9, for CP2T3-F03/F10)
+
+Additive, no existing field or variant changed; the golden hash test
+(`golden_hash_of_plan_without_patch2_variants_is_pinned`) still passes unchanged.
+
+* `Precondition::TorrentWantedFiles { hash: TorrentHash, wanted: BTreeSet<(u32, String)> }`
+  (`crates/domain/src/plan.rs`), exactly the shape of handoff 13 "F03". `(index, name)` pairs,
+  serialized sorted (BTreeSet). `ActionPlan::validate` rejects: an empty `wanted` set, a `hash`
+  not in the action's `torrent_hashes`, and two pins for one hash in one action. Hash
+  well-formedness is guaranteed by the `TorrentHash` type.
+* `BlockerCode::ChangedSincePlanning` and `BlockerCode::Interrupted`
+  (`crates/domain/src/issue.rs`), doc text as in handoff 13 "F10".
+* Tests: `patch3_wanted_files_roundtrip_validate_and_keep_old_hashes`,
+  `patch3_blocker_codes_roundtrip`.
+* Exhaustive-match arms added outside the domain (nothing else needed):
+  `crates/workflows/src/actions/revalidate.rs` (`TorrentWantedFiles` fails closed with a
+  `ChangedSincePlanning` blocker until action-runner implements the comparison; plan-engine
+  emits no pin yet, so no current plan is affected) and `crates/workflows/src/plans/expiry.rs`
+  (no-op, no stale check yet).
+* Schema needs for `db-layer`: none (plans are stored as canonical JSON).
+* Commands: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
+  `cargo test --workspace` pass; the dependency-direction greps print nothing. Not committed.

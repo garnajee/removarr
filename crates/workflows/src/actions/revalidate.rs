@@ -620,6 +620,14 @@ impl Ctx<'_> {
                     Err(e) => out.push(unavailable(service_of(media.service), &e)),
                 }
             }
+            // Fail closed until the runner compares the pin (stage B follow-up, CP2T3-F03).
+            Precondition::TorrentWantedFiles { hash, .. } => out.push(Blocker::new(
+                BlockerCode::ChangedSincePlanning,
+                format!(
+                    "the pinned wanted files of {} cannot be checked by this runner yet",
+                    hash.as_str()
+                ),
+            )),
             Precondition::OldCoverageRecoverable { old_files } => {
                 for (path, phys, _) in old_files {
                     match self.stat(path).await {

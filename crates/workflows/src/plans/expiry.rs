@@ -183,6 +183,8 @@ fn check(
                 }),
             }
         }
+        // Compared by the runner (and by plan-engine once it emits the pin); no stale check yet.
+        Precondition::TorrentWantedFiles { .. } => {}
         Precondition::OldCoverageRecoverable { old_files } => {
             for (path, phys, _) in old_files {
                 match f.sig(path) {

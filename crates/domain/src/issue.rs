@@ -149,6 +149,10 @@ pub enum BlockerCode {
     ArrImportMoved,
     OldCoverageUnrecoverable,
     ArrHardlinksDisabled,
+    /// A revalidated precondition no longer holds (entry, folder, torrent, config, store).
+    ChangedSincePlanning,
+    /// The action was not reached because the batch stopped (cancellation, crash, abort).
+    Interrupted,
 }
 
 impl BlockerCode {

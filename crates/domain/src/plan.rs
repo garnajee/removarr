@@ -275,6 +275,14 @@ pub enum Precondition {
     OldCoverageRecoverable {
         old_files: Vec<(RootedPath, PhysicalId, OldFileRecovery)>,
     },
+    /// Wanted files (`priority > 0`) of an affected torrent at planning time, as
+    /// `(index, name)` pairs (domain patch 3, CP2T3-F03). The runner compares the live
+    /// `QbitRead::files` set with it. Non-empty, and `hash` must be one of the action's
+    /// `torrent_hashes`, at most one per hash.
+    TorrentWantedFiles {
+        hash: TorrentHash,
+        wanted: BTreeSet<(u32, String)>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -422,6 +430,24 @@ impl ActionPlan {
                     return bad(format!(
                         "action {pos}: DeleteMediaFile must depend on a ReplaceRelease"
                     ));
+                }
+            }
+            let mut pinned = BTreeSet::new();
+            for p in &a.preconditions {
+                if let Precondition::TorrentWantedFiles { hash, wanted } = p {
+                    if wanted.is_empty() {
+                        return bad(format!("action {pos}: pinned wanted-file set is empty"));
+                    }
+                    if !a.torrent_hashes.contains(hash) {
+                        return bad(format!(
+                            "action {pos}: wanted files pinned for a torrent the action does not affect"
+                        ));
+                    }
+                    if !pinned.insert(hash) {
+                        return bad(format!(
+                            "action {pos}: wanted files pinned twice for a hash"
+                        ));
+                    }
                 }
             }
             if let Some(missing) = a
@@ -1617,5 +1643,52 @@ mod tests {
         let back: ActionPlan = serde_json::from_str(&json).unwrap();
         assert_eq!(&back, h.plan());
         assert_eq!(PlanHash::compute(&back).unwrap(), *h.hash());
+    }
+
+    #[test]
+    fn patch3_wanted_files_roundtrip_validate_and_keep_old_hashes() {
+        let h1 = TorrentHash::new("a".repeat(40)).unwrap();
+        let wanted: BTreeSet<(u32, String)> =
+            [(1, "b.mkv".to_string()), (0, "a.mkv".to_string())].into();
+        let mut a = consolidate(0);
+        a.torrent_hashes.insert(h1.clone());
+        a.preconditions.push(Precondition::TorrentWantedFiles {
+            hash: h1.clone(),
+            wanted: wanted.clone(),
+        });
+        let h = HashedPlan::seal(plan(vec![a.clone()])).unwrap();
+        let json = serde_json::to_string(h.plan()).unwrap();
+        let back: ActionPlan = serde_json::from_str(&json).unwrap();
+        assert_eq!(&back, h.plan());
+        assert_eq!(PlanHash::compute(&back).unwrap(), *h.hash());
+        assert!(
+            json.contains(r#""wanted":[[0,"a.mkv"],[1,"b.mkv"]]"#),
+            "{json}"
+        );
+
+        let mut empty = a.clone();
+        empty.preconditions.pop();
+        empty.preconditions.push(Precondition::TorrentWantedFiles {
+            hash: h1.clone(),
+            wanted: BTreeSet::new(),
+        });
+        assert!(plan(vec![empty]).validate().is_err());
+        let mut foreign = a.clone();
+        foreign.torrent_hashes.clear();
+        assert!(plan(vec![foreign]).validate().is_err());
+        let mut twice = a;
+        twice
+            .preconditions
+            .push(Precondition::TorrentWantedFiles { hash: h1, wanted });
+        assert!(plan(vec![twice]).validate().is_err());
+    }
+
+    #[test]
+    fn patch3_blocker_codes_roundtrip() {
+        use crate::issue::BlockerCode;
+        for c in [BlockerCode::ChangedSincePlanning, BlockerCode::Interrupted] {
+            let j = serde_json::to_string(&c).unwrap();
+            assert_eq!(serde_json::from_str::<BlockerCode>(&j).unwrap(), c);
+        }
     }
 }
