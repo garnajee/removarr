@@ -58,7 +58,8 @@ Status values: `todo`, `running`, `done`, `blocked`.
 | CP2 tier 3 (deletions) | PASS with condition (iter 1): fix F01-F04 before raising IMPLEMENTED_TIER to T3; CP2-tier4 re-checks them | 1/3 | `docs/reviews/cp2-tier3.md` |
 | CP2 tier 4 (ARR replacement) | PASS with condition (iter 1): fix CP2T4-F01 (runner must refuse automatic plans until tier 5) first; CP2-tier5 re-checks it + T4-01..T4-20 | 1/3 | `docs/reviews/cp2-tier4.md` |
 | CP2 tier 5 (automatic mode) | PASS with condition (iter 1): build T5-01..T5-22 across 13/12/14, keep IMPLEMENTED_TIER=T4 until a dedicated final CP2-tier5 review (also checks CP2T5-F01) | 1/3 |
-| CP2 tier 5 final (before raising IMPLEMENTED_TIER to T5) | running | 1/3 | `docs/reviews/cp2-tier5-final.md` | `docs/reviews/cp2-tier5.md` |
+| CP2 tier 5 final (before raising IMPLEMENTED_TIER to T5) | PASS with condition (iter 1): raise gate in the same change as CP2T5F-F01 fix + gate-raise steps; CP3 checks it | 1/3 |
+| 10 | gate raise to T5: `13-action-runner` (constant, F02-F04, F06, tests) + `14-job-runner` (F01, F05, F07, F08, tests), one commit | running | | `docs/reviews/cp2-tier5-final.md` | `docs/reviews/cp2-tier5.md` |
 | CP3 release gate | pending | — | `docs/release-readiness.md` |
 
 ## Last quality gate
