@@ -20,7 +20,7 @@ use removarr_domain::ports::{
 use removarr_domain::session::{ServiceKind, ServiceState};
 
 use super::arrplans::identity_of;
-use super::auto::{AutoContext, AutoPhase, auto_requests};
+use super::auto::{AutoContext, AutoPhase, auto_plan_defects, auto_requests};
 use super::build::{BuildContext, Built, build_plan};
 use super::expiry::{ArrFingerprints, StaleReason, staleness, verdict};
 use super::facts::Facts;
@@ -403,6 +403,11 @@ impl Planner {
                 }
                 Err(e) => return Err(e),
             };
+            let defects = auto_plan_defects(built.plan.plan(), &self.settings);
+            if !defects.is_empty() {
+                out.refused.push((category, defects.join("; ")));
+                continue;
+            }
             let approval = match built.plan.approve_auto(self.ports.clock.now()) {
                 Ok(a) => a,
                 Err(e) => {

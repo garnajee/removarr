@@ -792,3 +792,51 @@ fn every_affected_torrent_gets_exactly_one_wanted_file_pin() {
         &B::TorrentProtectedState
     ));
 }
+
+#[test]
+fn every_action_names_the_subject_it_was_planned_from() {
+    use removarr_workflows::plans::{action_paths, action_subjects};
+    let (c, m) = (completed(), media());
+    let i = input(&world());
+    let s = live();
+    let cases = [
+        (C::HardlinkMissing, sub(&rp(&c, MOVIE)), A::Consolidate),
+        (
+            C::Duplicate,
+            SubjectKey::pair(
+                sig(EntryKind::File, 1, 10, 0, 1, 0).phys(),
+                sig(EntryKind::File, 1, 11, 0, 1, 0).phys(),
+            )
+            .0,
+            A::Consolidate,
+        ),
+        (C::OrphanCompleted, sub(&rp(&c, "Orphan.Rel")), A::Delete),
+        (C::Junk, sub(&rp(&c, "stray/readme.txt")), A::Delete),
+        (
+            C::IncompleteOrphan,
+            sub(&rp(&incomplete(), "abandoned.mkv")),
+            A::Delete,
+        ),
+    ];
+    for (cat, subject, action) in cases {
+        let b = build(&i, &s, &req(cat, vec![id_of(&i, cat, &subject)], action)).unwrap();
+        let a = &b.plan.plan().actions[0];
+        assert!(
+            action_subjects(a).contains(&SubjectKey(subject.clone())),
+            "{cat:?}: {:?}",
+            action_subjects(a)
+        );
+    }
+    // Paths cover every entry of a folder and both sides of a consolidation; subjects add the
+    // holding torrents.
+    let f = id_of(&i, C::OrphanCompleted, &sub(&rp(&c, "Orphan.Rel")));
+    let b = build(&i, &s, &req(C::OrphanCompleted, vec![f], A::Delete)).unwrap();
+    assert!(
+        action_paths(&b.plan.plan().actions[0]).contains(&rp(&c, "Orphan.Rel/Subs/Orphan.Rel.srt"))
+    );
+    let h = id_of(&i, C::HardlinkMissing, &sub(&rp(&c, MOVIE)));
+    let b = build(&i, &s, &req(C::HardlinkMissing, vec![h], A::Consolidate)).unwrap();
+    let a = &b.plan.plan().actions[0];
+    assert_eq!(action_paths(a), [rp(&c, MOVIE), rp(&m, LIB)].into());
+    assert!(action_subjects(a).contains(&SubjectKey::torrent(&hash('a'))));
+}

@@ -8,8 +8,10 @@ use removarr_domain::evidence::EvidenceLevel;
 use removarr_domain::fs::FsEntry;
 use removarr_domain::ids::{IssueId, SubjectKey};
 use removarr_domain::issue::{Blocker, BlockerCode, Issue, IssueCategory, Outcome, Unit};
+use removarr_domain::path::RootKind;
 use removarr_domain::path::{RootId, RootedPath};
-use removarr_domain::plan::{ActionKind, ActionTarget, Precondition};
+use removarr_domain::plan::{ActionKind, ActionPlan, ActionTarget, PlanOrigin, Precondition};
+use removarr_domain::policy::Capability;
 use removarr_domain::session::ServiceKind;
 use removarr_domain::time::Timestamp;
 use serde::{Deserialize, Serialize};
@@ -17,7 +19,8 @@ use serde::{Deserialize, Serialize};
 use super::build::UnitPlan;
 use super::facts::Facts;
 use super::input::PlanInput;
-use super::request::{IssueAction, PlanError, PlanRequest};
+use super::request::{IssueAction, PlanError, PlanRequest, PlanSettings};
+use super::subjects::{paths_of, subjects_of};
 use crate::issues::is_ignored;
 
 /// Runtime state of automatic mode, supplied by the job runner (14).
@@ -64,7 +67,12 @@ pub fn auto_requests(phase: AutoPhase, input: &PlanInput) -> Vec<PlanRequest> {
         input
             .issues
             .iter()
-            .filter(|i| i.category == cat && !is_ignored(i) && pred(i))
+            .filter(|i| {
+                i.category == cat
+                    && !is_ignored(i)
+                    && !input.observation.ignored.contains(&i.subject)
+                    && pred(i)
+            })
             .map(|i| i.id.clone())
             .collect()
     };
@@ -135,16 +143,6 @@ fn touched_roots(u: &UnitPlan<'_>) -> Vec<RootId> {
     roots.into_iter().collect()
 }
 
-fn paths_of<'u>(u: &'u UnitPlan<'_>) -> Vec<&'u RootedPath> {
-    let mut out: Vec<&RootedPath> = u.claims.iter().collect();
-    for d in &u.drafts {
-        if let ActionTarget::Consolidate { source, target } = &d.target {
-            out.extend([source, target]);
-        }
-    }
-    out
-}
-
 fn mtime_ms(e: &FsEntry) -> i64 {
     e.sig.mtime_ns.0.div_euclid(1_000_000)
 }
@@ -192,7 +190,8 @@ pub(crate) fn auto_blockers(
             ),
         ));
     }
-    // A4: ignored, samples, failed or unresolved consolidations.
+    // A4: ignored (re-checked per action subject, T5-09), samples, failed or unresolved
+    // consolidations (per action subject and path, T5-10).
     if is_ignored(issue) || f.input.observation.ignored.contains(&issue.subject) {
         out.push(Blocker::new(BlockerCode::Ignored, "subject is ignored"));
     }
@@ -208,11 +207,38 @@ pub(crate) fn auto_blockers(
             "the same subject failed in the last 7 days",
         ));
     }
-    for p in paths_of(u) {
-        if ctx.failed_paths.contains(p) {
+    for d in &u.drafts {
+        for s in subjects_of(&d.target, &d.pre, &d.hashes) {
+            if f.input.observation.ignored.contains(&s) {
+                out.push(Blocker::new(
+                    BlockerCode::Ignored,
+                    format!("{} is ignored", s.as_str()),
+                ));
+            }
+            if ctx.failed_subjects.contains(&s) {
+                out.push(Blocker::new(
+                    BlockerCode::FailedConsolidation,
+                    format!("{} failed in the last 7 days", s.as_str()),
+                ));
+            }
+        }
+        for p in paths_of(&d.target, &d.pre) {
+            if ctx.failed_paths.contains(&p) {
+                out.push(Blocker::new(
+                    BlockerCode::FailedConsolidation,
+                    format!("{p} is involved in a failed or unresolved consolidation"),
+                ));
+            }
+        }
+        // T5-04: an automatic deletion carries ARR-validated replacement evidence only.
+        if matches!(
+            d.kind,
+            ActionKind::DeleteCompletedFile | ActionKind::DeleteCompletedFolder
+        ) && d.level != EvidenceLevel::ArrValidatedReplacement
+        {
             out.push(Blocker::new(
-                BlockerCode::FailedConsolidation,
-                format!("{p} is involved in a failed or unresolved consolidation"),
+                BlockerCode::ArrNotUpgradeEvidence,
+                "an automatic deletion needs ARR-validated replacement evidence",
             ));
         }
     }
@@ -249,5 +275,87 @@ pub(crate) fn auto_blockers(
     }
     out.sort_by(|a, b| (&a.code, &a.detail).cmp(&(&b.code, &b.detail)));
     out.dedup();
+    out
+}
+
+/// Final policy check of a sealed automatic plan before `approve_auto` (T5-01, T5-04): only
+/// auto-eligible kinds; deletions under the completed root with ARR-validated replacement
+/// evidence (`ArrReplacementPresent` and `ArrFingerprint` pinned); consolidations with name+size,
+/// sampled or full evidence; companions only behind approvable actions, `RemoveTorrentTask`
+/// only with `auto_remove_empty_torrents`; no sample and no unrecoverable old file. Empty = the
+/// plan may be approved by policy (the domain re-checks the evidence).
+#[must_use]
+pub fn auto_plan_defects(plan: &ActionPlan, settings: &PlanSettings) -> Vec<String> {
+    let mut out = Vec::new();
+    if plan.origin != PlanOrigin::AutoPolicy {
+        out.push("the plan was not built by the automatic policy".into());
+    }
+    if !plan.samples.is_empty() {
+        out.push("samples need a manual acknowledgement".into());
+    }
+    if !plan.unrecoverable_old_files().is_empty() {
+        out.push("unrecoverable old files need a manual acknowledgement".into());
+    }
+    let mut approvable = vec![false; plan.actions.len()];
+    for (i, a) in plan.actions.iter().enumerate() {
+        let has = |f: &dyn Fn(&Precondition) -> bool| a.preconditions.iter().any(f);
+        let defect: Option<String> = if !a.kind.is_auto_eligible() {
+            Some(format!("{:?} is never automatic", a.kind))
+        } else if !a.completeness.is_complete() {
+            Some("incomplete evidence".into())
+        } else {
+            match a.kind {
+                ActionKind::ConsolidateHardlink => (!matches!(
+                    a.evidence_level,
+                    EvidenceLevel::NameSize | EvidenceLevel::Sampled | EvidenceLevel::Full
+                ))
+                .then(|| "a consolidation needs name+size, sampled or full evidence".into()),
+                ActionKind::DeleteCompletedFile | ActionKind::DeleteCompletedFolder => {
+                    let completed = matches!(&a.target,
+                        ActionTarget::Path { path } if path.root.kind() == RootKind::Completed);
+                    if a.evidence_level != EvidenceLevel::ArrValidatedReplacement
+                        || !completed
+                        || !has(&|p| matches!(p, Precondition::ArrReplacementPresent { .. }))
+                        || !has(&|p| matches!(p, Precondition::ArrFingerprint { .. }))
+                    {
+                        Some(
+                            "a deletion needs ARR-validated replacement evidence under completed"
+                                .into(),
+                        )
+                    } else {
+                        None
+                    }
+                }
+                ActionKind::RemoveEmptyParent | ActionKind::RemoveTorrentTask => {
+                    let parents_ok = !a.depends_on.is_empty()
+                        && a.depends_on.iter().all(|d| {
+                            usize::try_from(*d).ok().and_then(|d| approvable.get(d)) == Some(&true)
+                        });
+                    if !parents_ok {
+                        Some("a companion follows a non-approvable action".into())
+                    } else if a.kind == ActionKind::RemoveTorrentTask
+                        && !settings
+                            .capabilities
+                            .contains(&Capability::AutoRemoveEmptyTorrents)
+                    {
+                        Some("auto_remove_empty_torrents is off (A8)".into())
+                    } else if a.evidence_level == EvidenceLevel::None {
+                        Some("a companion without an evidence level cannot be approved".into())
+                    } else {
+                        None
+                    }
+                }
+                _ => Some(format!("{:?} is never automatic", a.kind)),
+            }
+        };
+        match defect {
+            Some(d) => out.push(format!("action {}: {d}", a.index)),
+            None => {
+                if let Some(slot) = approvable.get_mut(i) {
+                    *slot = true;
+                }
+            }
+        }
+    }
     out
 }

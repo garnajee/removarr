@@ -28,14 +28,14 @@ Status values: `todo`, `running`, `done`, `blocked`.
 | 8 | `12-plan-engine` | done | plans for all tiers, tier-tagged and capability-gated; no mutation port referenced |
 | 8 | `03-domain-model` patch 2 (ARR-validated auto deletion evidence, service-command verification steps) | done | 603 tests; golden hash unchanged; gap 3 accepted as deviation |
 | 8 | `12-plan-engine` follow-up (adopt patch 2, torrent staleness by eligibility class) | done | 607 tests; wanted-file set checked live by 13 at revalidation (accepted); auto plans omit companion actions (confirmed, cleanup stays manual) |
-| 9 | `13-action-runner` | running | stage A done (tiers 1-2, 634 tests); CP2-tier3 PASS w/ condition; stage B step 1 done (F01, F02, F04-F14 fixed, 647 tests); F03 needs domain patch 3; tier 3 pending |
+| 9 | `13-action-runner` | done | tiers 1-4 executable; tier 5 runner checks built behind T4 gate (raised after CP2 tier 5 final) — stage A done (tiers 1-2, 634 tests); CP2-tier3 PASS w/ condition; stage B step 1 done (F01, F02, F04-F14 fixed, 647 tests); F03 needs domain patch 3; tier 3 pending |
 | 9 | `03-domain-model` patch 3 (TorrentWantedFiles precondition, ChangedSincePlanning/Interrupted blocker codes) | done | 649 tests; golden hash unchanged |
 | 9 | `12-plan-engine` emit TorrentWantedFiles | done | 651 tests; StaleReason::WantedFilesChanged |
 | 9 | `13-action-runner` stage D (CP2T5 fixes + runner-side T5, gate stays T4) | done | 721 tests; tier5-test-gate feature absent from production tree; one-word visibility change in plans/mod.rs |
-| 9 | `12-plan-engine` tier-5 policy requirements | running | |
+| 9 | `12-plan-engine` tier-5 policy requirements | done | 727 tests; auto_plan_defects, per-action subjects, planner-built queue removal executed end to end |
 | 9 | `13-action-runner` stage C (CP2T4 fixes + tier 4) | done | 706 tests; IMPLEMENTED_TIER=T4; automatic plans refused; domain trait addition FsMutator::remove_media_file (default refuse) flagged for CP2-tier5 |
 | 9 | `13-action-runner` stage B step 2 (tier 3) | done | 682 tests; IMPLEMENTED_TIER=T3; F03/F10 fixed; FixMode exempt from live-holder check (for CP2 review); T3-12 deferred to tier 5, T3-19 owned by 14; agent model switched to sonnet (user request) |
-| 10 | `14-job-runner` | todo | |
+| 10 | `14-job-runner` | running | incl. tier-5 parts owned by 14 (two-phase cycle, failed sets, auto_paused, locks, recovery) |
 | 11 | `15-reporting` | todo | |
 | 12 | `16-backend-api` | todo | |
 | 13 | `17-auth-guard` | todo | |
@@ -48,7 +48,7 @@ Status values: `todo`, `running`, `done`, `blocked`.
 | 18 | `25-sec-audit` | todo | |
 | 19 | `26-sec-fix` | todo | |
 | 20 | `27-release-gate` | todo | |
-| continuous | `21-unit-tests` (from wave 3) | running | pass 1 done (domain, 11 proptests, parity-matrix.md); pass 2 done (+14 tests); pass 3 done (+18 tests; found qbit fail-closed gap, fixed by 08); pass 4 done (+13 tests, no bugs); next pass after wave 8 (workflows issues + plans) |
+| continuous | `21-unit-tests` (from wave 3) | running | pass 1 done (domain, 11 proptests, parity-matrix.md); pass 2 done (+14 tests); pass 3 done (+18 tests; found qbit fail-closed gap, fixed by 08); pass 4 done (+13 tests, no bugs); pass 5 running (workflows issues/plans/actions) |
 
 ## Checkpoint reviews
 
@@ -63,4 +63,4 @@ Status values: `todo`, `running`, `done`, `blocked`.
 
 ## Last quality gate
 
-After wave 9 stage D: fmt OK, clippy -D warnings OK, tests OK (721 passed, 1 ignored = opt-in real-ffprobe test). Safety greps OK (deleteFiles literal false only in qbit/control.rs; importMode copy literal). Toolchain: cargo/rustc 1.98.0 (Homebrew, no rustup), Docker 29.7.2, ffprobe available.
+After wave 9 (tier-5 policy): fmt OK, clippy -D warnings OK, tests OK (727 passed, 1 ignored = opt-in real-ffprobe test). Safety greps OK (deleteFiles literal false only in qbit/control.rs; importMode copy literal). Toolchain: cargo/rustc 1.98.0 (Homebrew, no rustup), Docker 29.7.2, ffprobe available.

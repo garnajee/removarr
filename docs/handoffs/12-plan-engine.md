@@ -268,3 +268,80 @@ Closes CP2T3-F03 on the plan side (domain patch 3). Files: `plans/{build,expiry,
 
 Commands: `cargo fmt --all --check` pass; `cargo clippy --workspace --all-targets -- -D warnings` pass; `cargo test --workspace`
 pass, 651 passed, 0 failed, 1 ignored (opt-in real ffprobe). Not committed.
+
+## Wave 9: tier-5 policy
+
+Plan-engine part of tier 5 (`docs/reviews/cp2-tier5.md`, handoff 13 "Stage D: what 12 still owes"). `IMPLEMENTED_TIER`
+stays T4: the runner still refuses every automatic plan until the tier-5 CP2. Scope: `plans/{auto,mod,planner}.rs`, new
+`plans/subjects.rs`; tests `plans_arr.rs`, `plans_build.rs`, `evaluate_jobs.rs`, new `plans_runner.rs`. Nothing under `actions/**`
+changed (read-only use of `tests/actions_common` from `plans_runner.rs`); the `pub(crate) mod build` edit by 13 is kept. The
+domain was not touched (`plan.rs` only grepped, CLAUDE.md rule 5).
+
+What changed:
+* **Evidence tightening (T5-04).** `auto_blockers` excludes any automatic `DeleteCompletedFile`/`Folder` whose level is not
+  `ArrValidatedReplacement`. The new `plans::auto_plan_defects(&ActionPlan, &PlanSettings)` runs in `create_auto` **before**
+  `approve_auto` and refuses the plan unless:
+  - only auto-eligible kinds;
+  - deletions under `completed` carry `ArrValidatedReplacement`, `ArrReplacementPresent` and `ArrFingerprint`;
+  - consolidations carry `NameSize`/`Sampled`/`Full` evidence;
+  - companions follow approvable actions only, have an evidence level, and `RemoveTorrentTask` needs
+    `auto_remove_empty_torrents`;
+  - no sample and no unrecoverable old file.
+
+  Companions after ARR-validated deletions have no level the domain accepts, so automatic plans omit them (unchanged since patch 2).
+* **Per-action subject keys (T5-09, T5-10).** `plans::action_subjects(&PlannedAction)` and `plans::action_paths(&PlannedAction)`
+  derive them deterministically (the domain has no subject field):
+  - subjects: rooted keys of every changed path (folder snapshot entries included), the holding torrents, the consolidation pair
+    `d:...`, the torrent of a stalled cleanup, `q:<svc>:<id>`, `m:<svc>:<id>`;
+  - paths: what the action changes or removes (evidence pins excluded).
+
+  The automatic policy now checks the ignore list and `failed_subjects` against every action subject, and `failed_paths` against
+  every action path, not only the issue subject. `auto_requests` also skips issues whose subject is in the stored ignore list, so
+  an item ignored after classification no longer rejects the whole automatic request.
+* **Planner-built queue removal executed (CP2T5-F01, T5-20).** A full `arr_queue` issue (classifier, INV-39 proven) is planned
+  by `build_plan` and executed by the real runner on the lab of `tests/actions_common`. The download id stays in
+  `torrent_hashes` with no wanted-file pin.
+
+### T5 requirements owned by 12
+
+| Req. | Plan-engine deliverable | Test(s) |
+|---|---|---|
+| T5-01 (planner side) | automatic plans hold only auto-eligible kinds: A9 gate, `AutoRefused` for every manual-only action, `auto_plan_defects`, domain validation | `plans_gate.rs::automatic_mode_off_paused_or_manual_only_actions_are_refused`, `plans_arr.rs::the_automatic_policy_check_names_every_defect` |
+| T5-02 (A1 part) | `AutoContext::check_enabled` before every phase (`build_plan` and `create_auto`) | `plans_gate.rs::automatic_mode_off_paused_or_manual_only_actions_are_refused`, `evaluate_jobs.rs::the_automatic_deletion_phase_plans_and_approves_only_by_policy` |
+| T5-03 (planner side) | automatic approval only through `approve_auto` after `auto_plan_defects`; stored with `Approver::AutoPolicy` | `evaluate_jobs.rs::the_automatic_deletion_phase_plans_and_approves_only_by_policy` |
+| T5-04 | deletions need `ArrValidatedReplacement` that passed CP1-F02; consolidations `NameSize`/`Sampled`/`Full`; companions only behind approvable actions; A8 | `plans_arr.rs::automatic_arr_validated_deletion_is_approved_when_every_condition_holds`, `::automatic_arr_validated_deletion_is_refused_when_any_condition_is_missing`, `::the_automatic_policy_check_names_every_defect`, `plans_gate.rs::automatic_consolidation_needs_every_rule` |
+| T5-06 (planning) | A3 newest mtime of every entry of the unit | `plans_gate.rs::automatic_consolidation_needs_every_rule`, `plans_arr.rs::automatic_arr_validated_deletion_is_refused_when_any_condition_is_missing` |
+| T5-07 (planning) | A2 whole-root perimeter, qBittorrent `Ok` with no `NoRule`/`Invalid`, dependent services `Ok`, no permission finding at the unit | `plans_gate.rs::automatic_consolidation_needs_every_rule`, `plans_arr.rs::automatic_deletions_fail_closed_on_every_uncertain_input` |
+| T5-09 (planning) | ignore list per action subject; stored ignores skipped by `auto_requests` | `plans_arr.rs::automatic_deletions_fail_closed_on_every_uncertain_input` (ignored holding torrent), `evaluate_jobs.rs::the_automatic_deletion_phase_plans_and_approves_only_by_policy` (ignored after classification), `plans_build.rs::every_action_names_the_subject_it_was_planned_from` |
+| T5-10 (planner side) | `failed_paths` per action path, `failed_subjects` per action subject | `plans_gate.rs::automatic_consolidation_needs_every_rule`, `plans_arr.rs::automatic_deletions_fail_closed_on_every_uncertain_input` |
+| T5-13 | samples never automatic (unit blocker, `auto_plan_defects`, `approve_auto`) | `plans_arr.rs::automatic_arr_validated_deletion_is_refused_when_any_condition_is_missing`, `::the_automatic_policy_check_names_every_defect`, `plans_build.rs::samples_need_acknowledgement_in_folders_and_are_never_deleted_alone` |
+| T5-14 | folder all-or-nothing with ARR evidence for every member | `plans_arr.rs::folder_deletion_with_arr_evidence_is_all_or_nothing_and_names_the_failing_member` |
+| T5-17 (planner side) | T-20 (recent, failed path), T-21 (folder), T-31 (approved exact copy); fail closed on scan, API, mapping, permissions, ARR down, ARR ambiguous; ignored never planned; no automatic task removal | `plans_gate.rs::automatic_consolidation_needs_every_rule`, `plans_arr.rs::automatic_deletions_fail_closed_on_every_uncertain_input`, T-21 test above |
+| T5-20 | planner-built `ArrRemoveQueueItem` executed end to end; refused when the import proof is gone | `plans_runner.rs::a_planner_built_queue_removal_executes_end_to_end`, `::a_planner_built_queue_removal_is_refused_when_the_import_proof_is_gone` |
+
+Not 12's: T5-05, T5-08 (runner level) and T5-15, T5-18, T5-21 (13, done in Stage D); T5-22 (13/22).
+
+### What 14 still owes (planner-facing contract)
+
+* Read `mode.auto_mode` once, persist `auto_paused` in `StateStore` (`POST /auto/resume` clears it), and pass both in
+  `AutoContext` (T5-02).
+* Build `AutoContext.failed_paths` (paths of every `ConsolidateHardlink` not `Verified`, including `ExecutedUnverified`,
+  `FailedNeedsReview`, `Interrupted` and recovery outcomes) and `failed_subjects` (any non-`Verified` action in the last 7 days)
+  from the journal with `plans::action_paths`/`plans::action_subjects` of the stored plan actions (T5-10, T3-12).
+* Run the two-phase cycle (T5-11):
+  - `create_auto(Consolidations, ..)` with the triggering session's active issue ids;
+  - execute;
+  - rescan only the roots that saw a live `Done` mutation, and abort on a dirty rescan or a non-`Ok` service;
+  - `create_auto(Deletions, ..)` with the new session's ids and the refreshed `ServiceCache.arr`.
+
+  In dry-run, simulate both phases with no rescan.
+* Stop the cycle and set `auto_paused` on any outcome other than `Verified`/`NotExecuted`-by-revalidation, on any left-stopped
+  torrent, on any recovery need, and on `AutoOutcome.refused` entries caused by errors (T5-08).
+* Scheduling, exclusive locks, `recover` before every execute job and after any `Err`, and the cancellation bridge (T5-12,
+  T3-19).
+* Crash points in the cycle (T5-16); reporting of `Approver::AutoPolicy` (T5-19, with 15).
+* Fill `PlanSettings` (`implemented_tier` from `IMPLEMENTED_TIER`, capabilities incl. `auto_remove_empty_torrents`,
+  `auto_min_age_hours`) through 16's wiring.
+
+Commands: `cargo fmt --all --check` pass; `cargo clippy --workspace --all-targets -- -D warnings` pass; `cargo test --workspace`
+pass, 727 passed, 0 failed, 1 ignored (opt-in real ffprobe); workflows dependency gate prints nothing. Not committed.

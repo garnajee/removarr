@@ -1085,3 +1085,137 @@ fn local_checks_block_editions_and_titles_but_technical_tags_never_decide() {
         excluded_codes(&r)
     );
 }
+
+// ---- Tier 5: automatic deletion policy (T5-04, T5-09, T5-10, T5-17) ------------------------
+
+#[test]
+fn automatic_deletions_fail_closed_on_every_uncertain_input() {
+    let (c, subject) = (completed(), sub(&rp(&completed(), OLD)));
+    let good = || Ok(movie_facts(false, &["Not an upgrade"], 3000));
+    let s = live();
+    let blocked = |o: Observation, auto: removarr_workflows::plans::AutoContext, code: B| {
+        let i = with_facts(&o, good());
+        let r = build_auto(&i, &s, &delete_replaced(&i), &auto);
+        assert!(
+            has_code(&r, &subject, &code),
+            "{code:?}: {:?}",
+            excluded_codes(&r)
+        );
+    };
+    // Control: everything holds.
+    assert!(auto_movie(good()).is_ok());
+    // Scan incomplete.
+    let mut o = movie_world();
+    o.inventories[0].finished = false;
+    blocked(o, auto_on(), B::ScanIncomplete);
+    // qBittorrent unavailable.
+    let mut o = movie_world();
+    o.qbit = QbitObservation::Unavailable {
+        reason: "down".into(),
+    };
+    blocked(
+        o,
+        auto_on(),
+        B::ServiceUnavailable(ServiceKind::Qbittorrent),
+    );
+    // Mapping uncertain (an unmapped torrent anywhere).
+    let mut o = movie_world();
+    if let QbitObservation::Available(snap) = &mut o.qbit {
+        let t =
+            Tor::new('q', &c, "uploading", 1.0, "X.mkv", &[("X.mkv", "X.mkv")]).unmapped_files();
+        snap.files.insert(t.info.hash.clone(), t.files);
+        snap.torrents.push(t.info);
+    }
+    blocked(o, auto_on(), B::UnmappedTorrents);
+    // Permissions: the completed directory of the target is not writable.
+    let mut o = movie_world();
+    o.inventories[0] = Inv::new(c.clone())
+        .dir_mode("Old.Movie.2020.720p", 2, 0o555)
+        .file(OLD, 10, 1000)
+        .build();
+    blocked(o, auto_on(), B::PermissionDenied);
+    // ARR ambiguous: the torrent's history names another movie.
+    let mut o = movie_world();
+    o.arr[0].history = vec![ArrHistoryRecord {
+        download_id: Some(hash('a')),
+        media: Some(arr_media(ArrService::Radarr, 8)),
+        event_type: "grabbed".into(),
+        source_title: "x".into(),
+        date: NOW,
+    }];
+    blocked(o, auto_on(), B::ArrAmbiguous);
+    // An ignored subject of the action (the holding torrent), even if the issue is not ignored.
+    let mut o = movie_world();
+    let i0 = input(&o);
+    o.ignored.insert(SubjectKey::torrent(&hash('a')));
+    let mut i = with_facts(&o, good());
+    i.issues = i0.issues;
+    let r = build_auto(&i, &s, &delete_replaced(&i), &auto_on());
+    assert!(
+        has_code(&r, &subject, &B::Ignored),
+        "{:?}",
+        excluded_codes(&r)
+    );
+    // A path of a failed or unresolved consolidation is never deleted (T5-10).
+    let mut failed = auto_on();
+    failed.failed_paths.insert(rp(&c, OLD));
+    blocked(movie_world(), failed, B::FailedConsolidation);
+    // auto_remove_empty_torrents off: no task removal in an automatic plan (A8).
+    let b = auto_movie(good()).unwrap();
+    assert!(!kinds(&b).contains(&K::RemoveTorrentTask));
+}
+
+#[test]
+fn the_automatic_policy_check_names_every_defect() {
+    use removarr_workflows::plans::auto_plan_defects;
+    let s = live();
+    let ok = auto_movie(Ok(movie_facts(false, &["Not an upgrade"], 3000))).unwrap();
+    let base = ok.plan.plan().clone();
+    assert!(auto_plan_defects(&base, &s).is_empty());
+    let defect = |f: &dyn Fn(&mut removarr_domain::plan::ActionPlan)| {
+        let mut p = base.clone();
+        f(&mut p);
+        auto_plan_defects(&p, &s)
+    };
+    assert!(!defect(&|p| p.origin = removarr_domain::plan::PlanOrigin::User).is_empty());
+    assert!(!defect(&|p| p.actions[0].evidence_level = EvidenceLevel::Sampled).is_empty());
+    assert!(
+        !defect(&|p| p.actions[0]
+            .preconditions
+            .retain(|x| !matches!(x, Precondition::ArrReplacementPresent { .. })))
+        .is_empty()
+    );
+    assert!(!defect(&|p| p.actions[0].kind = K::DeleteJunk).is_empty());
+    assert!(!defect(&|p| p.samples.push(rp(&completed(), "s/sample.mkv"))).is_empty());
+    // A companion is approvable only behind an approvable action, and never without a level.
+    let companion = |p: &mut removarr_domain::plan::ActionPlan, kind: K, level: EvidenceLevel| {
+        let mut c = p.actions[0].clone();
+        c.index = 1;
+        c.kind = kind;
+        c.depends_on = vec![0];
+        c.evidence_level = level;
+        p.actions.push(c);
+    };
+    let d = defect(&|p| companion(p, K::RemoveEmptyParent, EvidenceLevel::None));
+    assert!(
+        d.iter().any(|x| x.contains("without an evidence level")),
+        "{d:?}"
+    );
+    let d = defect(&|p| {
+        p.actions[0].evidence_level = EvidenceLevel::Sampled;
+        companion(p, K::RemoveEmptyParent, EvidenceLevel::Sampled);
+    });
+    assert!(d.iter().any(|x| x.contains("non-approvable")), "{d:?}");
+    let mut no_cap = live();
+    no_cap
+        .capabilities
+        .remove(&removarr_domain::policy::Capability::AutoRemoveEmptyTorrents);
+    let mut p = base.clone();
+    companion(&mut p, K::RemoveTorrentTask, EvidenceLevel::Sampled);
+    assert!(auto_plan_defects(&p, &s).is_empty(), "with the capability");
+    let d = auto_plan_defects(&p, &no_cap);
+    assert!(
+        d.iter().any(|x| x.contains("auto_remove_empty_torrents")),
+        "{d:?}"
+    );
+}

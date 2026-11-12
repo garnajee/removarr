@@ -28,10 +28,11 @@ mod planner;
 mod preview;
 mod request;
 mod service;
+mod subjects;
 mod validate;
 
 pub use arrplans::{decision as preview_decision, is_not_upgrade_reason};
-pub use auto::{AutoContext, AutoPhase, auto_requests};
+pub use auto::{AutoContext, AutoPhase, auto_plan_defects, auto_requests};
 pub use build::{BuildContext, Built, ExpectedGain, build_plan};
 pub use expiry::{ArrFingerprints, StaleReason, staleness, verdict};
 pub use input::{MediaKey, PlanInput};
@@ -44,4 +45,5 @@ pub use request::{
     ALL_CAPABILITIES, IssueAction, MediaAction, PlanError, PlanRequest, PlanSettings,
     SelectionFault,
 };
+pub use subjects::{action_paths, action_subjects};
 pub use validate::check_plan;

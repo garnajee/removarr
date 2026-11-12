@@ -423,3 +423,68 @@ async fn media_evaluation_searches_without_grabbing_and_sorts_by_arr_verdict() {
             .is_none()
     );
 }
+
+#[tokio::test]
+async fn the_automatic_deletion_phase_plans_and_approves_only_by_policy() {
+    use removarr_domain::plan::Approver;
+    use removarr_domain::ports::{IgnoreStore, PlanStore};
+    use removarr_workflows::plans::{AutoPhase, PlanError};
+    let w = store_world().await;
+    let o = movie_world();
+    store_obs(&w, o.clone(), 7).await;
+    let planner = store_planner(&w, live(), vec![radarr(10)]);
+    let id = hardlink_id(OLD);
+    // A1: paused or off refuses the whole phase.
+    let mut paused = auto_on();
+    paused.auto_paused = Some("previous failure".into());
+    assert!(matches!(
+        planner
+            .create_auto(AutoPhase::Deletions, &paused, &[id.clone()], o.arr.clone())
+            .await,
+        Err(PlanError::AutoRefused(_))
+    ));
+    // Every rule holds: one plan, approved by policy and stored as approved.
+    let out = planner
+        .create_auto(
+            AutoPhase::Deletions,
+            &auto_on(),
+            &[id.clone()],
+            o.arr.clone(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(out.plans.len(), 1, "{:?}", out.refused);
+    let p = &out.plans[0];
+    assert_eq!(p.approval.by, Approver::AutoPolicy);
+    let (_, hash, status, approval) = w
+        .repos
+        .plans
+        .get(p.built.plan.plan().id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!((status, &hash), (PlanStatus::Approved, p.built.plan.hash()));
+    assert_eq!(approval.unwrap().by, Approver::AutoPolicy);
+    // The phase-1 consolidation phase has nothing to do here.
+    let none = planner
+        .create_auto(
+            AutoPhase::Consolidations,
+            &auto_on(),
+            &[id.clone()],
+            o.arr.clone(),
+        )
+        .await
+        .unwrap();
+    assert!(none.plans.is_empty());
+    // Ignored after classification (read from the store): never planned automatically.
+    w.repos
+        .ignores
+        .ignore(&[SubjectKey::rooted(&rp(&completed(), OLD))], None, NOW)
+        .await
+        .unwrap();
+    let out = planner
+        .create_auto(AutoPhase::Deletions, &auto_on(), &[id], o.arr.clone())
+        .await
+        .unwrap();
+    assert!(out.plans.is_empty(), "{:?}", out.refused);
+}
