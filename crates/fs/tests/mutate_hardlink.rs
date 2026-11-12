@@ -5,7 +5,7 @@
 mod common;
 
 use std::fs;
-use std::os::unix::fs::{MetadataExt, PermissionsExt};
+use std::os::unix::fs::PermissionsExt;
 
 use common::{fs_for, roots_for, rp};
 use removarr_config::{LiveMode, Roots};
@@ -223,40 +223,6 @@ fn t14_probe_refusal_is_explanatory_and_never_suggests_sudo() {
         assert!(!e.detail.contains("sudo"));
     }
     assert_eq!(entries(&media_dir), vec!["a.mkv"]);
-}
-
-#[test]
-fn tier_three_mutations_are_explicit_refusals_in_stage_a() {
-    let lab = lab();
-    let completed = RootId::completed();
-    let s = sig(&lab, &completed, "Rel/a.mkv");
-    let m = mutator(&lab);
-    let p = rp(&completed, "Rel/a.mkv");
-    assert_eq!(
-        m.remove_file(&p, &s).unwrap_err().class,
-        ErrorClass::CapabilityDisabled
-    );
-    assert_eq!(
-        m.remove_empty_dir(&rp(&completed, "Rel"), &s)
-            .unwrap_err()
-            .class,
-        ErrorClass::CapabilityDisabled
-    );
-    assert_eq!(
-        m.set_mode(&p, &s, 0o644).unwrap_err().class,
-        ErrorClass::CapabilityDisabled
-    );
-    let snap = fs_for(&lab.roots)
-        .snapshot_dir(&rp(&completed, "Rel"))
-        .unwrap();
-    assert_eq!(
-        m.remove_tree(&rp(&completed, "Rel"), &snap)
-            .unwrap_err()
-            .class,
-        ErrorClass::CapabilityDisabled
-    );
-    let md = fs::metadata(lab.roots.completed().as_path().join("Rel/a.mkv")).unwrap();
-    assert_eq!(md.nlink(), 1, "nothing changed");
 }
 
 #[test]

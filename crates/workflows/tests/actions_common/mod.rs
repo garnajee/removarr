@@ -231,7 +231,10 @@ pub struct FakeQbit {
     pub checking_polls: Mutex<u32>,
     pub listings: AtomicUsize,
     pub fail_reads: Mutex<bool>,
+    /// `files()` alone fails (a read fault on the wanted-file set).
+    pub fail_files: Mutex<bool>,
     pub fail_mutations: Mutex<Option<String>>,
+    pub fail_remove: Mutex<bool>,
     rechecked: Mutex<bool>,
     pub hang: Arc<Hang>,
 }
@@ -253,6 +256,19 @@ impl FakeQbit {
 
     /// A complete, seeding torrent holding `files` (name, root-relative path) under `root`.
     pub fn add(&self, h: char, root: &RootId, content: &str, files: &[(&str, &str)]) {
+        self.add_with(h, root, content, files, "uploading", 1.0);
+    }
+
+    /// A torrent in any state and progress (incomplete ones live under the incomplete root).
+    pub fn add_with(
+        &self,
+        h: char,
+        root: &RootId,
+        content: &str,
+        files: &[(&str, &str)],
+        state: &str,
+        progress: f64,
+    ) {
         let mapped = |rel: &str| MappedPath::Mapped {
             raw: format!("/data/{rel}"),
             path: rp(root, rel),
@@ -260,8 +276,8 @@ impl FakeQbit {
         let info = TorrentInfo {
             hash: hash(h),
             name: format!("torrent-{h}"),
-            state: TorrentState::Uploading,
-            progress: 1.0,
+            state: TorrentState::parse(state),
+            progress,
             added_on: Timestamp(NOW.0 - 86_400_000 * 10),
             completion_on: Some(Timestamp(NOW.0 - 86_400_000 * 9)),
             category: String::new(),
@@ -281,7 +297,7 @@ impl FakeQbit {
                 name: (*name).to_string(),
                 size: FILE_BYTES as u64,
                 priority: 1,
-                progress: 1.0,
+                progress,
                 candidates: vec![mapped(rel)],
             })
             .collect();
@@ -327,6 +343,32 @@ impl FakeQbit {
         self.torrents.lock().unwrap()[&hash(h)].info.state.clone()
     }
 
+    pub fn listed(&self, h: char) -> bool {
+        self.torrents.lock().unwrap().contains_key(&hash(h))
+    }
+
+    /// Adds a wanted file to an existing torrent (a selection change after planning).
+    pub fn add_file(&self, h: char, name: &str, root: &RootId, rel: &str) {
+        let mut t = self.torrents.lock().unwrap();
+        let e = t.get_mut(&hash(h)).unwrap();
+        let index = e.files.len() as u32;
+        e.files.push(TorrentFile {
+            index,
+            name: name.to_string(),
+            size: FILE_BYTES as u64,
+            priority: 1,
+            progress: 1.0,
+            candidates: vec![MappedPath::Mapped {
+                raw: format!("/data/{rel}"),
+                path: rp(root, rel),
+            }],
+        });
+    }
+
+    pub fn remove_torrent(&self, h: char) {
+        self.torrents.lock().unwrap().remove(&hash(h));
+    }
+
     pub fn set_priority(&self, h: char, index: u32, priority: i32) {
         let mut t = self.torrents.lock().unwrap();
         for f in &mut t.get_mut(&hash(h)).unwrap().files {
@@ -368,6 +410,9 @@ impl FakeQbit {
         if let Some(m) = self.fail_mutations.lock().unwrap().clone() {
             return Err(PortError::new(ErrorClass::Unavailable, m));
         }
+        if kind == "remove" && *self.fail_remove.lock().unwrap() {
+            return Err(PortError::new(ErrorClass::Unavailable, "remove refused"));
+        }
         self.calls
             .lock()
             .unwrap()
@@ -378,13 +423,29 @@ impl FakeQbit {
                 PortError::new(ErrorClass::NotFound, "torrent not in the current listing")
             })?;
             match kind {
-                "stop" => e.info.state = TorrentState::StoppedUp,
-                "start" => e.info.state = TorrentState::Uploading,
+                "stop" => {
+                    e.info.state = if e.info.progress >= 1.0 {
+                        TorrentState::StoppedUp
+                    } else {
+                        TorrentState::StoppedDl
+                    }
+                }
+                "start" => {
+                    e.info.state = if e.info.progress >= 1.0 {
+                        TorrentState::Uploading
+                    } else {
+                        TorrentState::StalledDl
+                    }
+                }
                 "recheck" => {
                     e.checking = Some(*self.checking_polls.lock().unwrap());
                     *self.rechecked.lock().unwrap() = true;
                 }
-                "remove" => panic!("stage A never removes a torrent task"),
+                "remove" => {
+                    // The task goes; the data is never touched by the fake (deleteFiles=false
+                    // is the adapter's literal, the port has no flag).
+                    t.remove(h);
+                }
                 _ => unreachable!(),
             }
         }
@@ -439,7 +500,7 @@ impl QbitRead for FakeQbit {
         Ok(out)
     }
     async fn files(&self, h: &TorrentHash) -> Result<Vec<TorrentFile>, PortError> {
-        if *self.fail_reads.lock().unwrap() {
+        if *self.fail_reads.lock().unwrap() || *self.fail_files.lock().unwrap() {
             return Err(PortError::new(ErrorClass::Unavailable, "qbittorrent down"));
         }
         self.torrents
@@ -655,7 +716,10 @@ pub struct CountingMutator {
     inner: Arc<dyn FsMutator>,
     pub probes: AtomicUsize,
     pub replaces: AtomicUsize,
-    pub others: AtomicUsize,
+    pub removes: AtomicUsize,
+    pub trees: AtomicUsize,
+    pub empty_dirs: AtomicUsize,
+    pub modes: AtomicUsize,
     pub after_replace: Mutex<Option<Box<dyn Fn() + Send + Sync>>>,
     /// Perform the replacement, then report an error (the link is in place).
     pub fail_after_replace: Mutex<bool>,
@@ -667,7 +731,10 @@ impl CountingMutator {
             inner,
             probes: AtomicUsize::new(0),
             replaces: AtomicUsize::new(0),
-            others: AtomicUsize::new(0),
+            removes: AtomicUsize::new(0),
+            trees: AtomicUsize::new(0),
+            empty_dirs: AtomicUsize::new(0),
+            modes: AtomicUsize::new(0),
             after_replace: Mutex::new(None),
             fail_after_replace: Mutex::new(false),
         })
@@ -675,7 +742,13 @@ impl CountingMutator {
     pub fn mutations(&self) -> usize {
         self.probes.load(Ordering::SeqCst)
             + self.replaces.load(Ordering::SeqCst)
-            + self.others.load(Ordering::SeqCst)
+            + self.removals()
+            + self.modes.load(Ordering::SeqCst)
+    }
+    pub fn removals(&self) -> usize {
+        self.removes.load(Ordering::SeqCst)
+            + self.trees.load(Ordering::SeqCst)
+            + self.empty_dirs.load(Ordering::SeqCst)
     }
 }
 
@@ -705,19 +778,19 @@ impl FsMutator for CountingMutator {
         r
     }
     fn remove_file(&self, t: &RootedPath, e: &EntrySignature) -> Result<(), PortError> {
-        self.others.fetch_add(1, Ordering::SeqCst);
+        self.removes.fetch_add(1, Ordering::SeqCst);
         self.inner.remove_file(t, e)
     }
     fn remove_tree(&self, d: &RootedPath, e: &DirSnapshot) -> Result<(), PortError> {
-        self.others.fetch_add(1, Ordering::SeqCst);
+        self.trees.fetch_add(1, Ordering::SeqCst);
         self.inner.remove_tree(d, e)
     }
     fn remove_empty_dir(&self, d: &RootedPath, e: &EntrySignature) -> Result<(), PortError> {
-        self.others.fetch_add(1, Ordering::SeqCst);
+        self.empty_dirs.fetch_add(1, Ordering::SeqCst);
         self.inner.remove_empty_dir(d, e)
     }
     fn set_mode(&self, t: &RootedPath, e: &EntrySignature, m: u32) -> Result<(), PortError> {
-        self.others.fetch_add(1, Ordering::SeqCst);
+        self.modes.fetch_add(1, Ordering::SeqCst);
         self.inner.set_mode(t, e, m)
     }
 }
@@ -790,14 +863,21 @@ pub struct Lab {
 }
 
 impl Lab {
-    /// Two roots with one identical pair (`Rel/a.mkv` in completed and media) seeded by torrent
-    /// `a`, plus a second identical pair (`Rel/b.mkv`) seeded by torrent `b`.
+    /// Three roots. Completed: one identical pair (`Rel/a.mkv` in completed and media) seeded
+    /// by torrent `a`, a second pair (`Rel/b.mkv`) seeded by torrent `b`, the torrent-less
+    /// junk `Rel/a.nfo`, and the torrent-less release folder `Orphan/{Orphan.mkv, Subs/o.srt,
+    /// Sample/s.mkv}`. Incomplete: `Dl/part.mkv.!qB` held by the stalled torrent `d`
+    /// (progress 0.4), and the orphan `lost.mkv.!qB`.
     pub async fn new() -> Self {
         let tmp = tempfile::tempdir().unwrap();
         let base = fs::canonicalize(tmp.path()).unwrap();
         let completed = base.join("completed");
+        let incomplete = base.join("incomplete");
         let media = base.join("media");
         fs::create_dir_all(completed.join("Rel")).unwrap();
+        fs::create_dir_all(completed.join("Orphan/Subs")).unwrap();
+        fs::create_dir_all(completed.join("Orphan/Sample")).unwrap();
+        fs::create_dir_all(incomplete.join("Dl")).unwrap();
         fs::create_dir_all(media.join("Movies/Rel")).unwrap();
         for name in ["a", "b"] {
             let bytes: Vec<u8> = (0..FILE_BYTES)
@@ -806,9 +886,15 @@ impl Lab {
             fs::write(completed.join(format!("Rel/{name}.mkv")), &bytes).unwrap();
             fs::write(media.join(format!("Movies/Rel/{name}.mkv")), &bytes).unwrap();
         }
+        fs::write(completed.join("Rel/a.nfo"), b"nfo").unwrap();
+        fs::write(completed.join("Orphan/Orphan.mkv"), vec![7u8; 4096]).unwrap();
+        fs::write(completed.join("Orphan/Subs/o.srt"), b"srt").unwrap();
+        fs::write(completed.join("Orphan/Sample/s.mkv"), b"sample").unwrap();
+        fs::write(incomplete.join("Dl/part.mkv.!qB"), vec![1u8; 2048]).unwrap();
+        fs::write(incomplete.join("lost.mkv.!qB"), vec![2u8; 1024]).unwrap();
         let roots = Roots::validate(&RootPaths {
             completed: Some(completed.to_str().unwrap().into()),
-            incomplete: None,
+            incomplete: Some(incomplete.to_str().unwrap().into()),
             media: vec![media.to_str().unwrap().into()],
         })
         .expect("roots");
@@ -836,6 +922,14 @@ impl Lab {
             &RootId::completed(),
             "Rel",
             &[("Rel/b.mkv", "Rel/b.mkv")],
+        );
+        qbit.add_with(
+            'd',
+            &RootId::incomplete(),
+            "Dl",
+            &[("Dl/part.mkv", "Dl/part.mkv.!qB")],
+            "stalledDL",
+            0.4,
         );
         let lab = Self {
             _tmp: tmp,
@@ -887,20 +981,28 @@ impl Lab {
             started_at: Timestamp(NOW.0 + i64::try_from(id.0.as_u128()).unwrap()),
             finished_at: None,
             status: SessionStatus::Running,
-            roots: [RootId::completed(), self.media.clone()]
-                .iter()
-                .map(|r| RootStatus {
-                    root: r.clone(),
-                    scanned: true,
-                    error_count: 0,
-                    protected_count: 0,
-                })
-                .collect(),
+            roots: [
+                RootId::completed(),
+                RootId::incomplete(),
+                self.media.clone(),
+            ]
+            .iter()
+            .map(|r| RootStatus {
+                root: r.clone(),
+                scanned: true,
+                error_count: 0,
+                protected_count: 0,
+            })
+            .collect(),
             services: vec![ok(ServiceKind::Qbittorrent)],
             metrics: SessionMetrics::default(),
         };
         self.repos.scans.begin_session(&s).await.unwrap();
-        for r in [RootId::completed(), self.media.clone()] {
+        for r in [
+            RootId::completed(),
+            RootId::incomplete(),
+            self.media.clone(),
+        ] {
             let inv = self.fs.scan_root(&r, &ScanControl::default()).unwrap();
             self.repos.scans.save_inventory(s.id, &inv).await.unwrap();
         }
@@ -919,6 +1021,47 @@ impl Lab {
 
     pub fn media_path(&self, rel: &str) -> PathBuf {
         self.base.join("media").join(rel)
+    }
+
+    pub fn incomplete_path(&self, rel: &str) -> PathBuf {
+        self.base.join("incomplete").join(rel)
+    }
+
+    pub fn snapshot(&self, p: &RootedPath) -> DirSnapshot {
+        self.fs.snapshot_dir(p).unwrap()
+    }
+
+    /// `TorrentStates` and one `TorrentWantedFiles` pin per hash, from the fake's listing.
+    pub fn torrent_pins(
+        &self,
+        hashes: &[char],
+    ) -> (
+        Vec<Precondition>,
+        BTreeMap<TorrentHash, (TorrentState, f64)>,
+    ) {
+        let listing = self.qbit.snapshot();
+        let mut states = BTreeMap::new();
+        let mut pins = Vec::new();
+        for c in hashes {
+            let h = hash(*c);
+            let t = listing.torrents.iter().find(|t| t.hash == h).unwrap();
+            states.insert(h.clone(), (t.state.clone(), t.progress));
+            let wanted: BTreeSet<(u32, String)> = listing.files[&h]
+                .iter()
+                .filter(|f| f.priority > 0)
+                .map(|f| (f.index, f.name.clone()))
+                .collect();
+            pins.push(Precondition::TorrentWantedFiles { hash: h, wanted });
+        }
+        if !states.is_empty() {
+            pins.insert(
+                0,
+                Precondition::TorrentStates {
+                    states: states.clone(),
+                },
+            );
+        }
+        (pins, states)
     }
 
     pub fn sig(&self, p: &RootedPath) -> EntrySignature {
@@ -947,11 +1090,8 @@ impl Lab {
             let target = rp(&self.media, tgt);
             let (ss, ts) = (self.sig(&source), self.sig(&target));
             let hs: BTreeSet<TorrentHash> = hashes.iter().map(|c| hash(*c)).collect();
-            let mut st = BTreeMap::new();
-            for h in &hs {
-                let t = listing.torrents.iter().find(|t| &t.hash == h).unwrap();
-                st.insert(h.clone(), (t.state.clone(), t.progress));
-            }
+            let (pins, st) = self.torrent_pins(hashes);
+            let _ = &listing;
             states.extend(st.clone());
             let mut pre = vec![
                 Precondition::EntryUnchanged {
@@ -977,9 +1117,7 @@ impl Lab {
                 Precondition::ServiceAvailable(ServiceKind::Qbittorrent),
                 Precondition::ConfigFingerprint(CFG.into()),
             ];
-            if !st.is_empty() {
-                pre.push(Precondition::TorrentStates { states: st });
-            }
+            pre.extend(pins);
             let mut verify = vec![
                 VerificationStep::InodeEquals {
                     path: target.clone(),
@@ -1033,55 +1171,347 @@ impl Lab {
         HashedPlan::seal(plan).expect("valid plan")
     }
 
-    /// A plan with one tier-3 action (refused in stage A).
-    pub fn tier3_plan(&self) -> HashedPlan {
-        let target = rp(&RootId::completed(), "Rel/a.mkv");
-        let sig = self.sig(&target);
+    /// A base action: no preconditions beyond the config fingerprint, no gain.
+    fn base(&self, index: u32, kind: ActionKind, target: ActionTarget) -> PlannedAction {
+        PlannedAction {
+            index,
+            kind,
+            target,
+            preconditions: vec![Precondition::ConfigFingerprint(CFG.into())],
+            verification: vec![],
+            expected_gain: GainEstimate::default(),
+            depends_on: vec![],
+            torrent_hashes: BTreeSet::new(),
+            evidence_level: EvidenceLevel::None,
+            completeness: Completeness::Complete,
+        }
+    }
+
+    /// A file deletion of `kind` at `rel` under `root`: `EntryUnchanged` with `nlink`,
+    /// `NoScanErrorUnder`, qBittorrent available, and either `NoTorrentReferences`
+    /// (torrent-less) or the state and wanted pins of `hashes`. Verified by `Absent`.
+    pub fn delete_file_action(
+        &self,
+        index: u32,
+        kind: ActionKind,
+        root: &RootId,
+        rel: &str,
+        hashes: &[char],
+    ) -> PlannedAction {
+        let path = rp(root, rel);
+        let sig = self.sig(&path);
+        let mut a = self.base(index, kind, ActionTarget::Path { path: path.clone() });
+        a.preconditions.push(Precondition::EntryUnchanged {
+            path: path.clone(),
+            sig,
+            compare_nlink: true,
+        });
+        a.preconditions
+            .push(Precondition::NoScanErrorUnder { path: path.clone() });
+        a.preconditions
+            .push(Precondition::ServiceAvailable(ServiceKind::Qbittorrent));
+        if hashes.is_empty() {
+            a.preconditions
+                .push(Precondition::NoTorrentReferences { path: path.clone() });
+        } else {
+            let (pins, _) = self.torrent_pins(hashes);
+            a.preconditions.extend(pins);
+            a.torrent_hashes = hashes.iter().map(|c| hash(*c)).collect();
+        }
+        a.verification = vec![VerificationStep::Absent { path }];
+        a.expected_gain = GainEstimate {
+            logical: sig.size,
+            attributable: if sig.nlink == 1 { sig.size } else { 0 },
+            added: 0,
+        };
+        a
+    }
+
+    /// A torrent-less folder deletion of `rel` under completed (`DirUnchanged` snapshot).
+    pub fn delete_folder_action(&self, index: u32, rel: &str) -> PlannedAction {
+        let path = rp(&RootId::completed(), rel);
+        let snapshot = self.snapshot(&path);
+        let size: u64 = snapshot.entries.values().map(|s| s.size).sum();
+        let mut a = self.base(
+            index,
+            ActionKind::DeleteCompletedFolder,
+            ActionTarget::Path { path: path.clone() },
+        );
+        a.preconditions
+            .push(Precondition::DirUnchanged { snapshot });
+        a.preconditions
+            .push(Precondition::NoScanErrorUnder { path: path.clone() });
+        a.preconditions
+            .push(Precondition::ServiceAvailable(ServiceKind::Qbittorrent));
+        a.preconditions
+            .push(Precondition::NoTorrentReferences { path: path.clone() });
+        a.verification = vec![VerificationStep::Absent { path }];
+        a.expected_gain = GainEstimate {
+            logical: size,
+            attributable: size,
+            added: 0,
+        };
+        a
+    }
+
+    /// The `RemoveEmptyParent` companion of `deps` for the directory `rel` under completed.
+    pub fn empty_parent_action(&self, index: u32, rel: &str, deps: &[u32]) -> PlannedAction {
+        let path = rp(&RootId::completed(), rel);
+        let sig = self.sig(&path);
+        let mut a = self.base(
+            index,
+            ActionKind::RemoveEmptyParent,
+            ActionTarget::Path { path: path.clone() },
+        );
+        a.preconditions.push(Precondition::EntryUnchanged {
+            path: path.clone(),
+            sig,
+            compare_nlink: false,
+        });
+        a.preconditions
+            .push(Precondition::NoScanErrorUnder { path: path.clone() });
+        a.verification = vec![VerificationStep::Absent { path }];
+        a.depends_on = deps.to_vec();
+        a
+    }
+
+    /// The opt-in `RemoveTorrentTask` companion for hash `h`.
+    pub fn remove_task_action(&self, index: u32, h: char, deps: &[u32]) -> PlannedAction {
+        let mut a = self.base(
+            index,
+            ActionKind::RemoveTorrentTask,
+            ActionTarget::Torrent {
+                hash: hash(h),
+                data_paths: vec![],
+            },
+        );
+        let (pins, _) = self.torrent_pins(&[h]);
+        a.preconditions.extend(pins);
+        a.preconditions
+            .push(Precondition::ServiceAvailable(ServiceKind::Qbittorrent));
+        a.verification = vec![VerificationStep::TorrentAbsent {
+            hashes: [hash(h)].into(),
+        }];
+        a.depends_on = deps.to_vec();
+        a.torrent_hashes = [hash(h)].into();
+        a
+    }
+
+    /// `CleanupStalledIncomplete` of torrent `h` with its data paths under incomplete.
+    pub fn stalled_action(&self, index: u32, h: char, data: &[&str]) -> PlannedAction {
+        let paths: Vec<RootedPath> = data.iter().map(|r| rp(&RootId::incomplete(), r)).collect();
+        let mut a = self.base(
+            index,
+            ActionKind::CleanupStalledIncomplete,
+            ActionTarget::Torrent {
+                hash: hash(h),
+                data_paths: paths.clone(),
+            },
+        );
+        let (pins, _) = self.torrent_pins(&[h]);
+        a.preconditions.extend(pins);
+        a.preconditions
+            .push(Precondition::ServiceAvailable(ServiceKind::Qbittorrent));
+        a.verification = vec![VerificationStep::TorrentAbsent {
+            hashes: [hash(h)].into(),
+        }];
+        let mut logical = 0;
+        for p in &paths {
+            let sig = self.sig(p);
+            if sig.kind == removarr_domain::fs::EntryKind::Dir {
+                let snapshot = self.snapshot(p);
+                logical += snapshot.entries.values().map(|s| s.size).sum::<u64>();
+                a.preconditions
+                    .push(Precondition::DirUnchanged { snapshot });
+            } else {
+                logical += sig.size;
+                a.preconditions.push(Precondition::EntryUnchanged {
+                    path: p.clone(),
+                    sig,
+                    compare_nlink: true,
+                });
+            }
+            a.preconditions
+                .push(Precondition::NoScanErrorUnder { path: p.clone() });
+            a.preconditions
+                .push(Precondition::NoTorrentReferences { path: p.clone() });
+            a.verification
+                .push(VerificationStep::Absent { path: p.clone() });
+        }
+        a.expected_gain = GainEstimate {
+            logical,
+            attributable: logical,
+            added: 0,
+        };
+        a.torrent_hashes = [hash(h)].into();
+        a
+    }
+
+    /// `FixMode` of `rel` under completed to `mode`.
+    pub fn fix_mode_action(&self, index: u32, rel: &str, mode: u32) -> PlannedAction {
+        let path = rp(&RootId::completed(), rel);
+        let sig = self.sig(&path);
+        let mut a = self.base(
+            index,
+            ActionKind::FixMode,
+            ActionTarget::FixMode {
+                path: path.clone(),
+                mode,
+            },
+        );
+        a.preconditions.push(Precondition::EntryUnchanged {
+            path: path.clone(),
+            sig,
+            compare_nlink: false,
+        });
+        a.preconditions
+            .push(Precondition::NoScanErrorUnder { path: path.clone() });
+        a.verification = vec![VerificationStep::ModeEquals { path, mode }];
+        a
+    }
+
+    pub fn rescan_action(&self, index: u32) -> PlannedAction {
+        let service = removarr_domain::arr::ArrService::Sonarr;
+        let mut a = self.base(
+            index,
+            ActionKind::ArrRescan,
+            ActionTarget::Rescan {
+                service,
+                media: None,
+            },
+        );
+        a.preconditions
+            .push(Precondition::ServiceAvailable(ServiceKind::Sonarr));
+        a.verification = vec![VerificationStep::ArrCommandCompleted {
+            service,
+            media: None,
+        }];
+        a
+    }
+
+    pub fn jellyfin_action(&self, index: u32) -> PlannedAction {
+        let mut a = self.base(
+            index,
+            ActionKind::JellyfinRefresh,
+            ActionTarget::JellyfinRefresh { item_id: None },
+        );
+        a.preconditions
+            .push(Precondition::ServiceAvailable(ServiceKind::Jellyfin));
+        a.verification = vec![VerificationStep::JellyfinRefreshed { item_id: None }];
+        a
+    }
+
+    /// A live plan of `actions` (indexes renumbered in order), sealed.
+    pub fn seal(
+        &self,
+        actions: Vec<PlannedAction>,
+        origin: PlanOrigin,
+        samples: Vec<RootedPath>,
+    ) -> HashedPlan {
+        self.seal_mode(actions, PlanMode::Live, origin, samples)
+    }
+
+    pub fn seal_mode(
+        &self,
+        mut actions: Vec<PlannedAction>,
+        mode: PlanMode,
+        origin: PlanOrigin,
+        samples: Vec<RootedPath>,
+    ) -> HashedPlan {
+        let mut states = BTreeMap::new();
+        let mut lock_roots = BTreeSet::new();
+        let (mut logical, mut attributable) = (0, 0);
+        for (i, a) in actions.iter_mut().enumerate() {
+            a.index = i as u32;
+            lock_roots.extend(a.target.roots());
+            for p in &a.preconditions {
+                if let Precondition::TorrentStates { states: st } = p {
+                    states.extend(st.clone());
+                }
+            }
+            logical += a.expected_gain.logical;
+            attributable += a.expected_gain.attributable;
+        }
+        if lock_roots.is_empty() {
+            lock_roots.insert(RootId::completed());
+        }
         let plan = ActionPlan {
             id: PlanId::new(self.ids.uuid()),
             created_at: NOW,
             expires_at: NOW.plus_hours(24),
-            mode: PlanMode::Live,
-            origin: PlanOrigin::User,
+            mode,
+            origin,
             session: self.session,
             config_fingerprint: CFG.into(),
-            actions: vec![PlannedAction {
-                index: 0,
-                kind: ActionKind::DeleteCompletedFile,
-                target: ActionTarget::Path {
-                    path: target.clone(),
-                },
-                preconditions: vec![Precondition::EntryUnchanged {
-                    path: target.clone(),
-                    sig,
-                    compare_nlink: true,
-                }],
-                verification: vec![VerificationStep::Absent { path: target }],
-                expected_gain: GainEstimate::default(),
-                depends_on: vec![],
-                torrent_hashes: BTreeSet::new(),
-                evidence_level: EvidenceLevel::None,
-                completeness: Completeness::Complete,
-            }],
+            actions,
             excluded: vec![],
-            lock_roots: [RootId::completed()].into_iter().collect(),
-            torrent_states: BTreeMap::new(),
+            lock_roots,
+            torrent_states: states,
             arr_snapshots: vec![],
-            samples: vec![],
-            gains: PlanGains::default(),
+            samples,
+            gains: PlanGains::new(logical, attributable, 0),
         };
-        HashedPlan::seal(plan).unwrap()
+        HashedPlan::seal(plan).expect("valid plan")
+    }
+
+    /// The torrent-less junk file `Rel/a.nfo` (a plain tier-3 deletion).
+    pub fn junk_plan(&self) -> HashedPlan {
+        self.seal(
+            vec![self.delete_file_action(
+                0,
+                ActionKind::DeleteJunk,
+                &RootId::completed(),
+                "Rel/a.nfo",
+                &[],
+            )],
+            PlanOrigin::User,
+            vec![],
+        )
+    }
+
+    /// A plan with one tier-4 action (refused in this build).
+    pub fn tier4_plan(&self) -> HashedPlan {
+        let media = removarr_domain::arr::ArrMediaRef {
+            service: removarr_domain::arr::ArrService::Sonarr,
+            media_id: 1,
+            episode_ids: vec![],
+        };
+        let mut a = self.base(
+            0,
+            ActionKind::ArrSetMonitored,
+            ActionTarget::Monitor {
+                media: media.clone(),
+                monitored: false,
+            },
+        );
+        a.verification = vec![VerificationStep::ArrMonitored {
+            media,
+            monitored: false,
+        }];
+        self.seal(vec![a], PlanOrigin::User, vec![])
     }
 
     /// Stores the plan, approves it (live plans), returns the ticket.
     pub async fn ticket(&self, plan: HashedPlan, simulate: bool) -> ExecutionTicket {
+        let samples = plan.plan().samples.clone();
+        self.ticket_with(plan, simulate, samples).await
+    }
+
+    /// Like `ticket`, acknowledging exactly `samples` (the approval then fails for any
+    /// unacknowledged sample of the plan).
+    pub async fn ticket_with(
+        &self,
+        plan: HashedPlan,
+        simulate: bool,
+        samples: Vec<RootedPath>,
+    ) -> ExecutionTicket {
         let (p, h) = plan.clone().into_parts();
         self.repos.plans.insert(&p, &h).await.unwrap();
         let req = ApprovalRequest {
             plan_hash: h.clone(),
             confirmed_count: p.required_count(),
-            confirmed_torrent_removals: 0,
-            acknowledged_samples: vec![],
+            confirmed_torrent_removals: p.required_torrent_removals(),
+            acknowledged_samples: samples,
             acknowledged_unrecoverable: vec![],
         };
         let approval = plan.approve(&req, NOW).unwrap();

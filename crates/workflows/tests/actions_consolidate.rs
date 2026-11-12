@@ -413,7 +413,8 @@ async fn t16_live_revalidation_refuses_any_change_and_invalidates_the_plan() {
             assert!(
                 blockers
                     .iter()
-                    .any(|b| b.code == BlockerCode::ScanIncomplete && b.detail.contains("changed")),
+                    .any(|b| b.code == BlockerCode::ChangedSincePlanning
+                        && b.detail.contains("changed")),
                 "{blockers:?}"
             );
         }
@@ -454,8 +455,8 @@ async fn t16_live_revalidation_refuses_any_change_and_invalidates_the_plan() {
             assert!(
                 blockers
                     .iter()
-                    .any(|b| b.code == BlockerCode::TorrentProtectedState
-                        && b.detail.contains("wanted file set")),
+                    .any(|b| b.code == BlockerCode::ChangedSincePlanning
+                        && b.detail.contains("wanted files")),
                 "{blockers:?}"
             );
         }
@@ -799,9 +800,21 @@ async fn a_stop_failure_leaves_nothing_modified_and_restores_what_it_can() {
 }
 
 #[tokio::test]
-async fn tiers_three_to_five_are_explicit_refusals() {
-    assert_eq!(IMPLEMENTED_TIER, RiskTier::T2);
+async fn tiers_four_and_five_are_explicit_refusals() {
+    assert_eq!(IMPLEMENTED_TIER, RiskTier::T3);
     for k in [
+        ActionKind::ReplaceRelease,
+        ActionKind::DeleteMediaFile,
+        ActionKind::ArrGrabRelease,
+        ActionKind::ArrRemoveQueueItem,
+        ActionKind::ArrSetMonitored,
+    ] {
+        assert!(!supported(k), "{k:?}");
+    }
+    for k in [
+        ActionKind::ConsolidateHardlink,
+        ActionKind::ArrRescan,
+        ActionKind::JellyfinRefresh,
         ActionKind::DeleteCompletedFile,
         ActionKind::DeleteCompletedFolder,
         ActionKind::DeleteJunk,
@@ -810,19 +823,11 @@ async fn tiers_three_to_five_are_explicit_refusals() {
         ActionKind::CleanupStalledIncomplete,
         ActionKind::DeleteIncompleteOrphan,
         ActionKind::FixMode,
-        ActionKind::ReplaceRelease,
-        ActionKind::DeleteMediaFile,
-        ActionKind::ArrGrabRelease,
-        ActionKind::ArrRemoveQueueItem,
-        ActionKind::ArrSetMonitored,
-        ActionKind::ArrRescan,
-        ActionKind::JellyfinRefresh,
     ] {
-        assert!(!supported(k), "{k:?}");
+        assert!(supported(k), "{k:?}");
     }
-    assert!(supported(ActionKind::ConsolidateHardlink));
     let lab = Lab::new().await;
-    let ticket = lab.ticket(lab.tier3_plan(), false).await;
+    let ticket = lab.ticket(lab.tier4_plan(), false).await;
     let plan_id = ticket.plan.plan().id;
     let (mutators, counting) = lab.live();
     let report = execute(
@@ -847,7 +852,7 @@ async fn tiers_three_to_five_are_explicit_refusals() {
     assert_eq!(counting.mutations() + lab.qbit.mutation_count(), 0);
     assert!(lab.completed_path("Rel/a.mkv").exists());
     // Simulating a refused kind touches nothing and changes nothing either.
-    let ticket = lab.ticket(lab.tier3_plan(), true).await;
+    let ticket = lab.ticket(lab.tier4_plan(), true).await;
     let plan_id = ticket.plan.plan().id;
     let report = execute(
         &lab.ports(),

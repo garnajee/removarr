@@ -90,6 +90,17 @@ pub(crate) struct TorrentTx {
     pub left_stopped: BTreeMap<TorrentHash, LeftStoppedReason>,
     /// The stop step happened live (so compensation must restore).
     pub stopped_live: bool,
+    /// Tasks removed (`deleteFiles=false`) by this run: never rechecked nor started.
+    pub removed: BTreeSet<TorrentHash>,
+}
+
+impl TorrentTx {
+    /// The task of `h` is gone: it leaves the recheck and restore sets.
+    pub fn removed(&mut self, h: &TorrentHash) {
+        self.initial.remove(h);
+        self.modified.remove(h);
+        self.removed.insert(h.clone());
+    }
 }
 
 /// The `observed` payload of a `QbitStop` intent (recovery reads it back).

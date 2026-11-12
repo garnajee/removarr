@@ -6,7 +6,7 @@ use std::future::Future;
 use removarr_domain::error::{ErrorClass, PortError};
 use removarr_domain::ids::{ActionRef, IntentId};
 use removarr_domain::journal::{IntentRecord, JournalMode, JournalStep, ResultRecord, StepOutcome};
-use removarr_domain::plan::ActionPlan;
+use removarr_domain::plan::{ActionPlan, Approval};
 use removarr_domain::ports::CancelFlag;
 use removarr_domain::torrent::TorrentHash;
 use serde::Serialize;
@@ -21,6 +21,9 @@ pub(crate) struct Ctx<'a> {
     pub mutators: &'a Mutators,
     pub settings: &'a ActionSettings,
     pub plan: &'a ActionPlan,
+    /// The approval of the ticket (acknowledged samples, confirmed removals); `None` for a
+    /// simulation of a draft plan and at recovery.
+    pub approval: Option<&'a Approval>,
     pub simulated: bool,
     pub cancel: &'a CancelFlag,
     pub reporter: &'a Reporter,

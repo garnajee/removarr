@@ -2,19 +2,20 @@
 //! `snapshot_dir`, a fresh torrent listing and file lists, ARR queue and fingerprints, the
 //! config fingerprint and the stored scan state. Nothing adapts: any difference is a blocker.
 //!
-//! The plan has no slot for a torrent's wanted-file set (12 handoff, follow-up 4), so for
-//! every affected hash the live wanted set is compared with the stored snapshot's, and the hash
-//! must still hold one of the action's paths.
+//! Every affected hash carries a `TorrentWantedFiles` pin (domain patch 3): the live wanted set
+//! (`priority > 0`, as `(index, name)`) read fresh in each pass must equal it, and the hash must
+//! still hold one of the action's paths. Any difference, a removed torrent or a read fault
+//! refuses with `ChangedSincePlanning`.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use removarr_domain::arr::correlate::import_in_progress;
 use removarr_domain::arr::{ArrMediaRef, ArrQueueItem, ArrService};
 use removarr_domain::error::PortError;
-use removarr_domain::fs::{EntryKind, EntrySignature, RootInventory};
+use removarr_domain::fs::{EntryKind, EntrySignature, PhysicalId, RootInventory};
 use removarr_domain::issue::{Blocker, BlockerCode};
 use removarr_domain::path::{RelPath, RootId, RootedPath};
-use removarr_domain::plan::{ActionTarget, PlannedAction, Precondition};
+use removarr_domain::plan::{ActionKind, ActionTarget, PlannedAction, Precondition};
 use removarr_domain::session::{AuditSession, ServiceKind};
 use removarr_domain::torrent::{
     MappedPath, TorrentFile, TorrentHash, TorrentInfo, TorrentSnapshot, TorrentState,
@@ -45,7 +46,7 @@ fn service_of(s: ArrService) -> ServiceKind {
 
 fn changed(path: &RootedPath, what: &str) -> Blocker {
     Blocker::new(
-        BlockerCode::ScanIncomplete,
+        BlockerCode::ChangedSincePlanning,
         format!("{what} changed since the plan was built: {path}; rescan and re-plan"),
     )
 }
@@ -107,7 +108,6 @@ fn holds(t: &TorrentInfo, files: &[TorrentFile], paths: &[RootedPath]) -> bool {
 pub(crate) struct LiveReads {
     pub torrents: Option<Result<(Vec<TorrentInfo>, u8), PortError>>,
     files: BTreeMap<TorrentHash, Result<Vec<TorrentFile>, PortError>>,
-    stored: Option<Option<TorrentSnapshot>>,
     session: Option<Option<AuditSession>>,
     inventories: BTreeMap<RootId, Option<RootInventory>>,
     queues: BTreeMap<ArrService, Result<Vec<ArrQueueItem>, PortError>>,
@@ -169,16 +169,6 @@ impl Ctx<'_> {
                 "",
             ))
         })
-    }
-
-    async fn stored_snapshot(
-        &self,
-        live: &mut LiveReads,
-    ) -> Result<Option<TorrentSnapshot>, PortError> {
-        if live.stored.is_none() {
-            live.stored = Some(self.ports.snapshots.latest_torrents().await?);
-        }
-        Ok(live.stored.clone().unwrap_or(None))
     }
 
     async fn stat(&self, path: &RootedPath) -> Result<Option<EntrySignature>, PortError> {
@@ -289,6 +279,28 @@ impl Ctx<'_> {
         Ok(live.inventories.get(root).cloned().unwrap_or(None))
     }
 
+    /// Physical ids of `path` (a file) or of every regular file below it (a directory), read
+    /// live. Unreadable entries contribute nothing: the signature checks refuse them anyway.
+    async fn live_inodes_under(&self, path: &RootedPath) -> Vec<PhysicalId> {
+        match self.stat(path).await {
+            Ok(Some(sig)) if sig.kind == EntryKind::File => vec![sig.phys()],
+            Ok(Some(sig)) if sig.kind == EntryKind::Dir => {
+                let fs = self.ports.fs.clone();
+                let dir = path.clone();
+                match self.blocking(move || fs.snapshot_dir(&dir)).await {
+                    Ok(snap) => snap
+                        .entries
+                        .values()
+                        .filter(|s| s.kind == EntryKind::File)
+                        .map(EntrySignature::phys)
+                        .collect(),
+                    Err(_) => Vec::new(),
+                }
+            }
+            _ => Vec::new(),
+        }
+    }
+
     /// Every blocker of one action against live reads. An empty list means every precondition
     /// still holds. Read failures are blockers too (fail closed), never silently skipped.
     pub async fn revalidate_action(
@@ -301,7 +313,34 @@ impl Ctx<'_> {
         for p in &a.preconditions {
             self.check(live, a, &paths, p, &mut out).await?;
         }
-        self.check_wanted_files(live, a, &paths, &mut out).await?;
+        self.check_hashes_hold(live, a, &paths, &mut out).await?;
+        self.check_live_holders(live, a, &paths, &mut out).await?;
+        Ok(out)
+    }
+
+    /// Filesystem and ownership preconditions only (`EntryUnchanged`, `DirUnchanged`,
+    /// `NoScanErrorUnder`, `NoTorrentReferences`, `ConfigFingerprint`) plus the live-holder
+    /// check: the pass that runs after a torrent task was removed (its state pins no longer
+    /// apply, the data must be referenced by nobody).
+    pub async fn revalidate_fs_only(
+        &self,
+        live: &mut LiveReads,
+        a: &PlannedAction,
+    ) -> Result<Vec<Blocker>, PortError> {
+        let mut out = Vec::new();
+        let paths = action_paths(a);
+        for p in &a.preconditions {
+            if matches!(
+                p,
+                Precondition::EntryUnchanged { .. }
+                    | Precondition::DirUnchanged { .. }
+                    | Precondition::NoScanErrorUnder { .. }
+                    | Precondition::NoTorrentReferences { .. }
+                    | Precondition::ConfigFingerprint(_)
+            ) {
+                self.check(live, a, &paths, p, &mut out).await?;
+            }
+        }
         self.check_live_holders(live, a, &paths, &mut out).await?;
         Ok(out)
     }
@@ -317,7 +356,8 @@ impl Ctx<'_> {
         paths: &[RootedPath],
         out: &mut Vec<Blocker>,
     ) -> Result<(), PortError> {
-        if paths.is_empty() {
+        // A mode change never alters bytes or paths: a seeding torrent may hold the entry.
+        if paths.is_empty() || a.kind == ActionKind::FixMode {
             return Ok(());
         }
         let own = match &a.target {
@@ -557,15 +597,29 @@ impl Ctx<'_> {
                             torrents: list,
                             files,
                         };
-                        let idx = TorrentIndex::build(&snapshot);
-                        if idx
-                            .hashes_under(path)
-                            .iter()
-                            .any(|h| Some(h) != own.as_ref())
-                        {
+                        // T3-7: the full ownership index with the inode view bound to every
+                        // stored inventory, so a torrent-held path sharing the inode refuses.
+                        let mut idx = TorrentIndex::build(&snapshot);
+                        let roots: Vec<RootId> = self
+                            .session(live)
+                            .await?
+                            .map(|s| s.roots.iter().map(|r| r.root.clone()).collect())
+                            .unwrap_or_default();
+                        let mut inventories = Vec::new();
+                        for root in &roots {
+                            if let Some(inv) = self.inventory(live, root).await? {
+                                inventories.push(inv);
+                            }
+                        }
+                        idx.bind_inventories(&inventories);
+                        let mut holders = idx.hashes_under(path);
+                        for phys in self.live_inodes_under(path).await {
+                            holders.extend(idx.hashes_for_inode(&phys));
+                        }
+                        if holders.iter().any(|h| Some(h) != own.as_ref()) {
                             out.push(Blocker::new(
                                 BlockerCode::TorrentReferencesTarget,
-                                format!("a torrent references {path}"),
+                                format!("a torrent references {path} by path or inode"),
                             ));
                         }
                     }
@@ -620,14 +674,41 @@ impl Ctx<'_> {
                     Err(e) => out.push(unavailable(service_of(media.service), &e)),
                 }
             }
-            // Fail closed until the runner compares the pin (stage B follow-up, CP2T3-F03).
-            Precondition::TorrentWantedFiles { hash, .. } => out.push(Blocker::new(
-                BlockerCode::ChangedSincePlanning,
-                format!(
-                    "the pinned wanted files of {} cannot be checked by this runner yet",
-                    hash.as_str()
-                ),
-            )),
+            // CP2T3-F03: the live wanted set must equal the set pinned at planning time.
+            Precondition::TorrentWantedFiles { hash, wanted } => {
+                let listed = match self.torrents(live).await {
+                    Ok((list, _)) => list.iter().any(|t| &t.hash == hash),
+                    Err(e) => {
+                        out.push(unavailable(ServiceKind::Qbittorrent, &e));
+                        return Ok(());
+                    }
+                };
+                if !listed {
+                    out.push(Blocker::new(
+                        BlockerCode::ChangedSincePlanning,
+                        format!("torrent {} is no longer listed", hash.as_str()),
+                    ));
+                    return Ok(());
+                }
+                match self.files(live, hash).await {
+                    Ok(files) if &wanted_set(&files) == wanted => {}
+                    Ok(_) => out.push(Blocker::new(
+                        BlockerCode::ChangedSincePlanning,
+                        format!(
+                            "the wanted files of torrent {} changed since the plan was built",
+                            hash.as_str()
+                        ),
+                    )),
+                    Err(e) => out.push(Blocker::new(
+                        BlockerCode::ChangedSincePlanning,
+                        format!(
+                            "the wanted files of torrent {} could not be read: {}",
+                            hash.as_str(),
+                            e.detail
+                        ),
+                    )),
+                }
+            }
             Precondition::OldCoverageRecoverable { old_files } => {
                 for (path, phys, _) in old_files {
                     match self.stat(path).await {
@@ -639,7 +720,7 @@ impl Ctx<'_> {
             Precondition::ConfigFingerprint(fp) => {
                 if fp != &self.settings.config_fingerprint {
                     out.push(Blocker::new(
-                        BlockerCode::ScanIncomplete,
+                        BlockerCode::ChangedSincePlanning,
                         "configuration changed since the plan was built; re-plan",
                     ));
                 }
@@ -651,16 +732,16 @@ impl Ctx<'_> {
         Ok(())
     }
 
-    /// Live wanted-file set of every affected hash equals the stored snapshot's, and the hash
-    /// still holds one of the action's paths.
-    async fn check_wanted_files(
+    /// Every affected hash still holds one of the action's paths (file candidate or content
+    /// directory). Actions without paths (`RemoveTorrentTask`) have nothing to hold.
+    async fn check_hashes_hold(
         &self,
         live: &mut LiveReads,
         a: &PlannedAction,
         paths: &[RootedPath],
         out: &mut Vec<Blocker>,
     ) -> Result<(), PortError> {
-        if a.torrent_hashes.is_empty() {
+        if a.torrent_hashes.is_empty() || paths.is_empty() {
             return Ok(());
         }
         let (list, _) = match self.torrents(live).await {
@@ -670,11 +751,10 @@ impl Ctx<'_> {
                 return Ok(());
             }
         };
-        let stored = self.stored_snapshot(live).await?;
         for hash in &a.torrent_hashes {
             let Some(t) = list.iter().find(|t| &t.hash == hash) else {
                 out.push(Blocker::new(
-                    BlockerCode::TorrentProtectedState,
+                    BlockerCode::ChangedSincePlanning,
                     format!("torrent {} is no longer listed", hash.as_str()),
                 ));
                 continue;
@@ -686,21 +766,9 @@ impl Ctx<'_> {
                     continue;
                 }
             };
-            let stored_files = stored.as_ref().and_then(|s| s.files.get(hash));
-            match stored_files {
-                None => out.push(Blocker::new(
-                    BlockerCode::TorrentProtectedState,
-                    format!("no stored file list for torrent {}", hash.as_str()),
-                )),
-                Some(sf) if wanted_set(sf) != wanted_set(&files) => out.push(Blocker::new(
-                    BlockerCode::TorrentProtectedState,
-                    format!("wanted file set of torrent {} changed", hash.as_str()),
-                )),
-                Some(_) => {}
-            }
             if !holds(t, &files, paths) {
                 out.push(Blocker::new(
-                    BlockerCode::TorrentProtectedState,
+                    BlockerCode::ChangedSincePlanning,
                     format!(
                         "torrent {} no longer holds a path of this action",
                         hash.as_str()

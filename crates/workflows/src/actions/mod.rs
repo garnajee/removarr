@@ -22,13 +22,17 @@
 //! 8. unfinished live intents found at startup are resolved by [`recovery::recover`] without
 //!    ever redoing a mutation; the plan becomes `Interrupted`.
 //!
-//! Stage A/B (risk tiers 1-2): the live exact-copy consolidation and its simulation. Every
-//! other kind (tier-2 service commands, tiers 3-5) is an explicit `NotInBuild` refusal, live
-//! and simulated alike, until its stage ships and its CP2 review passes (MASTER section 10).
+//! Tiers 1-3 (stage B step 2): the live exact-copy consolidation, the tier-2 service commands
+//! (`ArrRescan`, `JellyfinRefresh`), the deletions under the completed root with their
+//! companions, the manual stalled-incomplete cleanup and the targeted mode fix, each with its
+//! simulation. Tier-4 kinds are explicit `NotInBuild` refusals, live and simulated alike,
+//! until their CP2 review passes (MASTER section 10). A plan mixing families is refused too.
 //! A simulation (`simulate = true`, or any run of a dry-run process) always executes on the
 //! recording adapters: `execute` swaps them in before the context exists (CP2T3-F04).
 
+mod batch;
 mod consolidate;
+mod delete;
 pub mod dry_run;
 pub mod events;
 mod journal;
@@ -36,6 +40,8 @@ mod qbit;
 pub mod recovery;
 mod revalidate;
 mod run;
+mod simple;
+mod stalled;
 mod verify;
 
 use std::sync::Arc;
@@ -60,15 +66,43 @@ pub use recovery::{RecoveredPlan, RecoveryReport, recover};
 pub use run::{ActionResult, ExecutionReport, execute};
 
 /// Highest risk tier this build executes (architecture 6.7, 13.1). Raised only after the
-/// tier's crash-point and dry-run tests pass and CP2 passes. Stage A: tier 2.
-pub const IMPLEMENTED_TIER: RiskTier = RiskTier::T2;
+/// tier's crash-point and dry-run tests pass and CP2 passes. Stage B step 2: tier 3.
+pub const IMPLEMENTED_TIER: RiskTier = RiskTier::T3;
 
-/// Kinds this build can execute live. Everything else is refused with `NotInBuild` even when
-/// its tier is at or below [`IMPLEMENTED_TIER`] (the tier-2 service commands `ArrRescan` and
-/// `JellyfinRefresh` are deferred to the next stage).
+/// Kinds this build can execute live: every kind at or below [`IMPLEMENTED_TIER`].
 #[must_use]
 pub fn supported(kind: ActionKind) -> bool {
-    matches!(kind, ActionKind::ConsolidateHardlink)
+    kind.tier() <= IMPLEMENTED_TIER
+}
+
+/// Families of kinds a plan may hold (one family per plan; the planner builds them so).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Family {
+    Consolidate,
+    Delete,
+    StalledCleanup,
+    FixMode,
+    Service,
+}
+
+/// The family of a kind, `None` for kinds outside this build.
+#[must_use]
+pub fn family(kind: ActionKind) -> Option<Family> {
+    use ActionKind::*;
+    match kind {
+        ConsolidateHardlink => Some(Family::Consolidate),
+        DeleteCompletedFile
+        | DeleteCompletedFolder
+        | DeleteJunk
+        | DeleteIncompleteOrphan
+        | RemoveEmptyParent
+        | RemoveTorrentTask => Some(Family::Delete),
+        CleanupStalledIncomplete => Some(Family::StalledCleanup),
+        FixMode => Some(Family::FixMode),
+        ArrRescan | JellyfinRefresh => Some(Family::Service),
+        ReplaceRelease | DeleteMediaFile | ArrGrabRelease | ArrRemoveQueueItem
+        | ArrSetMonitored => None,
+    }
 }
 
 /// Plans in `Executing` status (storage `PlanRepo::ids_with_status(Executing)`). Recovery

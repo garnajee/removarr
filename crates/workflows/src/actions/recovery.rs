@@ -1,8 +1,11 @@
 //! Recovery after a restart (architecture 7.5): every plan with a live intent that has no
 //! result is resolved from observations, never by redoing a mutation.
 //!
-//! - fs intents without result: the target is `stat`ed and the observed state becomes the
-//!   result (the replacement happened, or it did not);
+//! - fs intents without result (or with a `Failed` result, CP2T3-F01): the target is re-read
+//!   and the observed state becomes the result (the replacement or removal happened, it did
+//!   not, or only part of a tree went: manual review);
+//! - a task removal without result: the listing decides (gone = done); the data is never
+//!   deleted by recovery, it stays as an orphan for a later plan;
 //! - hashes stopped by the plan whose data was never modified: started if active initially;
 //! - hashes with a mutation intent: rechecked, started only when the recheck is `Verified`,
 //!   otherwise left stopped and reported;
@@ -28,6 +31,7 @@ use removarr_domain::torrent::{TorrentHash, TorrentState, was_active};
 use serde::{Deserialize, Serialize};
 
 use super::consolidate::ReplaceTarget;
+use super::delete::{EntryTarget, RemoveObserved, TreeTarget};
 use super::events::{ActionEvent, Reporter};
 use super::journal::Ctx;
 use super::qbit::{LeftStoppedReason, StopObserved, TorrentTx};
@@ -64,7 +68,7 @@ enum Executed {
 fn interrupted() -> ActionOutcome {
     ActionOutcome::NotExecuted {
         blockers: vec![Blocker::new(
-            BlockerCode::FailedConsolidation,
+            BlockerCode::Interrupted,
             "not executed: the process stopped before this action; re-plan",
         )],
     }
@@ -107,6 +111,7 @@ pub async fn recover(
             mutators,
             settings,
             plan: &plan,
+            approval: None,
             simulated: false,
             cancel: &cancel,
             reporter,
@@ -137,6 +142,16 @@ async fn recover_plan(ctx: &Ctx<'_>, plan: &ActionPlan) -> Result<RecoveredPlan,
     let mut stopped: BTreeSet<TorrentHash> = BTreeSet::new();
     let mut executed: BTreeMap<u32, Executed> = BTreeMap::new();
     let mut unknown_restart: BTreeSet<TorrentHash> = BTreeSet::new();
+    let mut removed: BTreeSet<TorrentHash> = BTreeSet::new();
+    let mut listing: Option<Vec<removarr_domain::torrent::TorrentInfo>> = None;
+    let mark = |executed: &mut BTreeMap<u32, Executed>, index: u32, what: Executed| {
+        let slot = executed.entry(index).or_insert(Executed::Untouched);
+        match what {
+            Executed::Unobservable => *slot = Executed::Unobservable,
+            Executed::Mutated if *slot != Executed::Unobservable => *slot = Executed::Mutated,
+            _ => {}
+        }
+    };
 
     // 1. Read what the journal says; resolve filesystem intents from observations.
     for (intent, result) in &entries {
@@ -270,9 +285,116 @@ async fn recover_plan(ctx: &Ctx<'_>, plan: &ActionPlan) -> Result<RecoveredPlan,
                     .await?;
                 }
             }
+            JournalStep::FsRemoveFile
+            | JournalStep::FsRemoveTree
+            | JournalStep::FsRemoveEmptyDir
+            | JournalStep::FsSetMode => {
+                let what = match result.as_ref().map(|r| &r.outcome) {
+                    Some(StepOutcome::Done { final_state }) => {
+                        // A tree result that did not remove everything is a partial removal.
+                        let partial = intent.step == JournalStep::FsRemoveTree
+                            && serde_json::from_value::<RemoveObserved>(final_state.clone())
+                                .is_ok_and(|o| !o.removed);
+                        if partial {
+                            Executed::Unobservable
+                        } else {
+                            Executed::Mutated
+                        }
+                    }
+                    Some(StepOutcome::Skipped { .. } | StepOutcome::Simulated) => {
+                        Executed::Untouched
+                    }
+                    Some(StepOutcome::Failed { .. }) | None => {
+                        let what = ctx.observe_fs_intent(intent).await;
+                        if result.is_none() {
+                            let outcome = match what {
+                                Executed::Mutated => StepOutcome::Done {
+                                    final_state: serde_json::json!({"recovered": "the target shows the mutation"}),
+                                },
+                                Executed::Untouched => StepOutcome::Skipped {
+                                    reason: "interrupted before the mutation; target unchanged"
+                                        .into(),
+                                },
+                                Executed::Unobservable => StepOutcome::Failed {
+                                    class: ErrorClass::StateChanged,
+                                    message: "interrupted; the target is partially removed or could not be observed".into(),
+                                },
+                            };
+                            ctx.write_result(intent, outcome).await?;
+                        }
+                        what
+                    }
+                };
+                mark(&mut executed, intent.action.index, what);
+                if what != Executed::Untouched {
+                    tx.modified.extend(intent.hashes.iter().cloned());
+                }
+            }
+            JournalStep::QbitRemoveKeepData => {
+                // The listing decides; the data is never touched here.
+                let gone = match result.as_ref().map(|r| &r.outcome) {
+                    Some(StepOutcome::Done { .. }) => true,
+                    Some(StepOutcome::Skipped { .. } | StepOutcome::Simulated) => false,
+                    Some(StepOutcome::Failed { .. }) | None => {
+                        if listing.is_none() {
+                            let Some(reader) = &ports.qbit else {
+                                out.notes.push(format!(
+                                    "action {}: a task removal cannot be checked without \
+                                     qBittorrent; its torrents stay stopped",
+                                    intent.action.index
+                                ));
+                                mark(&mut executed, intent.action.index, Executed::Unobservable);
+                                continue;
+                            };
+                            listing = Some(reader.torrents().await?);
+                        }
+                        let listed = |h: &TorrentHash| {
+                            listing
+                                .as_ref()
+                                .is_some_and(|l| l.iter().any(|t| &t.hash == h))
+                        };
+                        let gone = !intent.hashes.iter().any(listed);
+                        if result.is_none() {
+                            let outcome = if gone {
+                                StepOutcome::Done {
+                                    final_state: serde_json::json!({"recovered": "the task is no longer listed"}),
+                                }
+                            } else {
+                                StepOutcome::Skipped {
+                                    reason: "interrupted before the task removal; still listed"
+                                        .into(),
+                                }
+                            };
+                            ctx.write_result(intent, outcome).await?;
+                        }
+                        gone
+                    }
+                };
+                if gone {
+                    removed.extend(intent.hashes.iter().cloned());
+                    mark(&mut executed, intent.action.index, Executed::Mutated);
+                    out.notes.push(format!(
+                        "action {}: the torrent task was removed; any data not yet deleted \
+                         stays in place as an orphan for a later plan",
+                        intent.action.index
+                    ));
+                }
+            }
+            JournalStep::ArrRescan | JournalStep::JellyfinRefresh => {
+                if result.is_none() {
+                    ctx.write_result(
+                        intent,
+                        StepOutcome::Skipped {
+                            reason: "interrupted; the command may have been sent".into(),
+                        },
+                    )
+                    .await?;
+                    mark(&mut executed, intent.action.index, Executed::Mutated);
+                }
+            }
             _ => {
-                // Any other mutation step (none is reachable in this build): unless the
-                // result rules the mutation out, treat it as possibly done (F01 rule).
+                // Tier-4 steps (none is reachable in this build): unless the result rules
+                // the mutation out, treat it as possibly done (F01 rule).
                 let ruled_out = matches!(
                     result.as_ref().map(|r| &r.outcome),
                     Some(StepOutcome::Skipped { .. } | StepOutcome::Simulated)
@@ -300,11 +422,15 @@ async fn recover_plan(ctx: &Ctx<'_>, plan: &ActionPlan) -> Result<RecoveredPlan,
         }
     }
 
-    // 2. Torrents: only live reads and a live controller may act.
+    // 2. Torrents: only live reads and a live controller may act. Removed tasks are gone.
+    for h in &removed {
+        tx.removed(h);
+    }
     let hashes: BTreeSet<TorrentHash> = stopped
         .iter()
         .chain(tx.modified.iter())
         .chain(unknown_restart.iter())
+        .filter(|h| !removed.contains(h))
         .cloned()
         .collect();
     if !hashes.is_empty() {
@@ -406,6 +532,41 @@ impl Ctx<'_> {
             outcome,
         });
         Ok(())
+    }
+
+    /// What the disk shows for a removal or mode intent (CP2T3-F01, T3-15).
+    async fn observe_fs_intent(&self, intent: &IntentRecord) -> Executed {
+        if intent.step == JournalStep::FsRemoveTree {
+            let Ok(t) = serde_json::from_value::<TreeTarget>(intent.target.clone()) else {
+                return Executed::Unobservable;
+            };
+            let obs = self.observe_tree(&t.snapshot).await;
+            return if obs.untouched() {
+                Executed::Untouched
+            } else if obs.all_gone() {
+                Executed::Mutated
+            } else {
+                Executed::Unobservable
+            };
+        }
+        let Ok(t) = serde_json::from_value::<EntryTarget>(intent.target.clone()) else {
+            return Executed::Unobservable;
+        };
+        match (intent.step, self.stat_path(&t.path).await) {
+            (JournalStep::FsSetMode, Ok(Some(s))) => {
+                if Some(s.mode) == t.mode {
+                    Executed::Mutated
+                } else if s.phys() == t.expect.phys() {
+                    Executed::Untouched
+                } else {
+                    Executed::Unobservable
+                }
+            }
+            (JournalStep::FsSetMode, _) => Executed::Unobservable,
+            (_, Ok(None)) => Executed::Mutated,
+            (_, Ok(Some(s))) if s.phys() == t.expect.phys() => Executed::Untouched,
+            (_, _) => Executed::Unobservable,
+        }
     }
 
     /// `Some(true)` when the target of a replace intent carries the source inode now.

@@ -12,16 +12,16 @@ use std::collections::{BTreeMap, BTreeSet};
 use removarr_domain::error::{ErrorClass, PortError};
 use removarr_domain::fs::{EntrySignature, PhysicalId};
 use removarr_domain::issue::{Blocker, BlockerCode};
-use removarr_domain::journal::{ActionOutcome, JournalStep, StepOutcome, VerificationResult};
+use removarr_domain::journal::{ActionOutcome, JournalStep, StepOutcome};
 use removarr_domain::path::{RelPath, RootKind, RootedPath};
 use removarr_domain::plan::{ActionTarget, PlanOrigin, PlannedAction, Precondition};
 use removarr_matching::proof::{ContentVerdict, HardlinkProbeGate, ReadOnlyGate, VerifyRequest};
 use removarr_matching::reject::Rejection;
 use serde::{Deserialize, Serialize};
 
+use super::batch::{Batch, aborted, not_executed};
 use super::events::ActionEvent;
 use super::journal::{Ctx, StepRun, json};
-use super::qbit::TorrentTx;
 use super::revalidate::LiveReads;
 
 /// `target` payload of a `FsReplaceWithHardlink` intent (recovery reads it back).
@@ -47,17 +47,6 @@ pub(crate) struct ProbeTarget {
     pub source: RootedPath,
     pub target_dir: RootedPath,
     pub purpose: &'static str,
-}
-
-/// Result of one plan's consolidation batch.
-#[derive(Debug, Default)]
-pub(crate) struct Batch {
-    pub outcomes: BTreeMap<u32, (ActionOutcome, Vec<VerificationResult>)>,
-    pub tx: TorrentTx,
-    /// A revalidation pass failed: the plan is invalidated.
-    pub invalidated: bool,
-    /// Cancellation: no further mutation was issued.
-    pub interrupted: bool,
 }
 
 struct Item<'a> {
@@ -105,17 +94,6 @@ fn item(a: &PlannedAction) -> Result<Item<'_>, Blocker> {
     })
 }
 
-fn not_executed(blockers: Vec<Blocker>) -> ActionOutcome {
-    ActionOutcome::NotExecuted { blockers }
-}
-
-fn aborted(reason: &str) -> ActionOutcome {
-    not_executed(vec![Blocker::new(
-        BlockerCode::FailedConsolidation,
-        format!("not executed: {reason}"),
-    )])
-}
-
 fn rejection_error(r: &Rejection) -> PortError {
     let class = match r {
         Rejection::TargetNotWritable { .. } => {
@@ -152,7 +130,11 @@ impl Ctx<'_> {
 
         // 1. Revalidate everything before any mutation.
         let mut live = LiveReads::default();
-        if !self.revalidate_pass(&mut live, &items, 1, &mut b).await? {
+        let acts: Vec<&PlannedAction> = items.iter().map(|i| i.action).collect();
+        if !self
+            .revalidate_pass(&mut live, &acts, 1, &mut b, &BTreeMap::new())
+            .await?
+        {
             return Ok(b);
         }
 
@@ -233,8 +215,9 @@ impl Ctx<'_> {
             return Ok(b);
         }
         let mut live2 = LiveReads::default();
+        let acts: Vec<&PlannedAction> = remaining.iter().map(|i| i.action).collect();
         if !self
-            .revalidate_pass(&mut live2, &remaining, 2, &mut b)
+            .revalidate_pass(&mut live2, &acts, 2, &mut b, &BTreeMap::new())
             .await?
         {
             self.restore(lead, &mut b.tx).await?;
@@ -286,7 +269,7 @@ impl Ctx<'_> {
         // 8. Verify by re-reading.
         self.reporter.stage("verify", total, None);
         for (a, step_error) in mutated {
-            let results = self.verify_action(a, &b.tx).await;
+            let results = self.verify_action(a, &b.tx, None).await;
             let outcome = if self.simulated {
                 ActionOutcome::Simulated
             } else {
@@ -304,53 +287,6 @@ impl Ctx<'_> {
             b.outcomes.insert(a.index, (outcome, results));
         }
         Ok(b)
-    }
-
-    /// One revalidation pass. Any failing action invalidates the whole plan: every action of
-    /// the pass is `NotExecuted` and `false` is returned.
-    async fn revalidate_pass(
-        &self,
-        live: &mut LiveReads,
-        items: &[Item<'_>],
-        pass: u8,
-        b: &mut Batch,
-    ) -> Result<bool, PortError> {
-        self.reporter.stage("revalidate", 0, None);
-        let mut failed = BTreeMap::new();
-        for it in items {
-            // A store or task failure is a blocker, never an abort (CP2T3-F11): after the stop,
-            // the compensating restore must still run.
-            let bl = match self.revalidate_action(live, it.action).await {
-                Ok(bl) => bl,
-                Err(e) => vec![Blocker::new(
-                    BlockerCode::ScanIncomplete,
-                    format!("revalidation could not read the stored state: {}", e.detail),
-                )],
-            };
-            if !bl.is_empty() {
-                failed.insert(it.action.index, bl);
-            }
-        }
-        self.reporter.emit(ActionEvent::Revalidated {
-            plan: self.plan.id,
-            pass,
-            failed: failed.clone(),
-        });
-        if failed.is_empty() {
-            return Ok(true);
-        }
-        for it in items {
-            let blockers = failed.remove(&it.action.index).unwrap_or_else(|| {
-                vec![Blocker::new(
-                    BlockerCode::ScanIncomplete,
-                    "another action of the plan failed revalidation; the plan is invalidated",
-                )]
-            });
-            b.outcomes
-                .insert(it.action.index, (not_executed(blockers), vec![]));
-        }
-        b.invalidated = true;
-        Ok(false)
     }
 
     async fn probe(&self, it: &Item<'_>, purpose: &'static str) -> Result<StepRun<()>, PortError> {

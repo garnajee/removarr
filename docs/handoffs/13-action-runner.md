@@ -260,11 +260,15 @@ only in `config`; no `std::process`/`Command` and no string-built path in `actio
 
 ## Stage B (CP2-tier3 fixes + tier 3)
 
-Review: `docs/reviews/cp2-tier3.md` (PASS with condition). Step 1 (the fixes) is complete and
-tested. **Step 2 (tier 3) was not started**: F03 cannot be fixed without a domain patch (details
-below), and the coordinator's instruction for that case is to stop after step 1 and report.
-`IMPLEMENTED_TIER` stays `T2`; no `remove_*` / `remove_tasks_keep_data` path is reachable live
-(the mutator still refuses them, `supported()` still admits only `ConsolidateHardlink`).
+Review: `docs/reviews/cp2-tier3.md` (PASS with condition). Steps 1 and 2 are complete: F01-F14
+are closed (F03 and F10 through domain patch 3 and the plan-engine pins), tier 3 is implemented
+and `IMPLEMENTED_TIER = T3`. Tier 4/5 kinds stay `NotInBuild`. Nothing was committed and no real
+storage or service was touched.
+
+New modules: `actions/batch.rs` (shared batch plumbing, sample checks, disk observations),
+`actions/delete.rs` (deletion batch), `actions/stalled.rs` (stalled incomplete cleanup),
+`actions/simple.rs` (`FixMode`, `ArrRescan`, `JellyfinRefresh`). `LiveFsMutator::{remove_file,
+remove_tree, remove_empty_dir, set_mode}` in `crates/fs/src/mutate.rs` (handle based, `unlinkat`).
 
 ### Per-finding status
 
@@ -272,99 +276,63 @@ below), and the coordinator's instruction for that case is to stop after step 1 
 |---|---|---|---|
 | F01 | **fixed** | (a) The live replace step records what the disk shows, not only what the call returned: `consolidate.rs` writes `Done { final_state: ReplaceObserved { replaced, phys, error } }` when the target carries the source inode after a failed call, `Failed (target unchanged)` or `Failed (target could not be observed)` otherwise, and the hashes are marked modified whenever the mutation happened or cannot be ruled out. (b) `recovery.rs` re-observes the target of every `FsReplaceWithHardlink` intent whose result is `Failed` or missing; only `Skipped`/`Simulated` rule the mutation out. Observed replaced -> modified, `ExecutedUnverified`; unobservable -> modified, `FailedNeedsReview`; untouched -> `NotExecuted`. Any other mutation step (none reachable yet) is treated as possibly executed unless ruled out. | `actions_fixes.rs::f01_a_failed_but_mutated_replace_result_is_rechecked_at_recovery_in_a_two_item_plan` (journal seam stores the `Done` as `Failed`; crash before item b's gate; a is rechecked and `ExecutedUnverified`, b `NotExecuted`, nothing redone), `::f01_an_unobservable_target_stays_possibly_modified_across_a_recovery_retry` (target directory mode 000; first pass writes `Failed` then fails on qBittorrent; the retry rechecks, `FailedNeedsReview`, starts only because the recheck verified) |
 | F02 | **fixed** | `revalidate.rs::check_live_holders`: every pass takes the fresh listing, reads `files()` for every torrent whose `save_path`/`download_path`/`content_path` (or their parent) is related to an action path, builds `issues::TorrentIndex`, binds the stored inventories of the action roots (inode view), and refuses with `TorrentReferencesTarget` when `hashes_under(path)` or `hashes_for_inode(stat(path))` contains a hash outside `action.torrent_hashes` (own hash excepted). Any `NoRule`/`Invalid` on a listed torrent's base paths or file candidates refuses with `MappingError`; qBittorrent unreachable refuses. | `::f02_a_torrent_that_started_holding_a_path_after_planning_invalidates_the_plan` (cross-seed of the completed path, and a library seeder of the media path: `Invalidated`, nothing stopped), `::f02_a_holder_by_inode_only_and_a_mapping_fault_near_the_paths_both_refuse` |
-| F03 | **not fixable here, blocked (domain patch needed)** | The plan has no slot for the planning-time wanted set (`Precondition::TorrentStates { states: BTreeMap<hash, (state, progress)> }`), and storage keeps a single torrent snapshot (`torrent_snapshot` row `id = 1`, `torrents` upsert-if-changed, no history), so neither the plan nor any port can give the runner the pinned set; the current check (live vs latest stored) stays and is documented as weak. See "F03: exact change needed". | — |
+| F03 | **fixed** (domain patch 3 + plan-engine pins) | `revalidate.rs`: every `Precondition::TorrentWantedFiles { hash, wanted }` is compared with a fresh `files()` read (`priority > 0` as `(index, name)`) in every pass; any difference, a delisted torrent or a read fault refuses with `ChangedSincePlanning`. The "latest stored snapshot" fallback is removed. `check_hashes_hold` keeps only the "hash still holds a path of the action" rule. | `actions_wanted.rs::the_pinned_wanted_set_passes_unchanged_and_every_change_refuses_before_any_mutation`, `::a_consolidation_built_through_the_planner_executes_end_to_end` |
 | F04 | **fixed** | `run.rs::execute`: when `simulated`, the mutators are replaced by `Mutators::recording(&services)` before the `Ctx` exists; a simulation can no longer hold a live adapter. Module doc updated. | `::f04_f05_a_simulation_in_a_live_process_runs_on_the_recording_set_and_touches_no_service` (live counting fs/qBittorrent/ARR/Jellyfin adapters see zero calls through the swap; recording set with Sonarr and Radarr in a dry-run process sees zero calls) |
 | F05 | **fixed** | The lab now wires a live counting `ArrCommands` (Sonarr) and `JellyfinCommands`, a reachable `ArrRead` and `JellyfinRead`, and `Mutators::recording(&[Sonarr, Radarr])`; `Lab::service_mutations()` is asserted zero in the guards. | same test as F04 |
 | F06 | **fixed (doc)** | Module doc of `actions` and this handoff: stage A/B simulate consolidation only; every other kind is refused live and simulated. Tier-3 simulation is a tier-3 deliverable (T3-16). | `tiers_three_to_five_are_explicit_refusals` (unchanged) |
 | F07 | **fixed (report)** | Recovery notes name both leftovers: `.<name>.removarr-probe-*` for an unfinished probe or a probe whose unlink failed (result message "removing the probe link"), `.<name>.removarr-link-*` for a replace intent interrupted before the rename. Cleanup needs tier-3 `remove_file` (open). | covered indirectly by `crash_after_the_replace_intent_before_the_mutation_is_resolved_as_not_executed` (note emitted); no dedicated assertion |
 | F08 | **fixed** | Direction enforced at three layers: planner (12), runner `consolidate::item()` (`ProtectedZone`, no intent), mutator `check_direction` in `probe_hardlink` and `replace_with_hardlink` (`Confinement`). | `fs/tests/mutate_hardlink.rs::f08_the_mutator_refuses_any_direction_but_completed_to_media`, `actions_fixes.rs::f08_the_runner_refuses_a_plan_whose_direction_is_not_completed_to_media` |
 | F09 | **fixed** | `qbit.rs::restore` always journals a `QbitStart` intent when the transaction touched anything: target = start set (possibly empty), observed = `RestoreObserved { recheck, left_stopped }`, result `Done { started }`. The left-stopped map and reasons are therefore durable in the journal (reporting 15 reads it from `journal_intents.observed`). | `::f09_hashes_left_stopped_and_their_reason_are_journaled_even_when_nothing_starts` |
-| F10 | **deviation (domain patch needed)** | Reused codes stay: `ScanIncomplete` for "changed since planning"/config change/store read failure, `FailedConsolidation` for "interrupted / not reached". See "F10: exact change needed". Nothing tier-3 reaches reports yet. | — |
+| F10 | **fixed** (domain patch 3) | Revalidation, config change, store read fault and "task still has wanted files" use `ChangedSincePlanning`; "not reached / dependency failed / cancelled / interrupted" use `Interrupted` (batch, recovery, run). `ScanIncomplete` / `FailedConsolidation` are no longer reused for these. | asserted across `actions_consolidate.rs`, `actions_delete.rs` (`t15_*`, `inv49_*`, `t3_9_*`), `actions_wanted.rs` |
 | F11 | **fixed** | `consolidate.rs::revalidate_pass` turns an `Err` of `revalidate_action` (store read, blocking task) into a `ScanIncomplete` blocker, so pass 2 still runs the compensating restore and the plan is `Invalidated` instead of staying `Executing`. 14 should still call `recover` after any `execute` `Err` (journal failure). | `::f11_a_store_read_error_after_the_stop_still_restores_the_untouched_torrent` |
 | F12 | **fixed** | Added: crash after the `QbitStop` intent (stop never sent), after the `QbitStart` intent (start never sent), between items of a two-item plan, and after a `Failed` result (F01). `Hang::arm_nth` hangs at the n-th occurrence of a point. | `::f12_crash_after_the_stop_intent_before_the_stop_resolves_from_the_listing`, `::f12_crash_after_the_start_intent_before_the_start_rechecks_and_starts_at_recovery`, `::f12_crash_between_items_rechecks_the_done_item_and_resumes_the_untouched_one`, F01 test |
 | F13 | **fixed** | `mutate.rs::temp_name`: `.<base[..64]>.removarr-<tag>-<seq>-<ns>` (base truncated on a char boundary, `TEMP_BASE_MAX = 64`). | `mutate_hardlink.rs::f13_long_names_get_a_temporary_name_within_name_max` (250-byte name) |
 | F14 | **fixed (doc)** | `mutate.rs` doc of `replace_with_hardlink` (target re-checked before the rename, source proven by the temp link's inode); `domain/src/fs.rs::DirSnapshot` doc now says recursive. The domain edit is a doc comment only (one sentence), outside my ownership, recorded here for 03. | — |
 
-### F03: exact change needed (domain patch 3, then plan-engine)
 
-Goal: the runner must compare the live wanted-file set of every affected hash with the set
-**pinned at planning time**. Nothing the runner can read today holds that set.
+### Tier-3 requirements (T3-0..T3-19): status and tests
 
-Proposed additive domain change (hash-stable for existing plans: a new variant, no field change):
-
-```rust
-// crates/domain/src/plan.rs
-pub enum Precondition {
-    ...
-    /// Wanted files (`priority > 0`) of an affected torrent at planning time, as
-    /// `(index, name)` pairs; the runner compares the live `QbitRead::files` set with it.
-    TorrentWantedFiles { hash: TorrentHash, wanted: BTreeSet<(u32, String)> },
-}
-```
-
-Plan-engine (12) must emit one `TorrentWantedFiles` per hash of `action.torrent_hashes`
-(from `Facts.snapshot.files[hash]`, in `Facts::torrent_states` or next to it) for every kind
-that carries `TorrentStates`, including `CleanupStalledIncomplete` and `RemoveTorrentTask`;
-`plans::expiry::check` should compare it with the stored snapshot (stale check at
-approval/refresh). The runner side is then a ten-line change in `revalidate.rs::check_wanted_files`
-(compare against the pin instead of `SnapshotStore::latest_torrents`), and the "latest stored
-snapshot" fallback is removed. A digest (`sha256` of the canonical pair list) would also work
-if plan size matters; the full set is preferred because it is what reporting shows.
-
-The alternative (a per-session torrent snapshot in storage plus a `SnapshotStore::torrents_for_session(SessionId)`
-port method and a retention rule "never prune the snapshot of a non-terminal plan's session")
-touches the domain ports, the storage schema and retention, and keeps large history: not
-recommended.
-
-### F10: exact change needed (domain patch 3)
-
-```rust
-// crates/domain/src/issue.rs
-pub enum BlockerCode {
-    ...
-    /// A revalidated precondition no longer holds (entry, folder, torrent, config, store).
-    ChangedSincePlanning,
-    /// The action was not reached because the batch stopped (cancellation, crash, abort).
-    Interrupted,
-}
-```
-
-The runner then replaces `ScanIncomplete` (revalidation) with `ChangedSincePlanning` and
-`FailedConsolidation` (not reached / interrupted) with `Interrupted`; tier-5 policy (12 `auto`,
-"failed subjects of the last 7 days") must count `Interrupted` and `FailedNeedsReview`
-outcomes, not blocker codes.
-
-### Tier-3 requirements (T3-0..T3-19): status
-
-| Req. | Status |
-|---|---|
-| T3-0 | F01, F02, F04 fixed with tests; F03 blocked on the domain patch above. `IMPLEMENTED_TIER` not raised. |
-| T3-1..T3-5 (mutator removals) | not started; `remove_*` and `set_mode` remain explicit refusals (`CapabilityDisabled`). Design ready: `remove_file` = `open_parent` + `lstat` (`compare_nlink = true`, symlink refused, `ENOENT` = `StateChanged`) + `unlinkat`; `remove_tree` = fresh recursive handle snapshot equal to the plan's (incl. `nlink`, `uid/gid`, `mode`, `mtime_ns`, same `dev`), then deepest-first `unlinkat` / `unlinkat(AT_REMOVEDIR)` with per-entry `(dev, ino)` re-check, stop at the first mismatch with the removed list in the result; `remove_empty_dir` = `rmdir` semantics with `dev/ino/uid/gid/mode` equality (`mtime_ns`/`nlink` excluded, rule to be stated in the doc and tested); media root refused in the mutator, completed-only for `remove_empty_dir`. |
-| T3-6..T3-8 (samples, junk outside torrents, torrent-held deletions) | not started. F02's `check_live_holders` already provides the live holder set with the inode view; the sample re-check at execution against `Approval.acknowledged_samples` and the junk rule (no holder by path or inode) are to be added in the tier-3 batch. T3-8 depends on F03. |
-| T3-9 (`RemoveTorrentTask`) | not started; depends on F03. Design: after the deletions, fresh `files()` + `lstat` of every wanted candidate, journaled `QbitRemoveKeepData`, verified by `TorrentAbsent` on a fresh listing; partially affected hashes rechecked then left stopped (`plan_restore` unchanged). |
-| T3-10 (stalled incomplete cleanup), T3-11 (`DeleteIncompleteOrphan`) | not started. |
-| T3-12 | depends on F10 codes. |
-| T3-13..T3-15 (journal, verification, recovery for the new steps) | foundation in place: `Ctx::step` is the only mutation path; recovery already treats any unknown fs step as "possibly executed" (F01 rule) until its observation logic exists. |
-| T3-16 (simulation of every tier-3 kind, guards incl. `remove`, ARR, Jellyfin) | guards extended (F05); kinds not started. |
-| T3-17 (crash boundaries for the new steps) | not started; the crash lab (`Hang::arm_nth`, `HangJournal` seams) is ready. |
-| T3-18 (`FixMode`) | not started. |
-| T3-19 (job-runner contract) | unchanged request to 14: exclusive locks, `recover` before every execute job and after any `execute` `Err`, no execute while recovery is unresolved; left-stopped is now durable in the journal (F09). |
+| Req. | Status | Tests |
+|---|---|---|
+| T3-0 | done (F01-F04, F03 via pins, F10 via codes) | `actions_fixes.rs` (F01, F02, F04/F05, F08, F09, F11, F12), `actions_wanted.rs` |
+| T3-1 | done (handle-based, no shell / `std::fs::remove_*`) | `fs/tests/mutate_remove.rs::remove_file_unlinks_only_an_unchanged_regular_file`, `t17_remove_tree_removes_the_planned_subtree_and_never_follows_symlinks` |
+| T3-2 | done (runner and mutator refuse media; empty dir completed only) | `mutate_remove.rs::removals_never_touch_a_media_root`, `actions_delete.rs::revalidation_after_the_stop_restores_the_torrent_and_media_targets_are_refused` (`MediaRootDeletion`, no intent) |
+| T3-3 | done (lstat + `matches(expect, true)`, ENOENT = StateChanged) | `mutate_remove.rs::remove_file_unlinks_only_an_unchanged_regular_file` |
+| T3-4 | done (fresh snapshot equality, deepest first, per-entry (dev, ino), stop at mismatch, `FailedNeedsReview`) | `mutate_remove.rs::remove_tree_is_all_or_nothing_at_the_decision_point`, `::remove_tree_stops_at_the_first_mismatch_and_reports_what_was_removed`; `actions_delete.rs::t15_folder_deletion_is_all_or_nothing_and_samples_need_their_acknowledgement`, `::a_partially_removed_tree_needs_review_and_its_hashes_stay_stopped` |
+| T3-5 | done (rmdir semantics, `dev/ino/uid/gid/mode` compared, `mtime/nlink` excluded; completed only) | `mutate_remove.rs::remove_empty_dir_needs_an_empty_unchanged_directory_under_completed`; `actions_delete.rs::inv49_empty_parents_are_removed_after_their_contents_and_only_when_empty` |
+| T3-6 | done (target and every tree entry; approval must name the exact sample) | `actions_delete.rs::t15_*` (acknowledged, unacknowledged -> `Sample`, plan `Invalidated`, no intent) |
+| T3-7 | done (full ownership index, inode view bound, unreachable qBittorrent blocks) | `actions_delete.rs::t3_7_junk_is_deleted_only_when_no_torrent_references_it_by_path_or_inode` (by path, by inode, qBittorrent down) |
+| T3-8 | done (live holder set vs plan, pins, stop, pass 2, then unlink) | `actions_delete.rs::t3_8_a_torrent_that_started_holding_a_torrent_held_target_refuses_before_the_stop`, `revalidation_after_the_stop_restores_the_torrent_*`, `t32_*`; `actions_wanted.rs` |
+| T3-9 | done (all wanted files absent via fresh `files()` + lstat, journaled `QbitRemoveKeepData`, `TorrentAbsent`; partial -> left stopped) | `actions_delete.rs::t32_a_torrent_held_file_is_deleted_then_its_task_removed_without_delete_files`, `::t3_9_a_task_is_kept_while_any_wanted_file_remains`, `::t23_a_torrent_that_lost_a_file_without_task_removal_is_left_stopped_and_reported` |
+| T3-10 | done (manual only, incomplete root only, stop, remove task, fresh listing, re-stat, delete) | `actions_stalled.rs::t3_10_stalled_cleanup_stops_removes_the_task_then_deletes_under_incomplete_only`, `::stalled_cleanup_refuses_busy_complete_or_misplaced_torrents_before_any_mutation`, `::a_failed_task_removal_restores_the_torrent_and_deletes_nothing`, `::data_referenced_after_the_task_removal_is_left_as_an_orphan` |
+| T3-11 | done (`DeleteIncompleteOrphan` through the same ownership check) | `actions_delete.rs::t30_*` (`lost.mkv.!qB`), live-holder tests |
+| T3-12 | **open** (needs journal lookup of failed consolidations for automatic plans; automatic execution is tier 5, `NotInBuild`) | - |
+| T3-13 | done (every new step through `Ctx::step`; counting mutators observe all) | journal assertions in `actions_delete.rs::t32_*`, zero-mutation asserts throughout |
+| T3-14 | done (`Absent` only on confirmed NotFound, `TorrentAbsent` on fresh listing, `ModeEquals` via stat, gains only for `Verified` and fully unlinked inode) | `actions_delete.rs::t32_*` (attributable gain = size), `actions_stalled.rs::t3_18_*` |
+| T3-15 | done (recovery observes disk/listing; possible partial deletion -> modified, `FailedNeedsReview`; never redone) | `actions_tier3_crash.rs` (all) |
+| T3-16 | done (simulation of every tier-3 kind, recording and live-process guards incl. fs, qBittorrent `remove`, ARR, Jellyfin) | `actions_delete.rs::t30_simulating_every_tier3_kind_walks_the_full_path_and_mutates_nothing` |
+| T3-17 | done | `actions_tier3_crash.rs::crash_after_the_remove_file_intent_before_the_unlink_resumes_the_torrent`, `::crash_after_the_unlink_before_the_result_rechecks_and_leaves_the_torrent_stopped`, `::crash_around_the_task_removal_is_resolved_from_the_listing`, `::stalled_crash_after_the_task_removal_never_deletes_the_data_at_recovery`, `::a_partial_tree_removal_followed_by_a_crash_is_reviewed_at_recovery`, `::a_failed_result_followed_by_a_crash_is_re_observed_at_recovery`, `::fix_mode_crash_after_the_chmod_is_observed_from_the_mode`; the recheck-boundary and before-intent cases reuse the F12 / `actions_crash.rs` seams |
+| T3-18 | done (owner only, non-recursive, signature, `ModeEquals`) | `actions_stalled.rs::t3_18_fix_mode_is_targeted_revalidated_and_verified`, `mutate_remove.rs::set_mode_is_targeted_verified_and_refuses_symlinks_or_changed_entries` |
+| T3-19 | contract for 14, unchanged: exclusive `lock_roots`, `recover` before every execute and after any `execute` `Err`, no execute while recovery is unresolved; left-stopped is durable in the journal (F09) | - |
+| tier-2 services | `ArrRescan`, `JellyfinRefresh` journaled, completion observed by polling bounded by `recheck_timeout`, judged by `evaluate_service_step` | `actions_stalled.rs::service_commands_are_journaled_and_verified_by_observing_the_service` |
 
 ### Stage B deviations and notes
 
-* Domain edit outside ownership: one doc comment on `DirSnapshot` (`crates/domain/src/fs.rs`),
-  F14. No code or type changed; hashes unaffected.
+* Domain edit outside ownership: one doc comment on `DirSnapshot` (F14); domain patch 3 (pins,
+  `ChangedSincePlanning`, `Interrupted`) is owned by 03.
+* `FixMode` is exempt from the live-holder check: a mode change alters neither bytes nor paths,
+  and the common target is a seeded file (the planner adds owner bits only).
+* A deletion batch whose every action is refused before revalidation (sample not acknowledged,
+  media root, wrong root kind) ends the plan `Invalidated`, nothing journaled.
 * `check_live_holders` reads `files()` only for torrents whose base paths are related to an
-  action path (ancestor, equal or descendant); every torrent with a mapping fault refuses
-  regardless of proximity (fail closed).
-* A simulation that is refused by revalidation reports `NotExecuted` with the live blockers;
-  one that would run reports `Simulated` (unchanged from stage A).
+  action path; a mapping fault on any torrent refuses (fail closed).
+* A simulation refused by revalidation reports `NotExecuted` with the live blockers; one that
+  would run reports `Simulated`. A simulation accepts samples the plan itself declares.
+* Open: T3-12 (failed-consolidation exclusion for automatic plans, tier 5); T3-19 is 14's work.
 
 ### Commands run and results (host target, macOS, rustc 1.98)
 
 * `cargo fmt --all --check`: pass.
 * `cargo clippy --workspace --all-targets -- -D warnings`: pass.
-* `cargo test --workspace`: pass, 647 passed, 0 failed, 1 ignored (opt-in ffprobe). New since
-  stage A: `fs/tests/mutate_hardlink.rs` +2 (7), `workflows/tests/actions_fixes.rs` 11.
-* Dependency gates: print nothing. `deleteFiles` once (`"false"`); `LiveMode::` only in config.
-* Nothing committed; no real storage or service touched.
+* `cargo test --workspace`: pass, 682 passed, 0 failed, 1 ignored (opt-in ffprobe).
+* No `deleteFiles=true` anywhere; no shell or `Command` in the runner or mutator.

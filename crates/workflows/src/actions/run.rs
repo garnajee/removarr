@@ -7,7 +7,7 @@ use removarr_domain::gain::{GainKind, GainRecord, ObservedDelta, gain_id};
 use removarr_domain::ids::PlanId;
 use removarr_domain::issue::{Blocker, BlockerCode};
 use removarr_domain::journal::{ActionOutcome, VerificationResult};
-use removarr_domain::path::RootId;
+use removarr_domain::path::{RelPath, RootId};
 use removarr_domain::plan::{ActionKind, ActionTarget, PlanMode, PlanStatus, Precondition};
 use removarr_domain::ports::CancelFlag;
 use removarr_domain::torrent::TorrentHash;
@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use super::events::{ActionEvent, Reporter};
 use super::journal::Ctx;
 use super::qbit::LeftStoppedReason;
-use super::{ActionPorts, ActionSettings, IMPLEMENTED_TIER, Mutators, supported};
+use super::{ActionPorts, ActionSettings, Family, IMPLEMENTED_TIER, Mutators, family, supported};
 use crate::plans::ExecutionTicket;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -138,6 +138,7 @@ pub async fn execute(
         mutators,
         settings,
         plan,
+        approval: ticket.approval.as_ref(),
         simulated,
         cancel,
         reporter,
@@ -150,13 +151,16 @@ pub async fn execute(
         actions: total,
     });
 
-    // Tier gate: an unsupported kind refuses the whole plan before anything happens.
+    // Tier gate: an unsupported kind, or a plan mixing families, refuses the whole plan
+    // before anything happens.
     let unsupported: Vec<&removarr_domain::plan::PlannedAction> = plan
         .actions
         .iter()
         .filter(|a| a.kind.tier() > IMPLEMENTED_TIER || !supported(a.kind))
         .collect();
-    if !unsupported.is_empty() {
+    let families: BTreeSet<Option<Family>> = plan.actions.iter().map(|a| family(a.kind)).collect();
+    let mixed = families.len() > 1;
+    if !unsupported.is_empty() || mixed {
         let outcomes: Vec<(u32, ActionOutcome)> = plan
             .actions
             .iter()
@@ -166,6 +170,8 @@ pub async fn execute(
                         "{:?} is not executable in this build (implemented tier {:?})",
                         a.kind, IMPLEMENTED_TIER
                     )
+                } else if mixed {
+                    "the plan mixes action families; one family per plan".to_string()
                 } else {
                     "another action of the plan is not executable in this build".to_string()
                 };
@@ -202,9 +208,14 @@ pub async fn execute(
         free_space(&ctx, &plan.lock_roots).await
     };
 
-    // Stage A dispatch: every supported kind is a consolidation.
     let actions: Vec<&removarr_domain::plan::PlannedAction> = plan.actions.iter().collect();
-    let batch = ctx.consolidate(&actions).await?;
+    let batch = match families.into_iter().next().flatten() {
+        Some(Family::Consolidate) | None => ctx.consolidate(&actions).await?,
+        Some(Family::Delete) => ctx.delete_batch(&actions).await?,
+        Some(Family::StalledCleanup) => ctx.stalled_batch(&actions).await?,
+        Some(Family::FixMode) => ctx.fix_mode_batch(&actions).await?,
+        Some(Family::Service) => ctx.service_batch(&actions).await?,
+    };
 
     let mut outcomes: Vec<(u32, ActionOutcome)> = Vec::new();
     let mut results: BTreeMap<u32, Vec<VerificationResult>> = BTreeMap::new();
@@ -212,10 +223,7 @@ pub async fn execute(
         let (o, v) = batch.outcomes.get(&a.index).cloned().unwrap_or_else(|| {
             (
                 ActionOutcome::NotExecuted {
-                    blockers: vec![Blocker::new(
-                        BlockerCode::FailedConsolidation,
-                        "not reached",
-                    )],
+                    blockers: vec![Blocker::new(BlockerCode::Interrupted, "not reached")],
                 },
                 vec![],
             )
@@ -310,9 +318,11 @@ async fn free_space(ctx: &Ctx<'_>, roots: &BTreeSet<RootId>) -> BTreeMap<RootId,
     out
 }
 
-/// Attributable gains of verified consolidations (the replaced media inode, counted once by
-/// its gain id) plus the observed free-space delta. A duplicate gain id is a `Conflict` the
-/// store refuses: it is logged, never counted twice.
+/// Attributable gains of verified consolidations (the replaced media inode) and deletions
+/// (the removed target: a file's inode, or the directory inode of a removed tree or of the
+/// first data path of a stalled cleanup, with the action's planned attributable bytes), each
+/// counted once by its gain id, plus the observed free-space delta. A duplicate gain id is a
+/// `Conflict` the store refuses: it is logged, never counted twice.
 async fn record_gains(
     ctx: &Ctx<'_>,
     outcomes: &[(u32, ActionOutcome)],
@@ -328,12 +338,31 @@ async fn record_gains(
         let Some(a) = ctx.plan.actions.get(*index as usize) else {
             continue;
         };
-        let ActionTarget::Consolidate { target, .. } = &a.target else {
-            continue;
+        let (target, kind) = match (a.kind, &a.target) {
+            (ActionKind::ConsolidateHardlink, ActionTarget::Consolidate { target, .. }) => {
+                (target, GainKind::AttributableConsolidation)
+            }
+            (
+                ActionKind::DeleteCompletedFile
+                | ActionKind::DeleteCompletedFolder
+                | ActionKind::DeleteJunk
+                | ActionKind::DeleteIncompleteOrphan,
+                ActionTarget::Path { path },
+            ) => (path, GainKind::AttributableDeletion),
+            (ActionKind::CleanupStalledIncomplete, ActionTarget::Torrent { data_paths, .. }) => {
+                match data_paths.first() {
+                    Some(p) => (p, GainKind::AttributableDeletion),
+                    None => continue,
+                }
+            }
+            _ => continue,
         };
         roots.insert(target.root.clone());
         let sig = a.preconditions.iter().find_map(|p| match p {
             Precondition::EntryUnchanged { path, sig, .. } if path == target => Some(*sig),
+            Precondition::DirUnchanged { snapshot } if &snapshot.dir == target => {
+                snapshot.entries.get(&RelPath::root()).copied()
+            }
             _ => None,
         });
         if let Some(sig) = sig
@@ -342,7 +371,7 @@ async fn record_gains(
             records.push(GainRecord {
                 gain_id: gain_id(sig.phys(), sig.size, sig.mtime_ns),
                 action: ctx.action_ref(*index),
-                kind: GainKind::AttributableConsolidation,
+                kind,
                 phys: sig.phys(),
                 bytes: a.expected_gain.attributable,
                 recorded_at: now,
