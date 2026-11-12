@@ -8,7 +8,10 @@
 //!   correlation id; raw text is logged sanitized, never rendered).
 //! - [`forms`]: validation of every id, filter, page, search, locale and selection.
 //! - [`health`]: liveness and readiness without scans or disk wake-ups.
+//! - [`auth`]: the production guard (Argon2 login, sessions, CSRF, rate limit, trusted
+//!   proxies, security headers).
 
+pub mod auth;
 pub mod error;
 pub mod forms;
 pub mod handlers;

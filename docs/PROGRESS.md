@@ -38,10 +38,11 @@ Status values: `todo`, `running`, `done`, `blocked`.
 | 10 | `14-job-runner` | done | 58 jobs tests; single execute lane, recover-before-execute, two-phase auto cycle, failed sets from journal; tier5 gate absent from production |
 | 11 | `15-reporting` | done | 40 tests; read-only SQL read model, gain kinds separated, CSV formula-neutralized, bounded sanitized logs, svg.rs geometry for web-ui reuse; RPT-05/08/09 not produced (deviation for CP3) |
 | 12 | `16-backend-api` | done | 878 tests; release build OK; live_mode() called once (app wiring); default guard refuses all protected routes until auth-guard; plan list/media/explorer/settings/charts/static assets left to web-ui |
-| 13 | `17-auth-guard` | running | |
-| 13 | `18-ux-design` | running | |
-| 13 | `20-devops` | running | |
-| 14 | `19-web-ui` | todo | |
+| 13 | `17-auth-guard` | done | Argon2 off-thread constant-time, encrypted session cookie, CSRF on every POST, IP and (IP,user) limits with Retry-After, trusted proxies, security headers, `hash-password` subcommand |
+| 13 | `18-ux-design` | done | docs/ux-spec.md + docs/ux/wireflows.md, ~330 new translation keys, open questions for 16/19 |
+| 13 | `20-devops` | done | musl static image + ffprobe, non-root, hardlink under single mount verified, compose 127.0.0.1, CI + release (v*.*.* only, multi-arch, SBOM, Trivy), actions pinned by SHA, image ghcr.io/garnajee/removarr-v2 |
+| 14 | `19-web-ui` | running | |
+| 14 | `20-devops` README follow-up (hash-password, $$ in compose, cookie_secure, trusted proxies) | running | |
 | 15 | `22-integration-tests` | todo | |
 | 16 | `23-e2e-perf` | todo | |
 | 17 | `24-sec-setup` | todo | |
@@ -64,4 +65,4 @@ Status values: `todo`, `running`, `done`, `blocked`.
 
 ## Last quality gate
 
-After wave 12: fmt OK, clippy -D warnings OK, release build OK, tests OK (878 passed, 1 ignored = opt-in real-ffprobe test). Safety greps OK (deleteFiles literal false only in qbit/control.rs; importMode copy literal). Toolchain: cargo/rustc 1.98.0 (Homebrew, no rustup), Docker 29.7.2, ffprobe available.
+After wave 13: fmt OK, clippy -D warnings OK, release build OK, tests OK (919 passed, 1 ignored = opt-in real-ffprobe test). Safety greps OK (deleteFiles literal false only in qbit/control.rs; importMode copy literal). Toolchain: cargo/rustc 1.98.0 (Homebrew, no rustup), Docker 29.7.2, ffprobe available.

@@ -6,6 +6,14 @@
 <h1>{{ ctx.tr.t("login.title") }}</h1>
 {% if let Some(k) = v.error_key %}<p role="alert">{{ ctx.tr.t(k) }}</p>{% endif %}
 {% if let Some(s) = v.retry_after %}<p>{{ ctx.tr.t("login.retry_after") }} {{ s }} s</p>{% endif %}
+{% if !ctx.chrome.csrf.is_empty() %}
+<form method="post" action="/login">
+<input type="hidden" name="csrf_token" value="{{ ctx.chrome.csrf }}">
+<label>{{ ctx.tr.t("login.username") }} <input name="username" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="128" required></label>
+<label>{{ ctx.tr.t("login.password") }} <input type="password" name="password" autocomplete="current-password" maxlength="1024" required></label>
+<button type="submit">{{ ctx.tr.t("login.submit") }}</button>
+</form>
+{% endif %}
 </main>
 </body>
 </html>

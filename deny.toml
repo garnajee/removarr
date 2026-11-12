@@ -1,0 +1,12 @@
+# cargo-deny policy (dependency vulnerability and source checks). Run: cargo deny check advisories bans sources
+[advisories]
+yanked = "deny"
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

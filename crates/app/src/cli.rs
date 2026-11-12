@@ -1,10 +1,14 @@
-//! Command line: `serve` (default) and `healthcheck`.
+//! Command line: `serve` (default), `healthcheck` and `hash-password`.
 //!
 //! `healthcheck` is for the container healthcheck: it does not load the configuration (which
 //! would `stat` the roots and could wake disks); it reads only `REMOVARR_BIND` and asks
 //! `GET /healthz` on the loopback address with a short timeout.
+//!
+//! `hash-password` reads one password line from stdin (echo off on a terminal; never from the
+//! arguments, so it stays out of shell history and `ps`) and prints its Argon2id PHC string
+//! for `REMOVARR_PASSWORD_HASH`. It does not load the configuration.
 
-use std::io::{Read, Write};
+use std::io::{BufRead, Read, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::time::Duration;
 
@@ -18,6 +22,7 @@ const HEALTH_TIMEOUT: Duration = Duration::from_secs(3);
 pub enum Command {
     Serve,
     Healthcheck,
+    HashPassword,
     Help,
     Version,
 }
@@ -32,15 +37,17 @@ pub fn parse(args: &[String]) -> Result<Command, String> {
     {
         [] | ["serve"] => Ok(Command::Serve),
         ["healthcheck"] => Ok(Command::Healthcheck),
+        ["hash-password"] => Ok(Command::HashPassword),
         ["-h" | "--help" | "help"] => Ok(Command::Help),
         ["-V" | "--version"] => Ok(Command::Version),
         _ => Err("unknown arguments; use `removarr --help`".to_string()),
     }
 }
 
-pub const USAGE: &str = "removarr [serve | healthcheck | --help | --version]\n\
-  serve        run the web server and the job runtime (default)\n\
-  healthcheck  exit 0 when GET /healthz answers 200 on the local port of REMOVARR_BIND\n";
+pub const USAGE: &str = "removarr [serve | healthcheck | hash-password | --help | --version]\n\
+  serve          run the web server and the job runtime (default)\n\
+  healthcheck    exit 0 when GET /healthz answers 200 on the local port of REMOVARR_BIND\n\
+  hash-password  read a password on stdin, print its Argon2id hash for REMOVARR_PASSWORD_HASH\n";
 
 /// Loopback address of the configured bind (`0.0.0.0:p` and `[::]:p` become loopback).
 #[must_use]
@@ -78,6 +85,64 @@ pub fn healthcheck(target: SocketAddr) -> bool {
     head.starts_with("HTTP/1.1 200") || head.starts_with("HTTP/1.0 200")
 }
 
+/// The PHC string of one input line (trailing `\r`/`\n` removed, nothing else trimmed).
+pub fn hash_line(line: &str) -> Result<String, &'static str> {
+    let password = line.trim_end_matches(['\r', '\n']);
+    if password.is_empty() {
+        return Err("empty password");
+    }
+    removarr_web::auth::hash_password(password).map_err(|_| "password could not be hashed")
+}
+
+/// Disables terminal echo; returns the previous settings to restore.
+fn echo_off(fd: &std::io::Stdin) -> Option<rustix::termios::Termios> {
+    use rustix::termios::{LocalModes, OptionalActions, tcgetattr, tcsetattr};
+    let saved = tcgetattr(fd).ok()?;
+    let mut quiet = saved.clone();
+    quiet.local_modes.remove(LocalModes::ECHO);
+    tcsetattr(fd, OptionalActions::Now, &quiet).ok()?;
+    Some(saved)
+}
+
+fn hash_password_command() -> u8 {
+    let stdin = std::io::stdin();
+    let tty = rustix::termios::isatty(&stdin);
+    let saved = if tty {
+        eprint!("Password: ");
+        echo_off(&stdin)
+    } else {
+        None
+    };
+    let mut line = String::new();
+    let read = stdin.lock().read_line(&mut line);
+    if let Some(t) = saved {
+        let _ = rustix::termios::tcsetattr(&stdin, rustix::termios::OptionalActions::Now, &t);
+    }
+    if tty {
+        eprintln!();
+    }
+    if read.is_err() {
+        eprintln!("cannot read the password from stdin");
+        return 1;
+    }
+    match hash_line(&line) {
+        Ok(phc) => {
+            let mut out = std::io::stdout().lock();
+            if writeln!(out, "{phc}").is_err() {
+                return 1;
+            }
+            eprintln!(
+                "set REMOVARR_PASSWORD_HASH to this value (write each `$` as `$$` in docker-compose.yml)"
+            );
+            0
+        }
+        Err(m) => {
+            eprintln!("{m}");
+            1
+        }
+    }
+}
+
 fn runtime() -> std::io::Result<tokio::runtime::Runtime> {
     let workers = std::thread::available_parallelism().map_or(1, |n| n.get().min(4));
     tokio::runtime::Builder::new_multi_thread()
@@ -107,6 +172,7 @@ pub fn main(args: &[String]) -> u8 {
             eprintln!("removarr {}", env!("CARGO_PKG_VERSION"));
             0
         }
+        Command::HashPassword => hash_password_command(),
         Command::Healthcheck => {
             let bind = std::env::var("REMOVARR_BIND").ok();
             u8::from(!healthcheck(health_target(bind.as_deref())))
@@ -143,6 +209,11 @@ mod tests {
         assert_eq!(parse(&a(&[])), Ok(Command::Serve));
         assert_eq!(parse(&a(&["serve"])), Ok(Command::Serve));
         assert_eq!(parse(&a(&["healthcheck"])), Ok(Command::Healthcheck));
+        assert_eq!(parse(&a(&["hash-password"])), Ok(Command::HashPassword));
+        assert!(
+            parse(&a(&["hash-password", "secret"])).is_err(),
+            "never from argv"
+        );
         assert!(parse(&a(&["serve", "--dry-run=false"])).is_err());
         assert!(parse(&a(&["delete"])).is_err());
     }
@@ -160,6 +231,15 @@ mod tests {
             "127.0.0.1:81"
         );
         assert_eq!(health_target(Some("garbage")).to_string(), "127.0.0.1:8080");
+    }
+
+    #[test]
+    fn hash_line_strips_only_the_line_ending() {
+        let phc = hash_line("fake test password \n").unwrap();
+        assert!(phc.starts_with("$argon2id$v=19$"));
+        assert!(!phc.contains("fake test password"));
+        assert_eq!(hash_line("\n"), Err("empty password"));
+        assert_eq!(hash_line(""), Err("empty password"));
     }
 
     #[test]

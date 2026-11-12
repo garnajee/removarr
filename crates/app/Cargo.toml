@@ -30,7 +30,7 @@ argon2 = { workspace = true }
 uuid = { workspace = true, features = ["v7"] }
 axum = { workspace = true }
 async-trait = { workspace = true }
-rustix = { workspace = true }
+rustix = { workspace = true, features = ["termios"] }
 
 [dev-dependencies]
 tempfile = { workspace = true }

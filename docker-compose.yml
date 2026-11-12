@@ -1,0 +1,76 @@
+# removarr Docker Compose template. Copy `.env.example` to `.env`, then adjust the marked lines.
+# Everything here uses generic example paths: replace them with your own.
+#
+# Run:   UID=$(id -u) GID=$(id -g) docker compose up -d
+#   (or put UID and GID in `.env`; some shells keep UID read-only, so exporting it may fail)
+#
+# `${UID}:${GID}` must match the user that owns your media and runs qBittorrent, Sonarr and Radarr
+# (for example 1000:1000). The container never runs as root, not even at startup.
+
+services:
+  removarr:
+    image: ghcr.io/garnajee/removarr-v2:latest   # pin a version tag in production
+    # build: .                                # uncomment to build from this checkout instead
+    container_name: removarr
+    restart: unless-stopped
+
+    # Identity: same uid:gid as the owner of the media files. No PUID/PGID, no privilege-dropping entrypoint.
+    user: "${UID}:${GID}"
+
+    # Hardening. The root filesystem is read-only; /tmp is the only scratch space.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+
+    # Published on the loopback only. Exposing it to the network is your explicit choice
+    # (ideally behind a TLS reverse proxy; then set REMOVARR_TRUSTED_PROXIES and keep REMOVARR_COOKIE_SECURE=true).
+    ports:
+      - "127.0.0.1:8012:8080"
+
+    # Secrets and settings come from `.env` (never commit it). See `.env.example` for every variable.
+    env_file: .env
+
+    volumes:
+      # ONE mount for the COMMON PARENT of completed, incomplete and media.
+      # Hardlinks (`link()`) fail with EXDEV between two separate bind mounts, even when both are on the same
+      # filesystem, so never mount completed and media separately.
+      # The container sees the WHOLE mounted parent. removarr only analyses the roots you declare with
+      # REMOVARR_COMPLETED_ROOT, REMOVARR_INCOMPLETE_ROOT and REMOVARR_MEDIA_ROOTS (container paths below /data).
+      - /srv/media:/data                      # CHANGE the left side to your common parent directory
+
+      # Configuration and SQLite database on a separate, fast (SSD) volume. Must not be inside a root.
+      # The directory must be writable by ${UID}:${GID}.
+      - ./config:/config                      # CHANGE if you keep application data elsewhere
+
+    environment:
+      # Safe defaults, repeated here so they are visible. Leave as is until a dry run looks right.
+      REMOVARR_DRY_RUN: ${REMOVARR_DRY_RUN:-true}
+      REMOVARR_AUTO_MODE: ${REMOVARR_AUTO_MODE:-false}
+      # Roots (container paths). Example layout under the mounted parent:
+      #   /data/completed   qBittorrent completed downloads
+      #   /data/incomplete  qBittorrent incomplete downloads (optional)
+      #   /data/media       library root(s) used by Sonarr, Radarr and Jellyfin
+      REMOVARR_COMPLETED_ROOT: ${REMOVARR_COMPLETED_ROOT:-/data/completed}
+      REMOVARR_MEDIA_ROOTS: ${REMOVARR_MEDIA_ROOTS:-/data/media}
+      # Path mappings translate the path another service reports (left) into the path inside this container (right).
+      # Identity is never assumed. Define them in `.env` (see REMOVARR_*_PATH_MAP), for example:
+      #   REMOVARR_QBIT_PATH_MAP=/downloads=/data/completed
+      #   REMOVARR_SONARR_PATH_MAP=/tv=/data/media
+      # Service URLs and API keys also come from `.env`.
+
+    healthcheck:
+      # Local request to /healthz only: no disk access, no database access.
+      test: ["CMD", "removarr", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    # Optional: join the network shared with your other services so you can use their service names as URLs.
+    # networks: [media]
+# networks:
+#   media:
+#     external: true

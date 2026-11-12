@@ -1903,6 +1903,7 @@ dependencies = [
  "removarr-workflows",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror",
  "time",
  "tokio",
@@ -1910,6 +1911,8 @@ dependencies = [
  "tower",
  "tower-http",
  "tracing",
+ "tracing-subscriber",
+ "unicode-normalization",
  "uuid",
 ]
 

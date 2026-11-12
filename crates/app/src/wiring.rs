@@ -33,6 +33,7 @@ use removarr_matching::{
 use removarr_qbit::{QbitController, QbitReader};
 use removarr_reporting::{LogBuffer, Reporter};
 use removarr_storage::{Db, Repos};
+use removarr_web::auth::{Auth, AuthSettings, AuthSetupError};
 use removarr_web::{AppState, FailClosedGuard, Guard, WebSettings};
 use removarr_workflows::actions::{self, ActionPorts, ActionSettings, Mutators};
 use removarr_workflows::evaluate::VerifyPorts;
@@ -399,8 +400,16 @@ pub async fn build(
     })
 }
 
-/// The default guard of this build (fail closed until auth-guard provides one).
+/// A guard that refuses every protected route (tests and wiring checks). `serve` uses
+/// [`auth_guard`].
 #[must_use]
 pub fn default_guard() -> Arc<dyn Guard> {
     Arc::new(FailClosedGuard)
+}
+
+/// The production guard (`removarr_web::auth::Auth`) over the validated `auth` settings and
+/// trusted proxies. An unusable password hash or session key refuses startup (fail closed).
+pub fn auth_guard(cfg: &Config) -> Result<Arc<dyn Guard>, AuthSetupError> {
+    let auth = Auth::new(AuthSettings::from_config(cfg), Arc::new(SystemClock))?;
+    Ok(Arc::new(auth))
 }

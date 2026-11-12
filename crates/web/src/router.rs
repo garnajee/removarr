@@ -7,8 +7,9 @@
 //!   the [`CommandGrant`] the handlers require. With the default [`crate::state::FailClosedGuard`]
 //!   every protected route is refused.
 //!
-//! Layers: body limit (1 MiB), request-target limit, 30 s timeout, panic catcher (generic 500).
-//! Security headers and the session/CSRF implementation are `auth-guard`'s (17).
+//! Layers: body limit (1 MiB), request-target limit, 30 s timeout, panic catcher (generic 500),
+//! security headers ([`crate::auth::security_headers`]). The login routes come from the guard
+//! ([`crate::state::Guard::routes`]); the session/CSRF implementation is [`crate::auth`] (17).
 
 use std::time::Duration;
 
@@ -111,10 +112,14 @@ fn panic_response(_: Box<dyn std::any::Any + Send + 'static>) -> Response {
 pub fn build(state: AppState) -> Router {
     use handlers::{dashboard, issues, jobs, login, ops, plans, reports};
 
+    let login_routes = state
+        .guard
+        .routes()
+        .unwrap_or_else(|| Router::new().route("/login", get(login::page)));
     let public = Router::new()
         .route("/healthz", get(health::healthz))
         .route("/readyz", get(health::readyz))
-        .route("/login", get(login::page));
+        .merge(login_routes);
 
     let pages = Router::new()
         .route("/", get(dashboard::show))
@@ -154,7 +159,7 @@ pub fn build(state: AppState) -> Router {
         .route("/locale", post(ops::locale))
         .route_layer(middleware::from_fn_with_state(state.clone(), command_guard));
 
-    public
+    let app = public
         .merge(pages)
         .merge(commands)
         .fallback(not_found)
@@ -166,5 +171,6 @@ pub fn build(state: AppState) -> Router {
             REQUEST_TIMEOUT,
         ))
         .layer(CatchPanicLayer::custom(panic_response))
-        .with_state(state)
+        .with_state(state);
+    crate::auth::security_headers(app)
 }

@@ -41,7 +41,14 @@ pub async fn run(cfg: Config) -> u8 {
     for line in cfg.startup_summary() {
         tracing::info!("{line}");
     }
-    let app = match wiring::build(&cfg, logs, wiring::default_guard()).await {
+    let guard = match wiring::auth_guard(&cfg) {
+        Ok(g) => g,
+        Err(e) => {
+            tracing::error!("startup failed: {e}");
+            return EXIT_STARTUP;
+        }
+    };
+    let app = match wiring::build(&cfg, logs, guard).await {
         Ok(a) => a,
         Err(e) => {
             tracing::error!("startup failed: {e}");

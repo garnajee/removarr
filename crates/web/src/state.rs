@@ -154,6 +154,12 @@ pub enum Denied {
 #[async_trait]
 pub trait Guard: Send + Sync {
     async fn check(&self, access: Access, req: Request) -> Result<(Request, Principal), Denied>;
+
+    /// Routes the guard serves itself (`GET`/`POST /login`, `POST /logout`), merged into the
+    /// public group. `None` keeps the placeholder `GET /login` page.
+    fn routes(&self) -> Option<axum::Router<AppState>> {
+        None
+    }
 }
 
 /// Default guard until `auth-guard` lands: refuses everything (fail closed).
