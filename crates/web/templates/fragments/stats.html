@@ -1,0 +1,14 @@
+<section id="stats" aria-labelledby="stats-title">
+<h1 id="stats-title">{{ ctx.tr.t("nav.stats") }}</h1>
+<dl>
+<dt>{{ ctx.tr.t("series.attributable") }}</dt><dd>{{ v.attributable }}</dd>
+<dt>{{ ctx.tr.t("series.added_cost") }}</dt><dd>{{ v.added }}</dd>
+<dt>{{ ctx.tr.t("stats.net") }}</dt><dd>{{ v.net }}</dd>
+</dl>
+{% for c in v.vm.caveats %}<p>{{ c.text }}</p>{% endfor %}
+{% for s in v.series %}
+<h2>{{ s.label }}{% if !s.guaranteed %} ({{ ctx.tr.t("stats.estimate") }}){% endif %}: {{ s.total }}</h2>
+<table><thead><tr><th scope="col">{{ ctx.tr.t("stats.day") }}</th><th scope="col">{{ ctx.tr.t("stats.bytes") }}</th><th scope="col">{{ ctx.tr.t("stats.cumulative") }}</th></tr></thead>
+<tbody>{% for p in s.points %}<tr><td>{{ p.0 }}</td><td>{{ p.1 }}</td><td>{{ p.2 }}</td></tr>{% endfor %}</tbody></table>
+{% endfor %}
+</section>

@@ -1,0 +1,15 @@
+<section id="job" aria-labelledby="job-title"{% if v.active %} hx-get="/jobs/{{ v.row.id }}/progress" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
+<h1 id="job-title">{{ v.row.label }}</h1>
+<dl>
+<dt>{{ ctx.tr.t("jobs.status") }}</dt><dd>{{ v.row.status }}{% if v.cancel_requested %} ({{ ctx.tr.t("jobs.cancel_requested") }}){% endif %}</dd>
+<dt>{{ ctx.tr.t("jobs.stage") }}</dt><dd>{{ v.row.stage }}</dd>
+<dt>{{ ctx.tr.t("jobs.progress") }}</dt><dd>{{ v.done }}{% if v.total > 0 %} / {{ v.total }}{% endif %}</dd>
+<dt>{{ ctx.tr.t("jobs.lane") }}</dt><dd>{{ v.lane }}</dd>
+<dt>{{ ctx.tr.t("jobs.enqueued_at") }}</dt><dd>{{ v.enqueued_at }}</dd>
+<dt>{{ ctx.tr.t("jobs.started_at") }}</dt><dd>{{ v.started_at }}</dd>
+<dt>{{ ctx.tr.t("jobs.finished_at") }}</dt><dd>{{ v.finished_at }}</dd>
+<dt>{{ ctx.tr.t("jobs.outcome") }}</dt><dd>{{ v.outcome }}</dd>
+</dl>
+{% if !v.warnings.is_empty() %}<ul>{% for w in v.warnings %}<li>{{ w }}</li>{% endfor %}</ul>{% endif %}
+{% if v.cancellable %}<form method="post" action="/jobs/{{ v.row.id }}/cancel"><input type="hidden" name="csrf_token" value="{{ ctx.chrome.csrf }}"><button type="submit">{{ ctx.tr.t("command.cancel") }}</button></form>{% endif %}
+</section>

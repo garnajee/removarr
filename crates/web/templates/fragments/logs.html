@@ -1,0 +1,15 @@
+<section id="logs" aria-labelledby="logs-title">
+<h1 id="logs-title">{{ ctx.tr.t("nav.logs") }}</h1>
+<form method="get">
+<label>{{ ctx.tr.t("logs.level") }} <select name="level">
+<option value="debug"{% if v.level == "debug" %} selected{% endif %}>DEBUG</option>
+<option value="info"{% if v.level == "info" %} selected{% endif %}>INFO</option>
+<option value="warn"{% if v.level == "warn" %} selected{% endif %}>WARN</option>
+<option value="error"{% if v.level == "error" %} selected{% endif %}>ERROR</option>
+</select></label>
+<label>{{ ctx.tr.t("issues.search") }} <input type="search" name="q" value="{{ v.q }}" maxlength="200"></label>
+<button type="submit">{{ ctx.tr.t("issues.refresh") }}</button>
+</form>
+<p>{{ v.vm.matched }} / {{ v.vm.buffered }}</p>
+<ol>{% for e in v.vm.entries %}<li><time>{{ e.at }}</time> {{ e.level }} {{ e.target }}: {{ e.message }}</li>{% endfor %}</ol>
+</section>

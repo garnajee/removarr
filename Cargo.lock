@@ -1668,6 +1668,9 @@ name = "removarr"
 version = "0.1.0"
 dependencies = [
  "argon2",
+ "async-trait",
+ "axum",
+ "http-body-util",
  "removarr-arr",
  "removarr-config",
  "removarr-domain",
@@ -1680,8 +1683,11 @@ dependencies = [
  "removarr-storage",
  "removarr-web",
  "removarr-workflows",
+ "rustix",
+ "tempfile",
  "tokio",
  "tokio-util",
+ "tower",
  "tracing",
  "tracing-subscriber",
  "uuid",
@@ -1883,6 +1889,7 @@ version = "0.1.0"
 dependencies = [
  "argon2",
  "askama",
+ "async-trait",
  "axum",
  "axum-extra",
  "getrandom 0.3.4",

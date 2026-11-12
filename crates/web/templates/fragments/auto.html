@@ -1,0 +1,8 @@
+<section id="auto" aria-labelledby="auto-title">
+<h1 id="auto-title">{{ ctx.tr.t("nav.auto") }}</h1>
+<p>{% if v.enabled %}{{ ctx.tr.t("auto.enabled") }}{% else %}{{ ctx.tr.t("auto.disabled") }}{% endif %}{% if v.dry_run %} - {{ ctx.tr.t("mode.dry_run") }}{% endif %}</p>
+<p>{{ ctx.tr.t("auto.read_once") }}</p>
+{% if let Some(r) = v.paused %}<p role="alert">{{ ctx.tr.t("auto.paused") }}: {{ r }}</p>
+<form method="post" action="/auto/resume"><input type="hidden" name="csrf_token" value="{{ ctx.chrome.csrf }}"><button type="submit">{{ ctx.tr.t("command.resume_auto") }}</button></form>{% endif %}
+{% if let Some(t) = v.next_scan %}<p>{{ ctx.tr.t("dashboard.next_scan") }}: {{ t }}</p>{% endif %}
+</section>

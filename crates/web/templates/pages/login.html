@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="{{ ctx.chrome.lang }}">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{{ ctx.tr.t("login.title") }}</title></head>
+<body>
+<main>
+<h1>{{ ctx.tr.t("login.title") }}</h1>
+{% if let Some(k) = v.error_key %}<p role="alert">{{ ctx.tr.t(k) }}</p>{% endif %}
+{% if let Some(s) = v.retry_after %}<p>{{ ctx.tr.t("login.retry_after") }} {{ s }} s</p>{% endif %}
+</main>
+</body>
+</html>

@@ -1,0 +1,23 @@
+<section id="confirm" aria-labelledby="confirm-title">
+<h1 id="confirm-title">{{ ctx.tr.t("confirm.title") }}</h1>
+<dl>
+<dt>{{ ctx.tr.t("confirm.targets") }}</dt><dd>{{ v.actions.len() }}</dd>
+<dt>{{ ctx.tr.t("plan.gain_attributable") }}</dt><dd>{{ v.attributable }}</dd>
+<dt>{{ ctx.tr.t("plan.gain_added") }}</dt><dd>{{ v.added }}</dd>
+</dl>
+{% if v.irreversible %}<p role="alert">{{ ctx.tr.t("plan.irreversible") }}</p>{% endif %}
+<ol>{% for a in v.actions %}<li>{{ a.kind }}: <code>{{ a.target }}</code>{% if a.irreversible %} ({{ ctx.tr.t("plan.irreversible_short") }}){% endif %}</li>{% endfor %}</ol>
+{% if v.can_approve %}
+<form method="post" action="/plans/{{ v.id }}/approve">
+<input type="hidden" name="csrf_token" value="{{ ctx.chrome.csrf }}">
+<input type="hidden" name="plan_hash" value="{{ v.hash }}">
+{% if v.required_count > 0 %}<label>{{ ctx.tr.t("confirm.type_count") }} ({{ v.required_count }}) <input type="text" name="confirmed_count" inputmode="numeric" autocomplete="off" required></label>{% endif %}
+{% if v.required_torrent_removals > 0 %}<p>{{ ctx.tr.t("confirm.torrent_removals") }}</p><ul>{% for h in v.torrent_removals %}<li><code>{{ h }}</code></li>{% endfor %}</ul>
+<label>{{ ctx.tr.t("confirm.type_torrent_count") }} ({{ v.required_torrent_removals }}) <input type="text" name="confirmed_torrent_removals" inputmode="numeric" autocomplete="off" required></label>{% endif %}
+{% if !v.samples.is_empty() %}<fieldset><legend>{{ ctx.tr.t("confirm.samples") }}</legend>{% for p in v.samples %}<label><input type="checkbox" name="acknowledged_samples" value="{{ p }}"> <code>{{ p }}</code></label>{% endfor %}</fieldset>{% endif %}
+{% if !v.unrecoverable.is_empty() %}<fieldset><legend>{{ ctx.tr.t("confirm.unrecoverable") }}</legend>{% for p in v.unrecoverable %}<label><input type="checkbox" name="acknowledged_unrecoverable" value="{{ p }}"> <code>{{ p }}</code></label>{% endfor %}</fieldset>{% endif %}
+<button type="submit">{{ ctx.tr.t("command.approve") }}</button>
+</form>
+{% else %}<p>{{ ctx.tr.t("confirm.not_draft") }}</p>{% endif %}
+<p><a href="/plans/{{ v.id }}">{{ ctx.tr.t("confirm.back") }}</a></p>
+</section>

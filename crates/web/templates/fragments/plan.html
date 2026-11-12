@@ -1,0 +1,33 @@
+<section id="plan" aria-labelledby="plan-title">
+<h1 id="plan-title">{{ ctx.tr.t("plan.title") }} <code>{{ v.id }}</code></h1>
+{% if !v.stored %}<p role="status">{{ ctx.tr.t("plan.preview_not_stored") }}</p>{% endif %}
+<dl>
+<dt>{{ ctx.tr.t("plan.status") }}</dt><dd>{{ v.status }}</dd>
+<dt>{{ ctx.tr.t("plan.mode") }}</dt><dd>{% if v.mode_dry_run %}{{ ctx.tr.t("mode.dry_run") }}{% else %}{{ ctx.tr.t("mode.live") }}{% endif %}</dd>
+<dt>{{ ctx.tr.t("plan.origin") }}</dt><dd>{{ v.origin }}</dd>
+<dt>{{ ctx.tr.t("plan.created_at") }}</dt><dd>{{ v.created_at }}</dd>
+<dt>{{ ctx.tr.t("plan.expires_at") }}</dt><dd>{{ v.expires_at }}</dd>
+<dt>{{ ctx.tr.t("plan.max_tier") }}</dt><dd>{{ v.max_tier }}</dd>
+<dt>{{ ctx.tr.t("plan.gain_logical") }}</dt><dd>{{ v.logical }}</dd>
+<dt>{{ ctx.tr.t("plan.gain_attributable") }}</dt><dd>{{ v.attributable }}</dd>
+<dt>{{ ctx.tr.t("plan.gain_added") }}</dt><dd>{{ v.added }}</dd>
+<dt>{{ ctx.tr.t("plan.gain_net") }}</dt><dd>{{ v.net }}</dd>
+</dl>
+{% if v.irreversible %}<p role="alert">{{ ctx.tr.t("plan.irreversible") }}</p>{% endif %}
+{% if !v.warnings.is_empty() %}<h2>{{ ctx.tr.t("plan.warnings") }}</h2><ul>{% for w in v.warnings %}<li>{{ w }}</li>{% endfor %}</ul>{% endif %}
+<h2>{{ ctx.tr.t("plan.actions") }} ({{ v.actions.len() }})</h2>
+<ol>
+{% for a in v.actions %}<li>{{ a.kind }} ({{ a.tier }}{% if a.irreversible %}, {{ ctx.tr.t("plan.irreversible_short") }}{% endif %}{% if a.companion %}, {{ ctx.tr.t("plan.companion") }}{% endif %}): <code>{{ a.target }}</code> - {{ a.logical }} / {{ a.attributable }}{% if a.torrents > 0 %} - {{ a.torrents }} {{ ctx.tr.t("issues.col.torrents") }}{% endif %}
+{% if !a.annexes.is_empty() %}<ul>{% for x in a.annexes %}<li><code>{{ x }}</code></li>{% endfor %}</ul>{% endif %}</li>
+{% endfor %}
+</ol>
+{% if !v.excluded.is_empty() %}<h2>{{ ctx.tr.t("plan.excluded") }} ({{ v.excluded.len() }})</h2>
+<ul>{% for e in v.excluded %}<li><code>{{ e.subject }}</code>: {% for b in e.blockers %}{{ b }} {% endfor %}</li>{% endfor %}</ul>{% endif %}
+{% if let Some(r) = v.report %}<h2>{{ ctx.tr.t("plan.results") }}</h2>
+<ul>{% for a in r.actions %}<li>#{{ a.index }} {{ a.kind }}: {{ a.outcome.key }}</li>{% endfor %}</ul>
+<ul>{% for x in r.remaining %}<li>#{{ x.index }} {{ x.kind }}: {{ x.next_step }}</li>{% endfor %}</ul>{% endif %}
+{% if v.can_approve %}<p><a href="/plans/{{ v.id }}/confirm">{{ ctx.tr.t("command.review_and_approve") }}</a></p>{% endif %}
+{% if v.can_simulate %}<form method="post" action="/plans/{{ v.id }}/simulate"><input type="hidden" name="csrf_token" value="{{ ctx.chrome.csrf }}"><button type="submit">{{ ctx.tr.t("command.simulate") }}</button></form>{% endif %}
+{% if v.can_execute %}<form method="post" action="/plans/{{ v.id }}/execute"><input type="hidden" name="csrf_token" value="{{ ctx.chrome.csrf }}"><button type="submit">{{ ctx.tr.t("command.execute") }}</button></form>{% endif %}
+{% if v.can_discard %}<form method="post" action="/plans/{{ v.id }}/discard"><input type="hidden" name="csrf_token" value="{{ ctx.chrome.csrf }}"><button type="submit">{{ ctx.tr.t("command.discard") }}</button></form>{% endif %}
+</section>

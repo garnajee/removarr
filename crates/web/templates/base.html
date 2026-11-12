@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="{{ ctx.chrome.lang }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}removarr{% endblock %}</title>
+</head>
+<body>
+<header>
+<nav aria-label="{{ ctx.tr.t("nav.main") }}">
+<a href="/">{{ ctx.tr.t("nav.dashboard") }}</a>
+<a href="/ignored">{{ ctx.tr.t("nav.ignored") }}</a>
+<a href="/jobs">{{ ctx.tr.t("nav.jobs") }}</a>
+<a href="/auto">{{ ctx.tr.t("nav.auto") }}</a>
+<a href="/history">{{ ctx.tr.t("nav.history") }}</a>
+<a href="/stats">{{ ctx.tr.t("nav.stats") }}</a>
+<a href="/logs">{{ ctx.tr.t("nav.logs") }}</a>
+</nav>
+<nav aria-label="{{ ctx.tr.t("nav.issues") }}">
+{% for t in ctx.tabs() %}<a href="/issues/{{ t.slug }}">{{ t.label }}</a> {% endfor %}
+</nav>
+{% if ctx.chrome.dry_run %}<p role="status"><strong>{{ ctx.tr.t("mode.dry_run") }}</strong> {{ ctx.tr.t("mode.dry_run_banner") }}</p>{% endif %}
+<form method="post" action="/locale">
+<input type="hidden" name="csrf_token" value="{{ ctx.chrome.csrf }}">
+<label>{{ ctx.tr.t("locale.label") }} <select name="locale"><option value="en">English</option><option value="fr">Français</option></select></label>
+<button type="submit">{{ ctx.tr.t("locale.apply") }}</button>
+</form>
+</header>
+<main id="main">
+{% block content %}{% endblock %}
+</main>
+</body>
+</html>

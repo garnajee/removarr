@@ -1,0 +1,55 @@
+<section id="issues" aria-labelledby="issues-title">
+<h1 id="issues-title">{{ v.title }}</h1>
+{% if let Some(t) = v.snapshot_at %}<p>{{ ctx.tr.t("issues.snapshot_of") }} {{ t }}</p>{% endif %}
+{% if v.truncated %}<p role="status">{{ ctx.tr.t("issues.truncated") }}</p>{% endif %}
+<form method="get">
+<label>{{ ctx.tr.t("issues.search") }} <input type="search" name="q" value="{{ v.q }}" maxlength="200"></label>
+<label>{{ ctx.tr.t("issues.sort") }} <select name="sort">
+<option value="name"{% if v.sort == "name" %} selected{% endif %}>{{ ctx.tr.t("issues.col.name") }}</option>
+<option value="size"{% if v.sort == "size" %} selected{% endif %}>{{ ctx.tr.t("issues.col.size") }}</option>
+<option value="age"{% if v.sort == "age" %} selected{% endif %}>{{ ctx.tr.t("issues.col.age") }}</option>
+</select></label>
+<label>{{ ctx.tr.t("issues.dir") }} <select name="dir"><option value="asc"{% if v.dir == "asc" %} selected{% endif %}>asc</option><option value="desc"{% if v.dir == "desc" %} selected{% endif %}>desc</option></select></label>
+<label>{{ ctx.tr.t("issues.kind") }} <select name="kind">
+<option value="all"{% if v.kind == "all" %} selected{% endif %}>{{ ctx.tr.t("issues.kind.all") }}</option>
+<option value="folder"{% if v.kind == "folder" %} selected{% endif %}>{{ ctx.tr.t("issues.kind.folder") }}</option>
+<option value="file"{% if v.kind == "file" %} selected{% endif %}>{{ ctx.tr.t("issues.kind.file") }}</option>
+</select></label>
+<input type="hidden" name="hide_recent" value="0">
+<label><input type="checkbox" name="hide_recent" value="1"{% if v.hide_recent %} checked{% endif %}> {{ ctx.tr.t("issues.hide_recent") }} ({{ v.hide_recent_days }} d)</label>
+<button type="submit">{{ ctx.tr.t("issues.refresh") }}</button>
+</form>
+<p>{{ ctx.tr.t("issues.total") }}: {{ v.total_count }} ({{ v.total_size }})</p>
+<form method="post" action="{% if v.ignored_mode %}/issues/restore{% else %}/plans{% endif %}">
+<input type="hidden" name="csrf_token" value="{{ ctx.chrome.csrf }}">
+{% if let Some(c) = v.category %}<input type="hidden" name="category" value="{{ c }}">{% endif %}
+<table>
+<thead><tr><th scope="col">{{ ctx.tr.t("issues.select") }}</th><th scope="col">{{ ctx.tr.t("issues.col.name") }}</th><th scope="col">{{ ctx.tr.t("issues.col.kind") }}</th><th scope="col">{{ ctx.tr.t("issues.col.age") }}</th><th scope="col">{{ ctx.tr.t("issues.col.size") }}</th><th scope="col">{{ ctx.tr.t("issues.col.torrents") }}</th><th scope="col">{{ ctx.tr.t("issues.col.blockers") }}</th></tr></thead>
+<tbody>
+{% for r in v.rows %}<tr data-severity="{{ r.severity }}">
+<td><input type="checkbox" name="issue_ids" value="{{ r.id }}" aria-label="{{ r.name }}"></td>
+<td><a href="/issues/{{ r.category }}/{{ r.id }}">{{ r.name }}</a></td>
+<td>{{ r.kind }}</td><td>{{ r.age_days }}</td><td>{{ r.size }}</td><td>{{ r.torrents }}</td><td>{{ r.blockers }}</td>
+</tr>{% endfor %}
+</tbody>
+</table>
+{% if v.ignored_mode %}
+<button type="submit">{{ ctx.tr.t("command.restore") }}</button>
+{% else %}
+<label>{{ ctx.tr.t("issues.action") }} <select name="action">{% for a in v.actions %}<option value="{{ a.value }}">{{ a.label }}</option>{% endfor %}</select></label>
+<label><input type="checkbox" name="remove_torrent_tasks" value="1"> {{ ctx.tr.t("plan.remove_torrent_tasks") }}</label>
+<button type="submit" formaction="/plans/preview">{{ ctx.tr.t("command.preview") }}</button>
+<button type="submit">{{ ctx.tr.t("command.create_plan") }}</button>
+<button type="submit" formaction="/issues/selection-summary">{{ ctx.tr.t("command.selection_total") }}</button>
+<button type="submit" formaction="/issues/evaluate">{{ ctx.tr.t("command.evaluate") }}</button>
+<button type="submit" formaction="/issues/verify-content">{{ ctx.tr.t("command.verify_content") }}</button>
+<label>{{ ctx.tr.t("issues.ignore_reason") }} <input type="text" name="reason" maxlength="500"></label>
+<button type="submit" formaction="/issues/ignore">{{ ctx.tr.t("command.ignore") }}</button>
+{% endif %}
+</form>
+<nav aria-label="{{ ctx.tr.t("issues.pages") }}">
+{% if let Some(u) = v.prev_url %}<a href="{{ u }}">{{ ctx.tr.t("issues.prev") }}</a>{% endif %}
+<span>{{ v.page }} / {{ v.pages }}</span>
+{% if let Some(u) = v.next_url %}<a href="{{ u }}">{{ ctx.tr.t("issues.next") }}</a>{% endif %}
+</nav>
+</section>

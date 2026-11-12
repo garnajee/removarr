@@ -1,3 +1,6 @@
-//! Binary entry point. Startup wiring is implemented by later agents.
+//! Binary entry point: `removarr [serve | healthcheck]`.
 
-fn main() {}
+fn main() -> std::process::ExitCode {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    std::process::ExitCode::from(removarr::cli::main(&args))
+}

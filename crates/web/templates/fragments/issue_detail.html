@@ -1,0 +1,34 @@
+<section id="issue" aria-labelledby="issue-title">
+<h1 id="issue-title">{{ v.row.name }}</h1>
+<p>{{ v.category_label }} - {{ v.view.severity }} - {{ v.outcome }}</p>
+<dl>
+<dt>{{ ctx.tr.t("issues.col.kind") }}</dt><dd>{{ v.view.kind }}</dd>
+<dt>{{ ctx.tr.t("issues.col.age") }}</dt><dd>{{ v.view.age_days }}</dd>
+<dt>{{ ctx.tr.t("issues.col.size") }}</dt><dd>{{ v.view.size }}</dd>
+<dt>{{ ctx.tr.t("issues.col.torrents") }}</dt><dd>{{ v.view.torrents }}</dd>
+<dt>{{ ctx.tr.t("issues.first_seen") }}</dt><dd>{{ v.first_seen }}</dd>
+<dt>{{ ctx.tr.t("issues.completeness") }}</dt><dd>{{ v.row.completeness.state }}</dd>
+</dl>
+<h2>{{ ctx.tr.t("issues.paths") }}</h2>
+<ul>{% for p in v.row.paths %}<li><code>{{ p }}</code></li>{% endfor %}</ul>
+<h2>{{ ctx.tr.t("issues.inodes") }}</h2>
+<ul>{% for i in v.row.inodes %}<li><code>{{ i }}</code></li>{% endfor %}</ul>
+<h2>{{ ctx.tr.t("issues.col.blockers") }}</h2>
+<ul>{% for b in v.row.blockers %}<li>{{ b }}</li>{% endfor %}</ul>
+<h2>{{ ctx.tr.t("issues.evidence") }}</h2>
+<ul>{% for e in v.row.evidence %}<li>{{ e.kind }}: {{ e.summary }} ({{ e.observed_at_iso }}{% if !e.current %}, {{ ctx.tr.t("issues.dated") }}{% endif %})</li>{% endfor %}</ul>
+<form method="post" action="/plans">
+<input type="hidden" name="csrf_token" value="{{ ctx.chrome.csrf }}">
+<input type="hidden" name="category" value="{{ v.view.category }}">
+<input type="hidden" name="issue_ids" value="{{ v.view.id }}">
+<label>{{ ctx.tr.t("issues.action") }} <select name="action">{% for a in v.actions %}<option value="{{ a.value }}">{{ a.label }}</option>{% endfor %}</select></label>
+<button type="submit" formaction="/plans/preview">{{ ctx.tr.t("command.preview") }}</button>
+<button type="submit">{{ ctx.tr.t("command.create_plan") }}</button>
+</form>
+<form method="post" action="/issues/ignore">
+<input type="hidden" name="csrf_token" value="{{ ctx.chrome.csrf }}">
+<input type="hidden" name="issue_ids" value="{{ v.view.id }}">
+<label>{{ ctx.tr.t("issues.ignore_reason") }} <input type="text" name="reason" maxlength="500"></label>
+<button type="submit">{{ ctx.tr.t("command.ignore") }}</button>
+</form>
+</section>

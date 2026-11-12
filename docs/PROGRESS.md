@@ -37,10 +37,10 @@ Status values: `todo`, `running`, `done`, `blocked`.
 | 9 | `13-action-runner` stage B step 2 (tier 3) | done | 682 tests; IMPLEMENTED_TIER=T3; F03/F10 fixed; FixMode exempt from live-holder check (for CP2 review); T3-12 deferred to tier 5, T3-19 owned by 14; agent model switched to sonnet (user request) |
 | 10 | `14-job-runner` | done | 58 jobs tests; single execute lane, recover-before-execute, two-phase auto cycle, failed sets from journal; tier5 gate absent from production |
 | 11 | `15-reporting` | done | 40 tests; read-only SQL read model, gain kinds separated, CSV formula-neutralized, bounded sanitized logs, svg.rs geometry for web-ui reuse; RPT-05/08/09 not produced (deviation for CP3) |
-| 12 | `16-backend-api` | running | |
-| 13 | `17-auth-guard` | todo | |
-| 13 | `18-ux-design` | todo | |
-| 13 | `20-devops` | todo | |
+| 12 | `16-backend-api` | done | 878 tests; release build OK; live_mode() called once (app wiring); default guard refuses all protected routes until auth-guard; plan list/media/explorer/settings/charts/static assets left to web-ui |
+| 13 | `17-auth-guard` | running | |
+| 13 | `18-ux-design` | running | |
+| 13 | `20-devops` | running | |
 | 14 | `19-web-ui` | todo | |
 | 15 | `22-integration-tests` | todo | |
 | 16 | `23-e2e-perf` | todo | |
@@ -64,4 +64,4 @@ Status values: `todo`, `running`, `done`, `blocked`.
 
 ## Last quality gate
 
-After wave 11: fmt OK, clippy -D warnings OK, tests OK (838 passed, 1 ignored = opt-in real-ffprobe test). Safety greps OK (deleteFiles literal false only in qbit/control.rs; importMode copy literal). Toolchain: cargo/rustc 1.98.0 (Homebrew, no rustup), Docker 29.7.2, ffprobe available.
+After wave 12: fmt OK, clippy -D warnings OK, release build OK, tests OK (878 passed, 1 ignored = opt-in real-ffprobe test). Safety greps OK (deleteFiles literal false only in qbit/control.rs; importMode copy literal). Toolchain: cargo/rustc 1.98.0 (Homebrew, no rustup), Docker 29.7.2, ffprobe available.

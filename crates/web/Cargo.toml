@@ -26,6 +26,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+async-trait = { workspace = true }
 argon2 = { workspace = true }
 getrandom = { workspace = true }
 ipnet = { workspace = true }

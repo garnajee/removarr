@@ -1,0 +1,35 @@
+<section id="dashboard" aria-labelledby="dash-title">
+<h1 id="dash-title">{{ ctx.tr.t("nav.dashboard") }}</h1>
+<p role="status" data-urgency="{{ v.vm.urgency.label_key }}"><span aria-hidden="true">[{{ v.vm.urgency.icon }}]</span> <strong>{{ ctx.tr.t(v.vm.urgency.label_key) }}</strong></p>
+{% if !v.reasons.is_empty() %}<ul>{% for r in v.reasons %}<li>{{ r.0 }}{% if let Some(c) = r.1 %} ({{ c }}){% endif %}</li>{% endfor %}</ul>{% endif %}
+<dl>
+<dt>{{ ctx.tr.t("space.potential_not_guaranteed") }}</dt><dd>{{ v.potential }}</dd>
+<dt>{{ ctx.tr.t("space.shared") }}</dt><dd>{{ v.shared }}</dd>
+<dt>{{ ctx.tr.t("dashboard.last_scan") }}</dt><dd>{% if let Some(t) = v.last_scan %}{{ t }}{% else %}{{ ctx.tr.t("dashboard.never") }}{% endif %}</dd>
+<dt>{{ ctx.tr.t("dashboard.next_scan") }}</dt><dd>{% if let Some(t) = v.next_scan %}{{ t }}{% else %}-{% endif %}</dd>
+<dt>{{ ctx.tr.t("dashboard.recovery") }}</dt><dd>{{ ctx.tr.t(v.recovery_key) }}</dd>
+<dt>{{ ctx.tr.t("nav.auto") }}</dt><dd>{% if v.vm.auto.enabled %}{{ ctx.tr.t("auto.enabled") }}{% else %}{{ ctx.tr.t("auto.disabled") }}{% endif %}{% if let Some(r) = v.auto_paused %} - {{ ctx.tr.t("auto.paused") }}: {{ r }}{% endif %}</dd>
+</dl>
+<h2>{{ ctx.tr.t("dashboard.issues") }}</h2>
+<ul>
+{% for c in v.categories %}<li data-severity="{{ c.severity }}"><a href="/issues/{{ c.slug }}">{{ c.label }}</a>: {{ c.count }} ({{ c.size }}, {{ c.severity }})</li>{% endfor %}
+</ul>
+<h2>{{ ctx.tr.t("dashboard.services") }}</h2>
+<ul>
+{% for s in v.services %}<li>{{ s.name }}: {{ s.state }}{% if let Some(ver) = s.version %} ({{ ver }}){% endif %}{% if !s.current %} - {{ ctx.tr.t("dashboard.as_of_last_scan") }}{% endif %}</li>{% endfor %}
+</ul>
+<h2>{{ ctx.tr.t("nav.jobs") }}</h2>
+<ul>
+{% for j in v.jobs %}<li><a href="/jobs/{{ j.id }}">{{ j.label }}</a> {{ j.status }} {{ j.stage }}</li>{% endfor %}
+</ul>
+<form method="post" action="/scan"><input type="hidden" name="csrf_token" value="{{ ctx.chrome.csrf }}"><button type="submit">{{ ctx.tr.t("command.scan") }}</button></form>
+<form method="post" action="/services/qbittorrent/refresh"><input type="hidden" name="csrf_token" value="{{ ctx.chrome.csrf }}"><button type="submit">{{ ctx.tr.t("command.refresh") }} qbittorrent</button></form>
+<form method="post" action="/services/sonarr/refresh"><input type="hidden" name="csrf_token" value="{{ ctx.chrome.csrf }}"><button type="submit">{{ ctx.tr.t("command.refresh") }} sonarr</button></form>
+<form method="post" action="/services/radarr/refresh"><input type="hidden" name="csrf_token" value="{{ ctx.chrome.csrf }}"><button type="submit">{{ ctx.tr.t("command.refresh") }} radarr</button></form>
+<form method="post" action="/services/jellyfin/refresh"><input type="hidden" name="csrf_token" value="{{ ctx.chrome.csrf }}"><button type="submit">{{ ctx.tr.t("command.refresh") }} jellyfin</button></form>
+<form method="post" action="/services/sonarr/rescan"><input type="hidden" name="csrf_token" value="{{ ctx.chrome.csrf }}"><button type="submit">{{ ctx.tr.t("command.rescan") }} sonarr</button></form>
+<form method="post" action="/services/radarr/rescan"><input type="hidden" name="csrf_token" value="{{ ctx.chrome.csrf }}"><button type="submit">{{ ctx.tr.t("command.rescan") }} radarr</button></form>
+<form method="post" action="/services/jellyfin/rescan"><input type="hidden" name="csrf_token" value="{{ ctx.chrome.csrf }}"><button type="submit">{{ ctx.tr.t("command.rescan") }} jellyfin</button></form>
+{% if v.recovery_needs_manual %}<form method="post" action="/recovery/retry"><input type="hidden" name="csrf_token" value="{{ ctx.chrome.csrf }}"><button type="submit">{{ ctx.tr.t("command.retry_recovery") }}</button></form>{% endif %}
+<p><a href="/export/latest/json">JSON</a> <a href="/export/latest/csv">CSV</a> <a href="/export/latest/md">Markdown</a></p>
+</section>

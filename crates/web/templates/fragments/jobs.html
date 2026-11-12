@@ -1,0 +1,5 @@
+<section id="jobs" aria-labelledby="jobs-title">
+<h1 id="jobs-title">{{ ctx.tr.t("nav.jobs") }}</h1>
+{% if v.jobs.is_empty() %}<p>{{ ctx.tr.t("jobs.none") }}</p>{% endif %}
+<ul>{% for j in v.jobs %}<li><a href="/jobs/{{ j.id }}">{{ j.label }}</a> {{ j.status }} {{ j.stage }}</li>{% endfor %}</ul>
+</section>

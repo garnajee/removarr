@@ -1,0 +1,11 @@
+<section id="history" aria-labelledby="history-title">
+<h1 id="history-title">{{ ctx.tr.t("nav.history") }}</h1>
+{% if v.vm.unfinished_intents > 0 %}<p role="alert">{{ ctx.tr.t("history.unfinished") }}: {{ v.vm.unfinished_intents }}</p>{% endif %}
+<table>
+<thead><tr><th scope="col">{{ ctx.tr.t("history.at") }}</th><th scope="col">{{ ctx.tr.t("history.action") }}</th><th scope="col">{{ ctx.tr.t("history.target") }}</th><th scope="col">{{ ctx.tr.t("history.reason") }}</th><th scope="col">{{ ctx.tr.t("history.outcome") }}</th><th scope="col">{{ ctx.tr.t("history.freed") }}</th></tr></thead>
+<tbody>
+{% for r in v.vm.rows %}<tr><td>{{ r.at_iso }}</td><td><a href="/plans/{{ r.plan_id }}">{{ r.action_kind }}</a></td><td><code>{{ r.target }}</code></td><td>{{ r.reason.origin }}</td><td>{{ r.outcome.key }}</td><td>{{ r.attributable_bytes }}</td></tr>{% endfor %}
+</tbody>
+</table>
+<nav>{% if let Some(u) = v.prev_url %}<a href="{{ u }}">{{ ctx.tr.t("issues.prev") }}</a>{% endif %} {{ v.page }} {% if let Some(u) = v.next_url %}<a href="{{ u }}">{{ ctx.tr.t("issues.next") }}</a>{% endif %}</nav>
+</section>
