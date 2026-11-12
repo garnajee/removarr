@@ -23,4 +23,14 @@ async-trait = { workspace = true }
 
 [dev-dependencies]
 removarr-testkit = { workspace = true }
+# Test-only: real SQLite repositories for the persistent queue and restart tests (normal
+# dependencies stay domain + workflows, architecture 2.2).
+removarr-storage = { workspace = true }
+tempfile = { workspace = true }
+# Test-only: the action runner's lab (`real_runner.rs`) drives the real runner through the
+# `tier5-test-gate` feature while `IMPLEMENTED_TIER` stays T4. No production build enables it.
+removarr-workflows = { workspace = true, features = ["tier5-test-gate"] }
+removarr-fs = { workspace = true }
+removarr-config = { workspace = true, features = ["test-support"] }
+removarr-matching = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }

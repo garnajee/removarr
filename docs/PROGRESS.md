@@ -35,7 +35,7 @@ Status values: `todo`, `running`, `done`, `blocked`.
 | 9 | `12-plan-engine` tier-5 policy requirements | done | 727 tests; auto_plan_defects, per-action subjects, planner-built queue removal executed end to end |
 | 9 | `13-action-runner` stage C (CP2T4 fixes + tier 4) | done | 706 tests; IMPLEMENTED_TIER=T4; automatic plans refused; domain trait addition FsMutator::remove_media_file (default refuse) flagged for CP2-tier5 |
 | 9 | `13-action-runner` stage B step 2 (tier 3) | done | 682 tests; IMPLEMENTED_TIER=T3; F03/F10 fixed; FixMode exempt from live-holder check (for CP2 review); T3-12 deferred to tier 5, T3-19 owned by 14; agent model switched to sonnet (user request) |
-| 10 | `14-job-runner` | running | incl. tier-5 parts owned by 14 (two-phase cycle, failed sets, auto_paused, locks, recovery) |
+| 10 | `14-job-runner` | done | 58 jobs tests; single execute lane, recover-before-execute, two-phase auto cycle, failed sets from journal; tier5 gate absent from production |
 | 11 | `15-reporting` | todo | |
 | 12 | `16-backend-api` | todo | |
 | 13 | `17-auth-guard` | todo | |
@@ -48,7 +48,7 @@ Status values: `todo`, `running`, `done`, `blocked`.
 | 18 | `25-sec-audit` | todo | |
 | 19 | `26-sec-fix` | todo | |
 | 20 | `27-release-gate` | todo | |
-| continuous | `21-unit-tests` (from wave 3) | running | pass 1 done (domain, 11 proptests, parity-matrix.md); pass 2 done (+14 tests); pass 3 done (+18 tests; found qbit fail-closed gap, fixed by 08); pass 4 done (+13 tests, no bugs); pass 5 running (workflows issues/plans/actions) |
+| continuous | `21-unit-tests` (from wave 3) | running | pass 1 done (domain, 11 proptests, parity-matrix.md); pass 2 done (+14 tests); pass 3 done (+18 tests; found qbit fail-closed gap, fixed by 08); pass 4 done (+13 tests, no bugs); pass 5 done (+4 tests, no bugs, matrix re-checked) |
 
 ## Checkpoint reviews
 
@@ -58,9 +58,9 @@ Status values: `todo`, `running`, `done`, `blocked`.
 | CP2 tier 3 (deletions) | PASS with condition (iter 1): fix F01-F04 before raising IMPLEMENTED_TIER to T3; CP2-tier4 re-checks them | 1/3 | `docs/reviews/cp2-tier3.md` |
 | CP2 tier 4 (ARR replacement) | PASS with condition (iter 1): fix CP2T4-F01 (runner must refuse automatic plans until tier 5) first; CP2-tier5 re-checks it + T4-01..T4-20 | 1/3 | `docs/reviews/cp2-tier4.md` |
 | CP2 tier 5 (automatic mode) | PASS with condition (iter 1): build T5-01..T5-22 across 13/12/14, keep IMPLEMENTED_TIER=T4 until a dedicated final CP2-tier5 review (also checks CP2T5-F01) | 1/3 |
-| CP2 tier 5 final (before raising IMPLEMENTED_TIER to T5) | pending | 0/3 | `docs/reviews/cp2-tier5-final.md` | `docs/reviews/cp2-tier5.md` |
+| CP2 tier 5 final (before raising IMPLEMENTED_TIER to T5) | running | 1/3 | `docs/reviews/cp2-tier5-final.md` | `docs/reviews/cp2-tier5.md` |
 | CP3 release gate | pending | — | `docs/release-readiness.md` |
 
 ## Last quality gate
 
-After wave 9 (tier-5 policy): fmt OK, clippy -D warnings OK, tests OK (727 passed, 1 ignored = opt-in real-ffprobe test). Safety greps OK (deleteFiles literal false only in qbit/control.rs; importMode copy literal). Toolchain: cargo/rustc 1.98.0 (Homebrew, no rustup), Docker 29.7.2, ffprobe available.
+After wave 10: fmt OK, clippy -D warnings OK, tests OK (789 passed, 1 ignored = opt-in real-ffprobe test). Safety greps OK (deleteFiles literal false only in qbit/control.rs; importMode copy literal). Toolchain: cargo/rustc 1.98.0 (Homebrew, no rustup), Docker 29.7.2, ffprobe available.

@@ -69,3 +69,15 @@ Findings (source not touched):
 Not covered, for `integration-tests`: real ffprobe (the one ignored test `real_ffprobe_accepts_the_argument_set` needs the binary), real Sonarr/Radarr (fake only; wire shapes follow the V10 fixtures), plan-engine wiring of matching blockers and ARR snapshot gating.
 
 Commands: `cargo test -p removarr-matching -p removarr-arr` pass, 1 ignored (real ffprobe), slowest binary 1.6 s (`ffprobe_fake`), new files 0.4 s; `cargo clippy -p removarr-matching -p removarr-arr --all-targets -- -D warnings` clean; rustfmt applied to both new files.
+
+## Pass 5 (after waves 7-9: workflows)
+
+Review: the 27 workflows test files (issues, plans, actions) are deterministic (hand-built observations, fake qBittorrent/ARR/Jellyfin, tempdirs, per-test SQLite, fake clock), assert public behavior, and show no weakened assertions. Every priority invariant already had direct tests (samples, media-root, fail-closed scans and unmapped torrents, hash tamper and expiry, dry-run zero mutations, `deleteFiles=false`, crash recovery, automatic plans refused at T4).
+
+Added `crates/workflows/tests/parity_plan_safety.rs` (4 tests, existing helpers, no Cargo/src edits): no plan from any issue and action pair targets the media root; bulk verdicts equal one-by-one verdicts for every category/action (empty-parent cleanup compared separately because it depends on the union of the selection); ignore list holds in bulk selection and in `auto_requests`; plan hashes are stable across rebuilds and change with the selection.
+
+Matrix: statuses re-checked, header and pending-with-owner list updated. Bugs found: none. Observation: `RemoveEmptyParent` appears only when the selection empties the directory, so a bulk plan can hold one the unit plans lack; this is by design.
+
+Commands: `cargo test -p removarr-workflows` all pass, 0 ignored (about 3 s); `cargo clippy -p removarr-workflows --all-targets -- -D warnings` pass; rustfmt on the new file.
+
+Uncovered for `integration-tests`: live fs mutator with real qBittorrent loopback fake end to end; job-runner automatic cycle.
