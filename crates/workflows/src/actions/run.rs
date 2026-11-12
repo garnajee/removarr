@@ -94,6 +94,43 @@ pub async fn execute(
     cancel: &CancelFlag,
     reporter: &Reporter,
 ) -> Result<ExecutionReport, PortError> {
+    execute_gated(
+        ports,
+        mutators,
+        settings,
+        ticket,
+        cancel,
+        reporter,
+        IMPLEMENTED_TIER,
+    )
+    .await
+}
+
+/// Test-only entry with an explicit tier gate, so the tier-5 runner path is exercised without
+/// raising `IMPLEMENTED_TIER`. It exists only under the `tier5-test-gate` feature, which this
+/// crate enables solely through its own dev-dependency: no production build contains it.
+#[cfg(feature = "tier5-test-gate")]
+pub async fn execute_with_gate(
+    ports: &ActionPorts,
+    mutators: &Mutators,
+    settings: &ActionSettings,
+    ticket: ExecutionTicket,
+    cancel: &CancelFlag,
+    reporter: &Reporter,
+    gate: removarr_domain::policy::RiskTier,
+) -> Result<ExecutionReport, PortError> {
+    execute_gated(ports, mutators, settings, ticket, cancel, reporter, gate).await
+}
+
+async fn execute_gated(
+    ports: &ActionPorts,
+    mutators: &Mutators,
+    settings: &ActionSettings,
+    ticket: ExecutionTicket,
+    cancel: &CancelFlag,
+    reporter: &Reporter,
+    gate: removarr_domain::policy::RiskTier,
+) -> Result<ExecutionReport, PortError> {
     let plan = ticket.plan.plan();
     let simulated = ticket.simulate || mutators.mode == PlanMode::DryRun;
     if !ticket.simulate {
@@ -157,11 +194,34 @@ pub async fn execute(
     let unsupported: Vec<&removarr_domain::plan::PlannedAction> = plan
         .actions
         .iter()
-        .filter(|a| action_tier(a.kind, plan.origin) > IMPLEMENTED_TIER || !supported(a.kind))
+        .filter(|a| action_tier(a.kind, plan.origin) > gate || !supported(a.kind))
         .collect();
     let families: BTreeSet<Option<Family>> = plan.actions.iter().map(|a| family(a.kind)).collect();
     let mixed = families.len() > 1;
-    let defects = mandatory_defects(plan, settings);
+    let mut defects: BTreeMap<u32, Vec<Blocker>> = mandatory_defects(plan, settings)
+        .into_iter()
+        .map(|(i, b)| (i, vec![b]))
+        .collect();
+    // Tier 5 (reachable only through a raised gate): the automatic checks, pure then live.
+    if plan.origin == removarr_domain::plan::PlanOrigin::AutoPolicy
+        && unsupported.is_empty()
+        && !mixed
+        && defects.is_empty()
+    {
+        let now = ports.clock.now();
+        defects = super::auto::automatic_defects(
+            plan,
+            &ticket.plan,
+            ticket.approval.as_ref(),
+            settings,
+            now,
+            simulated,
+        );
+        if defects.is_empty() {
+            let actions: Vec<&removarr_domain::plan::PlannedAction> = plan.actions.iter().collect();
+            defects = ctx.auto_live_checks(&actions).await;
+        }
+    }
     if !unsupported.is_empty() || mixed || !defects.is_empty() {
         let outcomes: Vec<(u32, ActionOutcome)> = plan
             .actions
@@ -171,14 +231,14 @@ pub async fn execute(
                     return (
                         a.index,
                         ActionOutcome::NotExecuted {
-                            blockers: vec![b.clone()],
+                            blockers: b.clone(),
                         },
                     );
                 }
                 let detail = if unsupported.iter().any(|u| u.index == a.index) {
                     format!(
                         "{:?} is not executable in this build (implemented tier {:?})",
-                        a.kind, IMPLEMENTED_TIER
+                        a.kind, gate
                     )
                 } else if mixed {
                     "the plan mixes action families; one family per plan".to_string()
@@ -302,7 +362,11 @@ fn mandatory_defects(
                     format!("capability {} is disabled", c.as_str()),
                 ),
             );
-        } else if let Some(h) = a.torrent_hashes.iter().find(|h| {
+        } else if let Some(h) = a
+            .torrent_hashes
+            .iter()
+            .filter(|_| crate::plans::build::pins_torrents(a.kind))
+            .find(|h| {
             !a.preconditions.iter().any(|p| {
                 matches!(p, removarr_domain::plan::Precondition::TorrentWantedFiles { hash, .. } if hash == *h)
             })

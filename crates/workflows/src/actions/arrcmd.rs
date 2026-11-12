@@ -20,7 +20,7 @@ use removarr_domain::session::ServiceKind;
 use serde::{Deserialize, Serialize};
 
 use super::batch::{Batch, aborted, not_executed};
-use super::journal::{Ctx, StepRun, json};
+use super::journal::{Ctx, StepRun, command_may_have_run, json};
 use super::revalidate::LiveReads;
 
 /// `target` payload of an `ArrGrab` intent; `observed` is [`GrabObserved`].
@@ -93,6 +93,69 @@ pub(crate) async fn read_monitored(
         ));
     }
     Ok(mine.iter().any(|e| e.monitored))
+}
+
+impl Ctx<'_> {
+    /// `Some(reason)` when INV-39 cannot be proved for `item` right now.
+    async fn queue_item_proof(&self, item: &ArrQueueItem, service: ArrService) -> Option<String> {
+        use removarr_domain::fs::EntryKind;
+        use removarr_domain::path::{RootKind, RootedPath};
+        let (Some(media), Some(hash)) = (&item.media, &item.download_id) else {
+            return Some("the item names no media or download: no proof the import is done".into());
+        };
+        let Some(qbit) = &self.ports.qbit else {
+            return Some("qBittorrent is not configured: the import cannot be proved".into());
+        };
+        let files = match qbit.files(hash).await {
+            Ok(f) => f,
+            Err(e) => return Some(format!("the torrent's files cannot be read: {}", e.detail)),
+        };
+        let candidates: Vec<RootedPath> = files
+            .iter()
+            .filter(|f| f.is_wanted())
+            .flat_map(|f| f.candidates.iter())
+            .filter_map(|c| c.as_rooted().cloned())
+            .filter(|p| p.root.kind() == RootKind::Completed)
+            .collect();
+        if candidates.is_empty() {
+            return Some("no wanted completed file proves the import".into());
+        }
+        let current = match self.arr_current_files(service, media).await {
+            Ok(m) => m,
+            Err(e) => return Some(format!("ARR's current files cannot be read: {}", e.detail)),
+        };
+        let mut phys = BTreeSet::new();
+        for (ep, p) in &current {
+            if !media.episode_ids.is_empty() && !media.episode_ids.contains(ep) {
+                continue;
+            }
+            match self.stat_path(p).await {
+                Ok(Some(s)) if s.kind == EntryKind::File => {
+                    phys.insert(s.phys());
+                }
+                _ => return Some(format!("ARR's current file {p} is not a readable file")),
+            }
+        }
+        if phys.is_empty() {
+            return Some("ARR has no current file for the media".into());
+        }
+        let mut live = LiveReads::default();
+        for c in &candidates {
+            match self.stat_path(c).await {
+                Ok(Some(s)) if s.kind == EntryKind::File && phys.contains(&s.phys()) => {}
+                _ => {
+                    return Some(format!(
+                        "{c} does not share an inode with ARR's current file"
+                    ));
+                }
+            }
+            match self.inventory(&mut live, &c.root).await {
+                Ok(Some(inv)) if inv.finished && !inv.has_issue_under(&c.rel) => {}
+                _ => return Some(format!("a scan or permission finding lies at {c}")),
+            }
+        }
+        None
+    }
 }
 
 fn refuse(
@@ -221,6 +284,9 @@ impl Ctx<'_> {
                         Err(e) if e.class == ErrorClass::StateChanged => Err(e),
                         Err(e) => match new_queue_item(&*rd, &m, &qb).await {
                             Some(_) => Ok(()),
+                            // CP2T5-F03: possibly accepted; the queue is polled afterwards and
+                            // an unobserved grab stays `ExecutedUnverified`, never `Failed`.
+                            None if command_may_have_run(&e.class) => Ok(()),
                             None => Err(e),
                         },
                     }
@@ -300,30 +366,12 @@ impl Ctx<'_> {
                 format!("queue item {id} may be an import in progress"),
             ));
         }
-        // Proven stale: its download is not a live torrent (fail closed without qBittorrent).
-        if let Some(h) = &item.download_id {
-            let listed = match &self.ports.qbit {
-                Some(q) => q.torrents().await.map(|l| l.iter().any(|t| &t.hash == h)),
-                None => Err(PortError::new(
-                    ErrorClass::Config,
-                    "qBittorrent is not configured",
-                )),
-            };
-            match listed {
-                Ok(false) => {}
-                Ok(true) => {
-                    return Ok(refuse(
-                        BlockerCode::QueueItemHidesError,
-                        format!("queue item {id} still points to a live download"),
-                    ));
-                }
-                Err(e) => {
-                    return Ok(refuse(
-                        BlockerCode::ServiceUnavailable(ServiceKind::Qbittorrent),
-                        format!("staleness could not be proven: {}", e.detail),
-                    ));
-                }
-            }
+        // INV-39 re-proved from fresh reads (CP2T5-F04): the import is already correct. Every
+        // wanted completed file of the item's torrent shares its inode with ARR's current file
+        // of the media, and no scan or permission finding lies at it. An item without a
+        // download id or media, or whose torrent cannot be read, has no proof and stays.
+        if let Some(bl) = self.queue_item_proof(&item, service).await {
+            return Ok(refuse(BlockerCode::QueueItemHidesError, bl));
         }
         let cmd = self.arr_commander(service);
         let rd = reader.clone();

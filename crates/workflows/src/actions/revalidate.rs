@@ -263,7 +263,7 @@ impl Ctx<'_> {
         Ok(live.session.clone().unwrap_or(None))
     }
 
-    async fn inventory(
+    pub(crate) async fn inventory(
         &self,
         live: &mut LiveReads,
         root: &RootId,

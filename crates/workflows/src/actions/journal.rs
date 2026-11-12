@@ -170,3 +170,24 @@ impl Ctx<'_> {
 pub(crate) fn json<T: Serialize>(v: &T) -> serde_json::Value {
     serde_json::to_value(v).unwrap_or(serde_json::Value::Null)
 }
+
+/// CP2T5-F03: whether a mutating command that errored may still have been accepted. Only a
+/// definitive refusal before anything was sent (configuration, validation, capability,
+/// authorisation, a stale token) rules it out; a transport or internal error does not: ARR
+/// commands are asynchronous and may run a moment later.
+pub(crate) fn command_may_have_run(class: &ErrorClass) -> bool {
+    !matches!(
+        class,
+        ErrorClass::Config
+            | ErrorClass::Validation
+            | ErrorClass::NotFound
+            | ErrorClass::Unauthorized
+            | ErrorClass::Forbidden
+            | ErrorClass::RateLimited
+            | ErrorClass::StateChanged
+            | ErrorClass::Rejected
+            | ErrorClass::CapabilityDisabled
+            | ErrorClass::Confinement
+            | ErrorClass::Cancelled
+    )
+}

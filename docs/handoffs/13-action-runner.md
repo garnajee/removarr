@@ -393,7 +393,7 @@ media roots. `ActionSettings` gained `capabilities` (callers that build it: only
 * The tier-4 tests use `actions_common/arrfake.rs`, a port-level fake that models the V10 import
   effects (hardlink, copy, move), recycle bin and hardlink setting on real temporary directories.
   The testkit HTTP fake needs the real `removarr-arr` connector, path mapping and a bridge; the
-  connector keeps its own tests. An integration test through the HTTP fake is for 17.
+  connector keeps its own tests. An integration test through the HTTP fake is for 22 (`integration-tests`; CP2T5-F06).
 * `AddedCost` bytes are the new file's size (the signature has no allocated size).
 * `FsRemoveFile` is the journal step of `DeleteMediaFile` (no new step variant); the intent
   target is the media path.
@@ -407,3 +407,64 @@ media roots. `ActionSettings` gained `capabilities` (callers that build it: only
 * `cargo clippy --workspace --all-targets -- -D warnings`: pass.
 * `cargo test --workspace`: pass, 706 passed, 0 failed, 1 ignored (opt-in ffprobe).
 * One `"importMode": "copy"` literal, one `("deleteFiles", "false")` literal; no `Command` in the runner or mutator.
+
+
+## Stage D (CP2-tier5 fixes + runner-side tier 5)
+
+Review: `docs/reviews/cp2-tier5.md` (PASS with one condition). `IMPLEMENTED_TIER` stays **T4**:
+the production `execute` still refuses every `AutoPolicy` plan before any intent. The runner-side
+tier-5 code is complete and tested but unreachable for real automatic plans. Nothing committed.
+
+**Test-only gate mechanism.** `execute_with_gate(.., gate)` and `automatic_defects_for_test`
+exist only under the cargo feature `tier5-test-gate` of `removarr-workflows`. The feature is
+enabled solely by the crate's own dev-dependency (`removarr-workflows = { path = ".", features =
+["tier5-test-gate"] }`): `cargo tree -p removarr -e normal,features` shows no `tier5-test-gate`,
+so no production build contains the entry points. `execute` is `execute_gated(.., IMPLEMENTED_TIER)`.
+
+New: `actions/auto.rs` (automatic checks), `ActionSettings.auto_min_age_hours`,
+`ActionPorts.ignores`. One-word edit outside my ownership: `plans/mod.rs` `mod build` ->
+`pub(crate) mod build`, so the runner shares `build::pins_torrents` (F01) instead of copying it.
+
+### Per-finding status
+
+| ID | Status | What changed | Test (`actions_stage_d.rs` unless noted) |
+|---|---|---|---|
+| F01 | fixed | `mandatory_defects` filters on `plans::build::pins_torrents(kind)`: queue removals need no wanted-file pin. The queue-removal test is hand-built with the planner's shape (download id in `torrent_hashes`, no pin): the planner needs a full `arr_queue` issue to build one, which is for the integration suite (22). | `f01_a_queue_removal_naming_a_download_id_needs_no_pin_but_a_torrent_action_does` |
+| F02 | fixed | After any halted import (a moved source included) every `DeleteMediaFile` is refused, even behind another media's verified import. | `f02_after_a_moved_source_no_old_media_file_is_deleted_not_even_for_another_media` |
+| F03 | fixed | `command_may_have_run(class)`: a transport/internal error on `manual_import` or grab with an unchanged fingerprint/queue is recorded as `Done {state: "unknown"}` (import: hashes marked modified -> recheck), outcome `ExecutedUnverified`; only definitive refusals (config, validation, capability, stale token...) stay `Failed`. Recovery: `Failed` with a may-have-run class is "possibly executed", and the import arm re-reads ARR's fingerprint. | `f03_an_import_or_grab_that_errors_is_possibly_executed_never_untouched_failed` (import, definitive refusal, grab, recovery of a transport-failed result) |
+| F04 | fixed | Queue removal re-proves INV-39 at execution: item names media and download id, the torrent's wanted completed files each share an inode with ARR's fresh current file, no scan/permission finding at them; no shortcut for a missing id or unreadable torrent; the "live torrent" refusal is dropped (the canonical stale case is a seeding cross-seed). | `actions_tier4.rs::t4_16_*` (rewritten), crash and simulation tests use `Lab::t4_proven_queue` |
+| F05 | fixed | `delete_old` runs `revalidate_fs_only` (holders, scan errors, signature with `nlink`) right before the intent; `media_delete_item` refuses samples. | `f05_old_media_deletions_are_revalidated_right_before_they_run_and_samples_are_refused` |
+| F06 | doc | HTTP-level checks (`fake_arr` rejects non-copy, move test, loopback simulation guard) belong to owner **22**. `docs/PROGRESS.md` has no row to edit (grep found none). | - |
+| F07 | doc | `AddedCost` bytes are the logical size, an **estimate** (the signature has no allocated size); reporting must label it. | - |
+| F08 | fixed | Multi-episode replacement: all hardlinked verifies and frees both old files; one copied -> `ExecutedUnverified`, no deletion; one moved -> `FailedNeedsReview`, deletions cancelled, torrent stopped. The ARR fake now upgrades away only the files of the episodes it imports. | `t4_09_a_season_replacement_is_all_or_nothing_per_unit` |
+
+### Runner-side tier-5 requirements owned by 13 (`actions_tier5.rs`)
+
+| Req. | Status | Test |
+|---|---|---|
+| T5-01 gate + kind allowlist | production gate unchanged (T4); the runner refuses every kind outside `is_auto_eligible` in an `AutoPolicy` plan on its own | `t5_01_production_gate_still_refuses_every_automatic_plan_and_the_raised_gate_runs_them`, `t5_18_no_manual_only_kind_runs_in_an_automatic_plan` (every non-eligible kind, on an unsealed copy through `automatic_defects_for_test`) |
+| T5-03 approval | only an `Approver::AutoPolicy` approval of exactly the plan hash; `approve_auto` re-run at execution (expiry, evidence, samples, unrecoverable) | `t5_03_t5_04_t5_13_approval_evidence_and_samples_are_checked_by_the_runner` |
+| T5-04 evidence | deletions need `ArrValidatedReplacement`, consolidations `NameSize`/`Sampled`/`Full`; `RemoveTorrentTask` needs the `AutoRemoveEmptyTorrents` capability (A8) in the runner | same test, `t5_05_*` |
+| T5-05 CP1-F02 at execution | ARR's fresh current file is the pinned replacement (Mapped, regular, planned size), shares no inode with a target, and the re-read preview still rejects each deleted completed file; ARR down fails closed | `t5_05_the_arr_replacement_and_a_re_read_preview_are_checked_at_execution` |
+| T5-06 minimum age | every pinned entry older than `auto_min_age_hours` at execution | `t5_06_a_recent_entry_is_never_executed` |
+| T5-07 perimeter | latest session `Complete`, every touched root `is_clean()` (not only around the path), qBittorrent reachable | `t5_07_the_whole_root_perimeter_is_checked_not_only_around_the_path` |
+| T5-08 stop at first uncertainty (runner level) | an automatic batch stops after a failed step, a partial removal or a step that errored (new) | `t5_08_an_automatic_batch_stops_at_the_first_uncertainty` |
+| T5-09 ignore list | re-read from `ActionPorts.ignores` at execution (subjects: rooted paths of every pinned entry, the consolidation pair, the torrent); unavailable -> refused | `t5_09_the_ignore_list_is_re_read_at_execution` |
+| T5-13 samples | refused (`approve_auto` and the runner) | `t5_13_samples_are_never_automatic` |
+| T5-15 guards | automatic simulations on the recording set and in a live process: zero fs/qBittorrent/ARR/Jellyfin calls; every refusal asserts zero mutations | `t5_15_automatic_simulations_mutate_nothing_in_either_process`, `untouched()` in every test |
+| T5-21 unknown outcome | ARR commands: F03; qBittorrent stop/start/recheck were already journaled with observed results and left-stopped reporting | `f03_*`, tier-3 tests |
+
+Not mine (T5-02, T5-10, T5-11, T5-12, T5-14 runner part is unchanged and covered by tier 3, T5-16, T5-17 cycle parts, T5-19).
+
+### What 12 and 14 still owe for tier 5
+
+* **12 (plan-engine):** tighten `approve_auto` (or the request) so that deletions require `ArrValidatedReplacement` and companions are approvable only with their parents (T5-04); per-action subject keys if the ignore re-check should not infer them from paths; an executed planner-built `ArrRemoveQueueItem` integration case (F01, with 22).
+* **14 (job-runner):** `auto_mode` read once, `auto_paused` persistence and `POST /auto/resume` (T5-02); `AutoContext.failed_paths`/`failed_subjects` from the journal (T5-10, T3-12); the two-phase cycle with rescan only of mutated roots, abort on a dirty rescan, dry-run cycle simulated (T5-11); scheduling, exclusive locks, `recover` before every execute and after any `Err`, cancellation bridge (T5-12, T3-19); stop the cycle and set `auto_paused` on any outcome other than `Verified`/`NotExecuted`-by-revalidation, any left-stopped torrent, any recovery need (T5-08); crash points in the cycle (T5-16); fill `ActionSettings.capabilities`, `auto_min_age_hours`, `ActionPorts.ignores`; reporting of `Approver::AutoPolicy` (T5-19).
+* **22:** HTTP-level import-mode/move checks and the loopback simulation guard (F06).
+
+### Commands run and results (host target, macOS, rustc 1.98)
+
+* `cargo fmt --all --check`: pass.
+* `cargo clippy --workspace --all-targets -- -D warnings`: pass.
+* `cargo test --workspace`: pass, 721 passed, 0 failed, 1 ignored (opt-in ffprobe).
+* Note: an earlier wrapper in this stage swallowed compiler errors (`timeout` is not installed on macOS); every result above comes from the final plain runs.

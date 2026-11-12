@@ -31,6 +31,7 @@
 //! recording adapters: `execute` swaps them in before the context exists (CP2T3-F04).
 
 mod arrcmd;
+mod auto;
 mod batch;
 mod consolidate;
 mod delete;
@@ -58,6 +59,8 @@ use removarr_domain::ports::{
 };
 use removarr_matching::proof::ContentVerifier;
 
+#[cfg(feature = "tier5-test-gate")]
+pub use auto::automatic_defects_for_test;
 pub use dry_run::{
     CallCounter, Mutators, RecordingArrCommands, RecordingFsMutator, RecordingJellyfinCommands,
     RecordingQbitControl, RecordingSet,
@@ -65,6 +68,8 @@ pub use dry_run::{
 pub use events::{ActionEvent, ActionProgress, EventSink, Reporter};
 pub use qbit::{LeftStoppedReason, RestorePlan, plan_restore};
 pub use recovery::{RecoveredPlan, RecoveryReport, recover};
+#[cfg(feature = "tier5-test-gate")]
+pub use run::execute_with_gate;
 pub use run::{ActionResult, ExecutionReport, execute};
 
 /// Highest risk tier this build executes (architecture 6.7, 13.1). Raised only after the
@@ -135,6 +140,9 @@ pub struct ActionPorts {
     pub jellyfin: Option<Arc<dyn JellyfinRead>>,
     pub clock: Arc<dyn Clock>,
     pub ids: Arc<dyn IdGen>,
+    /// The ignore list, re-read at execution of an automatic plan (T5-09). `None` makes an
+    /// automatic plan refuse (fail closed).
+    pub ignores: Option<Arc<dyn removarr_domain::ports::IgnoreStore>>,
 }
 
 impl std::fmt::Debug for ActionPorts {
@@ -156,6 +164,8 @@ pub struct ActionSettings {
     /// checks them again, CP2T4-F05).
     pub capabilities: std::collections::BTreeSet<removarr_domain::policy::Capability>,
     /// `thresholds.recheck_timeout_seconds`.
+    /// `thresholds.auto_min_age_hours` (A3), re-checked at execution of an automatic plan.
+    pub auto_min_age_hours: u32,
     pub recheck_timeout: Duration,
     /// Poll interval of the recheck (architecture: 2 s).
     pub recheck_interval: Duration,

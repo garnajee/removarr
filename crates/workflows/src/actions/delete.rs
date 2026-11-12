@@ -286,6 +286,10 @@ impl Ctx<'_> {
             match result {
                 Mutation::Done(err) => {
                     done.insert(it.action.index);
+                    if auto && err.is_some() {
+                        // A step that reported an error is an uncertainty: stop here.
+                        abort = Some("automatic plan stopped at the first failure".into());
+                    }
                     mutated.push((it.action, err, false));
                 }
                 Mutation::Simulated => {

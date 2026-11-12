@@ -31,8 +31,8 @@ Status values: `todo`, `running`, `done`, `blocked`.
 | 9 | `13-action-runner` | running | stage A done (tiers 1-2, 634 tests); CP2-tier3 PASS w/ condition; stage B step 1 done (F01, F02, F04-F14 fixed, 647 tests); F03 needs domain patch 3; tier 3 pending |
 | 9 | `03-domain-model` patch 3 (TorrentWantedFiles precondition, ChangedSincePlanning/Interrupted blocker codes) | done | 649 tests; golden hash unchanged |
 | 9 | `12-plan-engine` emit TorrentWantedFiles | done | 651 tests; StaleReason::WantedFilesChanged |
-| 9 | `13-action-runner` stage D (CP2T5 fixes + runner-side T5, gate stays T4) | running | |
-| 9 | `12-plan-engine` tier-5 policy requirements | todo | |
+| 9 | `13-action-runner` stage D (CP2T5 fixes + runner-side T5, gate stays T4) | done | 721 tests; tier5-test-gate feature absent from production tree; one-word visibility change in plans/mod.rs |
+| 9 | `12-plan-engine` tier-5 policy requirements | running | |
 | 9 | `13-action-runner` stage C (CP2T4 fixes + tier 4) | done | 706 tests; IMPLEMENTED_TIER=T4; automatic plans refused; domain trait addition FsMutator::remove_media_file (default refuse) flagged for CP2-tier5 |
 | 9 | `13-action-runner` stage B step 2 (tier 3) | done | 682 tests; IMPLEMENTED_TIER=T3; F03/F10 fixed; FixMode exempt from live-holder check (for CP2 review); T3-12 deferred to tier 5, T3-19 owned by 14; agent model switched to sonnet (user request) |
 | 10 | `14-job-runner` | todo | |
@@ -63,4 +63,4 @@ Status values: `todo`, `running`, `done`, `blocked`.
 
 ## Last quality gate
 
-After wave 9 tier 4: fmt OK, clippy -D warnings OK, tests OK (706 passed, 1 ignored = opt-in real-ffprobe test). Safety greps OK (deleteFiles literal false only in qbit/control.rs; importMode copy literal). Toolchain: cargo/rustc 1.98.0 (Homebrew, no rustup), Docker 29.7.2, ffprobe available.
+After wave 9 stage D: fmt OK, clippy -D warnings OK, tests OK (721 passed, 1 ignored = opt-in real-ffprobe test). Safety greps OK (deleteFiles literal false only in qbit/control.rs; importMode copy literal). Toolchain: cargo/rustc 1.98.0 (Homebrew, no rustup), Docker 29.7.2, ffprobe available.

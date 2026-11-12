@@ -1014,6 +1014,12 @@ impl Lab {
             .await;
     }
 
+    /// A third stored session (after `store_observation_again`).
+    pub async fn store_observation_third(&self) {
+        self.store_session(SessionId::new(RawUuid::from_u128(9)))
+            .await;
+    }
+
     async fn store_session(&self, id: SessionId) {
         let ok = |k: ServiceKind| ServiceStatus {
             service: k,
@@ -1605,6 +1611,7 @@ impl Lab {
             jellyfin: Some(Arc::new(JellyfinReadFake)),
             clock: self.clock.clone(),
             ids: self.ids.clone(),
+            ignores: Some(Arc::new(self.repos.ignores.clone())),
         }
     }
 
@@ -1612,6 +1619,7 @@ impl Lab {
         ActionSettings {
             config_fingerprint: CFG.into(),
             capabilities: self.capabilities.lock().unwrap().clone(),
+            auto_min_age_hours: 48,
             recheck_timeout: Duration::from_millis(80),
             recheck_interval: Duration::from_millis(5),
             verifier: ContentVerifier::new(ReadLimiter::new(1), 65_536),

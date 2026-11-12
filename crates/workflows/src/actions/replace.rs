@@ -37,7 +37,7 @@ use serde::{Deserialize, Serialize};
 
 use super::batch::{Batch, aborted, not_executed};
 use super::delete::EntryTarget;
-use super::journal::{Ctx, StepRun, json};
+use super::journal::{Ctx, StepRun, command_may_have_run, json};
 use super::revalidate::LiveReads;
 
 /// `target` payload of an `ArrManualImport` intent: what recovery re-observes.
@@ -210,6 +210,10 @@ impl Ctx<'_> {
                 BlockerCode::ProtectedZone,
                 format!("DeleteMediaFile only removes files under a media root: {path}"),
             )]);
+        }
+        // CP2T5-F05: samples are refused here too, not only by the planner.
+        if let Some(b) = self.sample_blocker(path) {
+            return Err(vec![b]);
         }
         let expect = a.preconditions.iter().find_map(|p| match p {
             Precondition::EntryUnchanged {
@@ -385,6 +389,11 @@ impl Ctx<'_> {
                 );
                 continue;
             }
+            if matches!(&run, ImportRun::Done(d) if d.state == "unknown") {
+                // It may still move or change a source: the data counts as possibly modified.
+                b.tx.modified
+                    .extend(r.action.torrent_hashes.iter().cloned());
+            }
             // T4-05: the completed sources must still be there, untouched.
             let moved = !self.simulated && self.sources_moved(r).await;
             if moved {
@@ -419,9 +428,9 @@ impl Ctx<'_> {
 
         // 6. Old media files, only behind a verified import of this run.
         for d in &deletes {
-            if let Some(h) = &halted
-                && !d.action.depends_on.iter().all(|x| verified.contains(x))
-            {
+            // CP2T5-F02: after a moved source (or any halted import) nothing is deleted, not even
+            // behind another media's verified import: ARR's behaviour is suspect.
+            if let Some(h) = &halted {
                 b.outcomes
                     .insert(d.action.index, (not_executed(vec![h.clone()]), vec![]));
                 continue;
@@ -611,6 +620,14 @@ impl Ctx<'_> {
                                     state: "observed_by_fingerprint".into(),
                                     error: Some(e.detail),
                                 }),
+                                // CP2T5-F03: an unchanged fingerprint right after a transport
+                                // error proves nothing (the command is asynchronous): the
+                                // outcome is unknown, never "not executed".
+                                _ if command_may_have_run(&e.class) => Ok(ImportDone {
+                                    command_id: None,
+                                    state: "unknown".into(),
+                                    error: Some(e.detail),
+                                }),
                                 _ => Err(e),
                             }
                         }
@@ -638,13 +655,28 @@ impl Ctx<'_> {
 
     /// ARR's current file per episode (Sonarr) or for the movie (Radarr), fresh.
     async fn arr_files(&self, r: &Replace<'_>) -> Result<BTreeMap<i64, RootedPath>, PortError> {
+        self.arr_current_files(r.service, &r.media).await
+    }
+
+    /// Same read for any media (also used by the queue-removal proof and the automatic
+    /// execution checks).
+    pub(crate) async fn arr_current_files(
+        &self,
+        service: ArrService,
+        media: &ArrMediaRef,
+    ) -> Result<BTreeMap<i64, RootedPath>, PortError> {
         let reader = self
             .ports
             .arr
             .iter()
-            .find(|x| x.service() == r.service)
+            .find(|x| x.service() == service)
             .ok_or_else(|| PortError::new(ErrorClass::Config, "no ARR read adapter"))?;
-        let snapshot = reader.quality_snapshot(&r.media).await?;
+        let whole = ArrMediaRef {
+            service,
+            media_id: media.media_id,
+            episode_ids: vec![],
+        };
+        let snapshot = reader.quality_snapshot(&whole).await?;
         let mapped = |file_id: i64| {
             snapshot
                 .current_files
@@ -656,18 +688,18 @@ impl Ctx<'_> {
                 })
         };
         let mut out = BTreeMap::new();
-        match r.service {
+        match service {
             ArrService::Radarr => {
                 if let Some(p) = snapshot
                     .current_files
                     .first()
                     .and_then(|c| mapped(c.file_id))
                 {
-                    out.insert(r.media.media_id, p);
+                    out.insert(media.media_id, p);
                 }
             }
             ArrService::Sonarr => {
-                for ep in reader.episodes(r.media.media_id, None).await? {
+                for ep in reader.episodes(media.media_id, None).await? {
                     if let Some(p) = ep.file_id.and_then(mapped) {
                         out.insert(ep.id, p);
                     }
@@ -985,6 +1017,19 @@ impl Ctx<'_> {
                         );
                     }
                 }
+            }
+        }
+        // CP2T5-F05: revalidated immediately before the intent (holders, scan errors,
+        // signature with its link count): minutes passed since pass 1.
+        let mut live = LiveReads::default();
+        match self.revalidate_fs_only(&mut live, d.action).await {
+            Ok(bl) if bl.is_empty() => {}
+            Ok(bl) => return Ok((not_executed(bl), vec![])),
+            Err(e) => {
+                return refuse(
+                    BlockerCode::ChangedSincePlanning,
+                    format!("revalidation before the deletion failed: {}", e.detail),
+                );
             }
         }
         let fs = self.mutators.fs.clone();

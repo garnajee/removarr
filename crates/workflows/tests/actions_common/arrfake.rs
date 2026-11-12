@@ -49,6 +49,8 @@ pub struct State {
     pub queue: Vec<ArrQueueItem>,
     pub previews: BTreeMap<RootedPath, Vec<ArrCandidateDecision>>,
     pub effect: ImportEffect,
+    /// Per source file name, overriding `effect`.
+    pub effect_by_name: BTreeMap<String, ImportEffect>,
     pub hardlinks_enabled: bool,
     pub recycle_bin: bool,
     /// The upgrade import removes the old media files (Sonarr's behaviour).
@@ -62,6 +64,8 @@ pub struct State {
     pub import_then_fail: bool,
     pub search: Vec<ReleaseSearchResult>,
     pub grab_then_fail: bool,
+    /// The grab call errors before anything was queued.
+    pub grab_error: Option<ErrorClass>,
     pub remove_then_fail: bool,
     pub monitor_then_fail: bool,
     pub fail_reads: bool,
@@ -138,6 +142,7 @@ impl FakeArr {
                 queue: vec![],
                 previews: BTreeMap::new(),
                 effect: ImportEffect::Hardlink,
+                effect_by_name: BTreeMap::new(),
                 hardlinks_enabled: true,
                 recycle_bin: false,
                 upgrade_deletes_old: true,
@@ -148,6 +153,7 @@ impl FakeArr {
                 import_then_fail: false,
                 search: vec![],
                 grab_then_fail: false,
+                grab_error: None,
                 remove_then_fail: false,
                 monitor_then_fail: false,
                 fail_reads: false,
@@ -356,16 +362,26 @@ impl ArrCommands for FakeArr {
             let dest_rel = format!("{}/{}", s.dest_dir, name);
             let to = s.media.join(&dest_rel);
             if s.upgrade_deletes_old {
+                // Only the files of the episodes this import covers are upgraded away.
+                let ids: Vec<i64> = s
+                    .episodes
+                    .iter()
+                    .filter(|e| media.episode_ids.contains(&e.id))
+                    .filter_map(|e| e.file_id)
+                    .collect();
                 let old: Vec<PathBuf> = s
                     .files
                     .iter()
+                    .filter(|f| ids.contains(&f.file_id))
                     .filter_map(|f| f.path.as_rooted().map(|p| s.media.join(p.rel.as_str())))
                     .collect();
                 for o in old {
                     let _ = fs::remove_file(o);
                 }
+                s.files.retain(|f| !ids.contains(&f.file_id));
             }
-            match s.effect {
+            let effect = s.effect_by_name.get(&name).copied().unwrap_or(s.effect);
+            match effect {
                 ImportEffect::Hardlink => fs::hard_link(&from, &to).unwrap(),
                 ImportEffect::Copy => {
                     fs::copy(&from, &to).unwrap();
@@ -373,7 +389,14 @@ impl ArrCommands for FakeArr {
                 ImportEffect::Move => fs::rename(&from, &to).unwrap(),
                 ImportEffect::Nothing => continue,
             }
-            let id = 1000 + s.files.len() as i64;
+            let id = s
+                .files
+                .iter()
+                .map(|f| f.file_id)
+                .max()
+                .unwrap_or(0)
+                .max(999)
+                + 1;
             let entry = {
                 let rooted = RootedPath::new(
                     s.media_root.clone(),
@@ -393,9 +416,6 @@ impl ArrCommands for FakeArr {
                     languages: vec![],
                 }
             };
-            if s.upgrade_deletes_old {
-                s.files.clear();
-            }
             s.files.push(entry);
             for ep in s.episodes.iter_mut() {
                 if media.episode_ids.contains(&ep.id) {
@@ -420,6 +440,9 @@ impl ArrCommands for FakeArr {
             ));
         }
         self.hit(&mut s, format!("grab {}", release.guid));
+        if let Some(c) = s.grab_error.clone() {
+            return Err(PortError::new(c, "grab failed"));
+        }
         let id = 500 + s.queue.len() as i64;
         s.queue.push(queue_item(
             id,

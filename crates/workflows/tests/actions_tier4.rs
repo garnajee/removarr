@@ -597,10 +597,10 @@ async fn t4_12_grab_is_manual_through_a_fresh_search_and_verified_by_the_queue()
 #[tokio::test]
 async fn t4_16_queue_removal_only_for_a_proven_stale_item_and_monitoring_journals_the_previous_value()
  {
-    // Stale: its download is not a live torrent.
+    // INV-39 proved at execution: ARR's current file shares the inode of the torrent's
+    // completed file, so the stale item may go (the torrent itself keeps seeding).
     let lab = fixture().await;
-    lab.arr
-        .with(|s| s.queue = vec![queue_item(7, Some(hash('c')), "failed", None)]);
+    lab.t4_proven_queue().await;
     let plan = lab.seal(vec![lab.queue_action(0, 7)], user(), vec![]);
     let (report, _) = run(&lab, plan, false, vec![]).await;
     assert_eq!(
@@ -610,10 +610,15 @@ async fn t4_16_queue_removal_only_for_a_proven_stale_item_and_monitoring_journal
     );
     assert_eq!(lab.arr.calls("remove_queue"), 1);
 
-    // The item still points to a live torrent: removing it would hide an error.
+    // ARR copied instead of linking: the import is not proven, the item stays.
     let lab = fixture().await;
-    lab.arr
-        .with(|s| s.queue = vec![queue_item(7, Some(hash('a')), "failed", None)]);
+    lab.t4_proven_queue().await;
+    fs::remove_file(lab.media_path("Movies/New/new.mkv")).unwrap();
+    fs::copy(
+        lab.completed_path(NEW_SOURCE),
+        lab.media_path("Movies/New/new.mkv"),
+    )
+    .unwrap();
     let plan = lab.seal(vec![lab.queue_action(0, 7)], user(), vec![]);
     let (report, _) = run(&lab, plan, false, vec![]).await;
     assert_eq!(
@@ -622,10 +627,32 @@ async fn t4_16_queue_removal_only_for_a_proven_stale_item_and_monitoring_journal
     );
     assert_eq!(lab.arr.calls("remove_queue"), 0);
 
+    // No shortcut for a missing download id or an unreadable torrent.
+    for variant in 0..2 {
+        let lab = fixture().await;
+        lab.t4_proven_queue().await;
+        lab.arr.with(|s| {
+            if variant == 0 {
+                s.queue[0].download_id = None;
+            } else {
+                s.queue[0].download_id = Some(hash('c'));
+            }
+        });
+        let plan = lab.seal(vec![lab.queue_action(0, 7)], user(), vec![]);
+        let (report, _) = run(&lab, plan, false, vec![]).await;
+        assert_eq!(
+            blocker_codes(&report.actions[0].outcome),
+            vec![BlockerCode::QueueItemHidesError],
+            "variant {variant}"
+        );
+        assert_eq!(lab.arr.calls("remove_queue"), 0);
+    }
+
     // An import in progress is never removed.
     let lab = fixture().await;
+    lab.t4_proven_queue().await;
     lab.arr
-        .with(|s| s.queue = vec![queue_item(7, Some(hash('c')), "importing", None)]);
+        .with(|s| s.queue[0].tracked_state = "importing".into());
     let plan = lab.seal(vec![lab.queue_action(0, 7)], user(), vec![]);
     let (report, _) = run(&lab, plan, false, vec![]).await;
     assert_eq!(
@@ -635,10 +662,8 @@ async fn t4_16_queue_removal_only_for_a_proven_stale_item_and_monitoring_journal
 
     // The removal happened although the call errored: observed.
     let lab = fixture().await;
-    lab.arr.with(|s| {
-        s.queue = vec![queue_item(7, Some(hash('c')), "failed", None)];
-        s.remove_then_fail = true;
-    });
+    lab.t4_proven_queue().await;
+    lab.arr.with(|s| s.remove_then_fail = true);
     let plan = lab.seal(vec![lab.queue_action(0, 7)], user(), vec![]);
     let (report, _) = run(&lab, plan, false, vec![]).await;
     assert_eq!(
@@ -676,7 +701,6 @@ async fn t4_16_queue_removal_only_for_a_proven_stale_item_and_monitoring_journal
 fn every_tier4_plan(lab: &Lab) -> Vec<HashedPlan> {
     lab.arr.with(|s| {
         s.search = vec![search_result("g1")];
-        s.queue = vec![queue_item(7, Some(hash('c')), "failed", None)];
         s.upgrade_deletes_old = false;
     });
     vec![
@@ -703,7 +727,12 @@ async fn t4_18_simulating_every_tier4_kind_mutates_nothing_in_either_process() {
             Mutators::recording(&[ArrService::Sonarr, ArrService::Radarr]);
         let (live_mutators, counting) = lab.live();
         let src = ino(lab.completed_path(NEW_SOURCE));
-        for plan in plans {
+        for (n, plan) in plans.into_iter().enumerate() {
+            if n == 2 {
+                // The queue removal needs a correct import to prove (applied after the
+                // replacement simulation, which asserted the disk untouched).
+                lab.t4_proven_queue().await;
+            }
             let id = plan.plan().id;
             let ticket = lab.ticket_ack(plan, true, vec![]).await;
             let m = if dry_run_process {
@@ -736,6 +765,10 @@ async fn t4_18_simulating_every_tier4_kind_mutates_nothing_in_either_process() {
                 assert_eq!(r.as_ref().unwrap().outcome, StepOutcome::Simulated);
             }
             assert_eq!(lab.status(id).await, PlanStatus::Approved);
+            if n == 0 {
+                assert!(!lab.media_path("Movies/New/new.mkv").exists());
+                assert!(lab.media_path(OLD_MEDIA).exists());
+            }
         }
         assert_eq!(recording.calls(), 0);
         assert_eq!(counting.mutations(), 0);
@@ -744,7 +777,6 @@ async fn t4_18_simulating_every_tier4_kind_mutates_nothing_in_either_process() {
         assert_eq!(lab.arr.calls("manual_import") + lab.arr.calls("grab"), 0);
         assert_eq!(ino(lab.completed_path(NEW_SOURCE)), src);
         assert!(lab.media_path(OLD_MEDIA).exists());
-        assert!(!lab.media_path("Movies/New/new.mkv").exists());
         assert!(lab.repos.journal.unfinished().await.unwrap().is_empty());
     }
 }
@@ -768,9 +800,15 @@ async fn crash_at(lab: &Lab, plan: HashedPlan, point: CrashPoint) -> removarr_do
         )
         .await
     });
-    tokio::time::timeout(std::time::Duration::from_secs(5), lab.hang.hit.notified())
+    if tokio::time::timeout(std::time::Duration::from_secs(5), lab.hang.hit.notified())
         .await
-        .expect("the crash point is reached");
+        .is_err()
+    {
+        if task.is_finished() {
+            panic!("finished without reaching {point:?}: {:?}", task.await);
+        }
+        panic!("hung without reaching {point:?}");
+    }
     task.abort();
     assert!(task.await.unwrap_err().is_cancelled());
     lab.hang.disarm();
@@ -949,8 +987,7 @@ async fn crash_boundaries_around_grab_queue_removal_and_monitoring_never_resend(
         ),
     ] {
         let lab = fixture().await;
-        lab.arr
-            .with(|s| s.queue = vec![queue_item(7, Some(hash('c')), "failed", None)]);
+        lab.t4_proven_queue().await;
         let plan = lab.seal(vec![lab.queue_action(0, 7)], user(), vec![]);
         crash_at(&lab, plan, point).await;
         let r = recovered(&lab).await;

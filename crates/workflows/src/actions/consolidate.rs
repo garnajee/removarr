@@ -246,7 +246,12 @@ impl Ctx<'_> {
                 .stage("consolidate", n as u32, Some(it.target.to_string()));
             let _ = total;
             match self.compare_then_replace(it, &mut b).await? {
-                Replaced::Mutated(err) => mutated.push((it.action, err)),
+                Replaced::Mutated(err) => {
+                    if auto && err.is_some() {
+                        abort = Some("automatic plan stopped at the first failure".into());
+                    }
+                    mutated.push((it.action, err));
+                }
                 Replaced::Simulated => {
                     b.outcomes
                         .insert(it.action.index, (ActionOutcome::Simulated, vec![]));

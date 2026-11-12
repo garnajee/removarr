@@ -536,6 +536,7 @@ impl Ctx<'_> {
         result: Option<&StepOutcome>,
     ) -> (Executed, StepOutcome, Option<String>) {
         use super::arrcmd::{MonitorObserved, MonitorTarget, QueueTarget, read_monitored};
+        use super::journal::command_may_have_run;
         use super::replace::ImportTarget;
         let done = |why: &str| StepOutcome::Done {
             final_state: serde_json::json!({ "recovered": why }),
@@ -578,18 +579,42 @@ impl Ctx<'_> {
                 }
                 let what = match result {
                     _ if ruled_out => Executed::Untouched,
-                    Some(StepOutcome::Failed { .. }) => Executed::Untouched,
+                    // CP2T5-F03: only a definitive refusal rules the command out.
+                    Some(StepOutcome::Failed { class, .. }) if !command_may_have_run(class) => {
+                        Executed::Untouched
+                    }
                     _ => Executed::Mutated,
                 };
-                let note = (what == Executed::Mutated && result.is_none()).then(|| {
-                    "the import command may have been sent; it is never sent again".to_string()
+                let shows = match self.ports.arr.iter().find(|r| r.service() == t.service) {
+                    Some(r) if what == Executed::Mutated => {
+                        let media = removarr_domain::arr::ArrMediaRef {
+                            service: t.service,
+                            media_id: t.request.files.first().map_or(0, |f| f.1.media_id),
+                            episode_ids: vec![],
+                        };
+                        r.quality_snapshot(&media)
+                            .await
+                            .ok()
+                            .map(|s| s.fingerprint != t.fingerprint_before)
+                    }
+                    _ => None,
+                };
+                let note = (what == Executed::Mutated).then(|| {
+                    match shows {
+                        Some(true) => "ARR's current files changed since the command: the import ran",
+                        _ => "the import command may have been sent or may still run; it is never sent again",
+                    }
+                    .to_string()
                 });
                 (what, done("the import may have run; sources intact"), note)
             }
             JournalStep::ArrGrab => {
                 let what = match result {
                     _ if ruled_out => Executed::Untouched,
-                    Some(StepOutcome::Failed { .. }) => Executed::Untouched,
+                    // CP2T5-F03: only a definitive refusal rules the command out.
+                    Some(StepOutcome::Failed { class, .. }) if !command_may_have_run(class) => {
+                        Executed::Untouched
+                    }
                     _ => Executed::Mutated,
                 };
                 let note = (what == Executed::Mutated && result.is_none())

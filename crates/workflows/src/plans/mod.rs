@@ -18,7 +18,7 @@
 
 mod arrplans;
 mod auto;
-mod build;
+pub(crate) mod build;
 mod expiry;
 mod facts;
 mod fsplans;

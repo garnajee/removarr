@@ -21,6 +21,7 @@ tracing = { workspace = true }
 async-trait = { workspace = true }
 
 [dev-dependencies]
+removarr-workflows = { path = ".", features = ["tier5-test-gate"] }
 tempfile = { workspace = true }
 removarr-testkit = { workspace = true }
 # Test-only: the real confined filesystem adapter builds the parity-fixture inventories and the
@@ -32,3 +33,8 @@ removarr-config = { workspace = true, features = ["test-support"] }
 # and status transitions. Normal dependencies are unchanged.
 removarr-storage = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
+
+[features]
+# Test-only: exposes `actions::execute_with_gate` so the tier-5 runner path can be tested while
+# `IMPLEMENTED_TIER` stays T4. Enabled only by the self dev-dependency below.
+tier5-test-gate = []

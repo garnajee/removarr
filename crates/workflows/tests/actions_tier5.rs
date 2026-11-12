@@ -1,0 +1,597 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+//! Runner-side tier 5 (CP2-tier5 T5-01, T5-03..T5-09, T5-13, T5-15, T5-18, T5-21), behind the
+//! test-only `execute_with_gate` entry. `IMPLEMENTED_TIER` stays T4: the production entry
+//! point refuses every automatic plan (asserted below).
+
+mod actions_common;
+
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
+use std::sync::Arc;
+use std::time::Duration;
+
+use actions_common::arrfake::{decision, episode, media_ref};
+use actions_common::*;
+use removarr_domain::evidence::EvidenceLevel;
+use removarr_domain::fs::CompareOutcome;
+use removarr_domain::ids::SubjectKey;
+use removarr_domain::issue::BlockerCode;
+use removarr_domain::journal::ActionOutcome;
+use removarr_domain::path::{RootId, RootedPath};
+use removarr_domain::plan::{
+    ActionKind, ApprovalRequest, HashedPlan, PlanMode, PlanOrigin, PlanStatus, Precondition,
+};
+use removarr_domain::policy::{Capability, RiskTier};
+use removarr_domain::ports::{CancelFlag, IgnoreStore, PlanStore};
+use removarr_workflows::actions::{
+    ExecutionReport, Mutators, Reporter, automatic_defects_for_test, execute, execute_with_gate,
+};
+use removarr_workflows::plans::ExecutionTicket;
+
+fn set_age(path: std::path::PathBuf, hours_old: u64) {
+    let f = fs::File::options().write(true).open(&path).unwrap();
+    let at = std::time::UNIX_EPOCH + Duration::from_millis(u64::try_from(NOW.0).unwrap())
+        - Duration::from_secs(hours_old * 3600);
+    f.set_modified(at).unwrap();
+}
+
+/// Marks the lab's files old enough for the automatic minimum age (48 h).
+fn age_files(lab: &Lab, hours: u64) {
+    for p in ["Rel/a.mkv", "Rel/b.mkv"] {
+        set_age(lab.completed_path(p), hours);
+    }
+    for p in ["Movies/Rel/a.mkv", "Movies/Rel/b.mkv"] {
+        set_age(lab.media_path(p), hours);
+    }
+}
+
+fn reseal(plan: HashedPlan, f: impl Fn(&mut removarr_domain::plan::PlannedAction)) -> HashedPlan {
+    let (mut p, _) = plan.into_parts();
+    for a in &mut p.actions {
+        f(a);
+    }
+    HashedPlan::seal(p).unwrap()
+}
+
+async fn ticket_auto(lab: &Lab, plan: HashedPlan, simulate: bool) -> ExecutionTicket {
+    let (p, h) = plan.clone().into_parts();
+    lab.repos.plans.insert(&p, &h).await.unwrap();
+    let approval = plan.approve_auto(NOW).unwrap();
+    lab.repos.plans.approve(&approval).await.unwrap();
+    ExecutionTicket {
+        plan,
+        status: PlanStatus::Approved,
+        approval: Some(approval),
+        simulate,
+    }
+}
+
+async fn run_auto(
+    lab: &Lab,
+    plan: HashedPlan,
+    simulate: bool,
+) -> (ExecutionReport, Arc<CountingMutator>) {
+    let ticket = ticket_auto(lab, plan, simulate).await;
+    let (mutators, counting) = lab.live();
+    let report = execute_with_gate(
+        &lab.ports(),
+        &mutators,
+        &lab.settings(),
+        ticket,
+        &CancelFlag::new(),
+        &Reporter::new(),
+        RiskTier::T5,
+    )
+    .await
+    .unwrap();
+    (report, counting)
+}
+
+fn consolidation(lab: &Lab, items: &[(&str, &str, &[char])]) -> HashedPlan {
+    reseal(
+        lab.plan(items, PlanMode::Live, PlanOrigin::AutoPolicy),
+        |a| {
+            a.evidence_level = EvidenceLevel::NameSize;
+        },
+    )
+}
+
+const ONE: &[(&str, &str, &[char])] = &[("Rel/a.mkv", "Movies/Rel/a.mkv", &['a'])];
+const TWO: &[(&str, &str, &[char])] = &[
+    ("Rel/a.mkv", "Movies/Rel/a.mkv", &['a']),
+    ("Rel/b.mkv", "Movies/Rel/b.mkv", &['b']),
+];
+
+/// ARR serves `Movies/Rel/a.mkv` for episode 11 and rejects the completed copy as not an
+/// upgrade: the evidence of an automatic `DeleteReplaced`.
+fn arr_validated_deletion(lab: &Lab, with_task: bool) -> HashedPlan {
+    let target = rp(&RootId::completed(), "Rel/a.mkv");
+    let repl = rp(&lab.media, "Movies/Rel/a.mkv");
+    let m = media_ref(5, &[11]);
+    let size = lab.sig(&repl).size;
+    let file = lab.arr.file_entry(1, "Movies/Rel/a.mkv");
+    lab.arr.with(|s| {
+        s.episodes = vec![episode(11, Some(1), true)];
+        s.files = vec![file];
+        let mut d = decision(&target, &[11]);
+        d.approved = false;
+        d.rejections = vec!["Not an upgrade".into()];
+        s.previews.insert(rp(&RootId::completed(), "Rel"), vec![d]);
+    });
+    let mut del = lab.delete_file_action(
+        0,
+        ActionKind::DeleteCompletedFile,
+        &RootId::completed(),
+        "Rel/a.mkv",
+        &['a'],
+    );
+    del.preconditions.extend([
+        Precondition::ArrReplacementPresent {
+            media: m.clone(),
+            path: repl.clone(),
+            size,
+        },
+        Precondition::EntryUnchanged {
+            path: repl.clone(),
+            sig: lab.sig(&repl),
+            compare_nlink: false,
+        },
+        Precondition::ArrFingerprint {
+            media: m.clone(),
+            fingerprint: lab.arr.fingerprint(5),
+        },
+    ]);
+    del.evidence_level = EvidenceLevel::ArrValidatedReplacement;
+    let mut actions = vec![del];
+    if with_task {
+        let mut t = lab.remove_task_action(1, 'a', &[0]);
+        t.evidence_level = EvidenceLevel::Full;
+        actions.push(t);
+    }
+    lab.seal(actions, PlanOrigin::AutoPolicy, vec![])
+}
+
+fn codes(o: &ActionOutcome) -> Vec<BlockerCode> {
+    match o {
+        ActionOutcome::NotExecuted { blockers } => {
+            blockers.iter().map(|b| b.code.clone()).collect()
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+fn untouched(lab: &Lab, counting: &CountingMutator) {
+    assert_eq!(
+        counting.mutations() + lab.qbit.mutation_count() + lab.service_mutations(),
+        0
+    );
+}
+
+#[tokio::test]
+async fn t5_01_production_gate_still_refuses_every_automatic_plan_and_the_raised_gate_runs_them() {
+    let lab = Lab::new().await;
+    age_files(&lab, 72);
+    let plan = consolidation(&lab, ONE);
+    // Production entry: tier 4, refused before any intent.
+    let ticket = ticket_auto(&lab, plan.clone(), false).await;
+    let (mutators, counting) = lab.live();
+    let report = execute(
+        &lab.ports(),
+        &mutators,
+        &lab.settings(),
+        ticket,
+        &CancelFlag::new(),
+        &Reporter::new(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        codes(&report.actions[0].outcome),
+        vec![BlockerCode::NotInBuild]
+    );
+    untouched(&lab, &counting);
+    // Test gate: the automatic consolidation runs through every runner check.
+    let lab = Lab::new().await;
+    age_files(&lab, 72);
+    let plan = consolidation(&lab, ONE);
+    let id = plan.plan().id;
+    let (report, _) = run_auto(&lab, plan, false).await;
+    assert_eq!(
+        report.actions[0].outcome,
+        ActionOutcome::Verified,
+        "{report:?}"
+    );
+    assert_eq!(report.status, Some(PlanStatus::Executed));
+    assert_eq!(lab.status(id).await, PlanStatus::Executed);
+}
+
+#[tokio::test]
+async fn t5_03_t5_04_t5_13_approval_evidence_and_samples_are_checked_by_the_runner() {
+    // A user approval of an automatic plan is refused.
+    let lab = Lab::new().await;
+    age_files(&lab, 72);
+    let plan = consolidation(&lab, ONE);
+    let (p, h) = plan.clone().into_parts();
+    lab.repos.plans.insert(&p, &h).await.unwrap();
+    let approval = plan
+        .approve(
+            &ApprovalRequest {
+                plan_hash: h,
+                confirmed_count: p.required_count(),
+                confirmed_torrent_removals: p.required_torrent_removals(),
+                acknowledged_samples: vec![],
+                acknowledged_unrecoverable: vec![],
+            },
+            NOW,
+        )
+        .unwrap();
+    lab.repos.plans.approve(&approval).await.unwrap();
+    let ticket = ExecutionTicket {
+        plan,
+        status: PlanStatus::Approved,
+        approval: Some(approval),
+        simulate: false,
+    };
+    let (mutators, counting) = lab.live();
+    let report = execute_with_gate(
+        &lab.ports(),
+        &mutators,
+        &lab.settings(),
+        ticket,
+        &CancelFlag::new(),
+        &Reporter::new(),
+        RiskTier::T5,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        codes(&report.actions[0].outcome),
+        vec![BlockerCode::CapabilityDisabled]
+    );
+    untouched(&lab, &counting);
+
+    // A deletion without ARR-validated evidence: refused (approve_auto itself rejects the
+    // missing evidence of a non-validated level only for `None`; the runner is stricter).
+    let lab = Lab::new().await;
+    age_files(&lab, 72);
+    let plan = reseal(arr_validated_deletion(&lab, false), |a| {
+        a.evidence_level = EvidenceLevel::Full
+    });
+    let (p, h) = plan.clone().into_parts();
+    lab.repos.plans.insert(&p, &h).await.unwrap();
+    let approval = plan.approve_auto(NOW).unwrap();
+    lab.repos.plans.approve(&approval).await.unwrap();
+    let ticket = ExecutionTicket {
+        plan,
+        status: PlanStatus::Approved,
+        approval: Some(approval),
+        simulate: false,
+    };
+    let (mutators, counting) = lab.live();
+    let report = execute_with_gate(
+        &lab.ports(),
+        &mutators,
+        &lab.settings(),
+        ticket,
+        &CancelFlag::new(),
+        &Reporter::new(),
+        RiskTier::T5,
+    )
+    .await
+    .unwrap();
+    assert!(codes(&report.actions[0].outcome).contains(&BlockerCode::ArrNotUpgradeEvidence));
+    untouched(&lab, &counting);
+    assert!(lab.completed_path("Rel/a.mkv").exists());
+
+    // A consolidation without a content level cannot be approved automatically at all.
+    let lab = Lab::new().await;
+    let none = reseal(lab.plan(ONE, PlanMode::Live, PlanOrigin::AutoPolicy), |a| {
+        a.evidence_level = EvidenceLevel::None
+    });
+    assert!(none.approve_auto(NOW).is_err());
+}
+
+#[tokio::test]
+async fn t5_18_no_manual_only_kind_runs_in_an_automatic_plan() {
+    // `HashedPlan::seal` refuses these plans; the runner's own allowlist is checked directly on
+    // an unsealed copy, for every kind outside `is_auto_eligible`.
+    let lab = Lab::new().await;
+    age_files(&lab, 72);
+    let valid = consolidation(&lab, ONE);
+    let (base, _) = valid.clone().into_parts();
+    for kind in [
+        ActionKind::CleanupStalledIncomplete,
+        ActionKind::DeleteIncompleteOrphan,
+        ActionKind::DeleteJunk,
+        ActionKind::FixMode,
+        ActionKind::ReplaceRelease,
+        ActionKind::DeleteMediaFile,
+        ActionKind::ArrGrabRelease,
+        ActionKind::ArrRemoveQueueItem,
+        ActionKind::ArrSetMonitored,
+        ActionKind::ArrRescan,
+        ActionKind::JellyfinRefresh,
+    ] {
+        let mut p = base.clone();
+        p.actions[0].kind = kind;
+        let d = automatic_defects_for_test(&p, &valid, None, &lab.settings(), NOW, true);
+        assert!(
+            d.get(&0)
+                .is_some_and(|b| b.iter().any(|x| x.code == BlockerCode::CapabilityDisabled)),
+            "{kind:?}: {d:?}"
+        );
+    }
+    // And the eligible kinds pass the pure checks.
+    let d = automatic_defects_for_test(
+        &base,
+        &valid,
+        valid_approval(&lab, &valid).as_ref(),
+        &lab.settings(),
+        NOW,
+        false,
+    );
+    assert!(d.is_empty(), "{d:?}");
+}
+
+fn valid_approval(_: &Lab, plan: &HashedPlan) -> Option<removarr_domain::plan::Approval> {
+    plan.approve_auto(NOW).ok()
+}
+
+#[tokio::test]
+async fn t5_05_the_arr_replacement_and_a_re_read_preview_are_checked_at_execution() {
+    // Happy path with the companion task removal (A8 capability on).
+    let lab = Lab::new().await;
+    age_files(&lab, 72);
+    lab.capabilities
+        .lock()
+        .unwrap()
+        .insert(Capability::AutoRemoveEmptyTorrents);
+    let plan = arr_validated_deletion(&lab, true);
+    let (report, _) = run_auto(&lab, plan, false).await;
+    assert_eq!(
+        report.actions[0].outcome,
+        ActionOutcome::Verified,
+        "{report:?}"
+    );
+    assert_eq!(
+        report.actions[1].outcome,
+        ActionOutcome::Verified,
+        "{report:?}"
+    );
+    assert!(!lab.completed_path("Rel/a.mkv").exists());
+    assert!(lab.media_path("Movies/Rel/a.mkv").exists());
+    assert!(!lab.qbit.listed('a'));
+
+    // A8: the same plan without `auto_remove_empty_torrents`: nothing runs.
+    let lab = Lab::new().await;
+    age_files(&lab, 72);
+    let plan = arr_validated_deletion(&lab, true);
+    let (report, counting) = run_auto(&lab, plan, false).await;
+    assert!(codes(&report.actions[1].outcome).contains(&BlockerCode::CapabilityDisabled));
+    untouched(&lab, &counting);
+    assert!(lab.completed_path("Rel/a.mkv").exists());
+
+    // The preview now approves the completed file: it is no longer "not an upgrade".
+    let lab = Lab::new().await;
+    age_files(&lab, 72);
+    let plan = arr_validated_deletion(&lab, false);
+    lab.arr.with(|s| {
+        for v in s.previews.values_mut() {
+            v[0].approved = true;
+            v[0].rejections.clear();
+        }
+    });
+    let (report, counting) = run_auto(&lab, plan, false).await;
+    assert!(codes(&report.actions[0].outcome).contains(&BlockerCode::ArrNotUpgradeEvidence));
+    untouched(&lab, &counting);
+
+    // ARR's current file is no longer the pinned replacement.
+    let lab = Lab::new().await;
+    age_files(&lab, 72);
+    let plan = arr_validated_deletion(&lab, false);
+    let other = lab.arr.file_entry(2, "Movies/Rel/b.mkv");
+    lab.arr.with(|s| {
+        s.files = vec![other];
+        s.episodes[0].file_id = Some(2);
+    });
+    let (report, counting) = run_auto(&lab, plan, false).await;
+    assert!(codes(&report.actions[0].outcome).contains(&BlockerCode::ArrAmbiguous));
+    untouched(&lab, &counting);
+
+    // ARR is down: fail closed.
+    let lab = Lab::new().await;
+    age_files(&lab, 72);
+    let plan = arr_validated_deletion(&lab, false);
+    lab.arr.with(|s| s.fail_reads = true);
+    let (report, counting) = run_auto(&lab, plan, false).await;
+    assert!(codes(&report.actions[0].outcome).contains(&BlockerCode::ArrAmbiguous));
+    untouched(&lab, &counting);
+}
+
+#[tokio::test]
+async fn t5_06_a_recent_entry_is_never_executed() {
+    let lab = Lab::new().await;
+    age_files(&lab, 1);
+    let plan = consolidation(&lab, ONE);
+    let (report, counting) = run_auto(&lab, plan, false).await;
+    assert!(codes(&report.actions[0].outcome).contains(&BlockerCode::Recent));
+    untouched(&lab, &counting);
+}
+
+#[tokio::test]
+async fn t5_07_the_whole_root_perimeter_is_checked_not_only_around_the_path() {
+    if is_root_user() {
+        eprintln!("skipped: root ignores directory permissions");
+        return;
+    }
+    let lab = Lab::new().await;
+    age_files(&lab, 72);
+    let plan = consolidation(&lab, ONE);
+    // An unreadable directory far from the target: `NoScanErrorUnder` of the target holds,
+    // the root is not clean.
+    fs::set_permissions(
+        lab.completed_path("Orphan/Subs"),
+        fs::Permissions::from_mode(0o000),
+    )
+    .unwrap();
+    lab.store_observation_again().await;
+    let (report, counting) = run_auto(&lab, plan, false).await;
+    fs::set_permissions(
+        lab.completed_path("Orphan/Subs"),
+        fs::Permissions::from_mode(0o755),
+    )
+    .unwrap();
+    assert!(
+        codes(&report.actions[0].outcome).contains(&BlockerCode::ScanIncomplete),
+        "{report:?}"
+    );
+    untouched(&lab, &counting);
+
+    // qBittorrent unreachable.
+    let lab = Lab::new().await;
+    age_files(&lab, 72);
+    let plan = consolidation(&lab, ONE);
+    *lab.qbit.fail_reads.lock().unwrap() = true;
+    let (report, counting) = run_auto(&lab, plan, false).await;
+    assert!(matches!(
+        report.actions[0].outcome,
+        ActionOutcome::NotExecuted { .. }
+    ));
+    untouched(&lab, &counting);
+}
+
+#[tokio::test]
+async fn t5_09_the_ignore_list_is_re_read_at_execution() {
+    // Ignored after planning and approval.
+    let lab = Lab::new().await;
+    age_files(&lab, 72);
+    let plan = consolidation(&lab, ONE);
+    let target = rp(&lab.media, "Movies/Rel/a.mkv");
+    lab.repos
+        .ignores
+        .ignore(&[SubjectKey::rooted(&target)], None, NOW)
+        .await
+        .unwrap();
+    let (report, counting) = run_auto(&lab, plan, false).await;
+    assert_eq!(
+        codes(&report.actions[0].outcome),
+        vec![BlockerCode::Ignored]
+    );
+    untouched(&lab, &counting);
+
+    // No ignore list available: fail closed.
+    let lab = Lab::new().await;
+    age_files(&lab, 72);
+    let plan = consolidation(&lab, ONE);
+    let ticket = ticket_auto(&lab, plan, false).await;
+    let mut ports = lab.ports();
+    ports.ignores = None;
+    let (mutators, counting) = lab.live();
+    let report = execute_with_gate(
+        &ports,
+        &mutators,
+        &lab.settings(),
+        ticket,
+        &CancelFlag::new(),
+        &Reporter::new(),
+        RiskTier::T5,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        codes(&report.actions[0].outcome),
+        vec![BlockerCode::Ignored]
+    );
+    untouched(&lab, &counting);
+}
+
+#[tokio::test]
+async fn t5_08_an_automatic_batch_stops_at_the_first_uncertainty() {
+    let lab = Lab::new().await;
+    age_files(&lab, 72);
+    let plan = consolidation(&lab, TWO);
+    lab.content
+        .override_next
+        .lock()
+        .unwrap()
+        .push(CompareOutcome::Differs { offset: 5 });
+    let (report, counting) = run_auto(&lab, plan, false).await;
+    assert!(
+        matches!(report.actions[0].outcome, ActionOutcome::Failed { .. }),
+        "{report:?}"
+    );
+    assert!(
+        matches!(report.actions[1].outcome, ActionOutcome::NotExecuted { .. }),
+        "{report:?}"
+    );
+    assert_eq!(
+        counting.replaces.load(std::sync::atomic::Ordering::SeqCst),
+        0
+    );
+    assert_eq!(report.status, Some(PlanStatus::Failed));
+}
+
+#[tokio::test]
+async fn t5_15_automatic_simulations_mutate_nothing_in_either_process() {
+    for dry_run_process in [true, false] {
+        let lab = Lab::new().await;
+        age_files(&lab, 72);
+        let plans = [
+            consolidation(&lab, TWO),
+            arr_validated_deletion(&lab, false),
+        ];
+        let (rec, recording) = Mutators::recording(&[
+            removarr_domain::arr::ArrService::Sonarr,
+            removarr_domain::arr::ArrService::Radarr,
+        ]);
+        let (live, counting) = lab.live();
+        for plan in plans {
+            let ticket = ticket_auto(&lab, plan, true).await;
+            let m = if dry_run_process { &rec } else { &live };
+            let report = execute_with_gate(
+                &lab.ports(),
+                m,
+                &lab.settings(),
+                ticket,
+                &CancelFlag::new(),
+                &Reporter::new(),
+                RiskTier::T5,
+            )
+            .await
+            .unwrap();
+            assert!(report.simulated);
+            assert!(
+                report
+                    .actions
+                    .iter()
+                    .all(|a| a.outcome == ActionOutcome::Simulated),
+                "{report:?}"
+            );
+        }
+        assert_eq!(recording.calls(), 0);
+        untouched(&lab, &counting);
+        assert!(lab.completed_path("Rel/a.mkv").exists());
+        assert!(lab.qbit.listed('a'));
+    }
+}
+
+#[tokio::test]
+async fn t5_13_samples_are_never_automatic() {
+    let lab = Lab::new().await;
+    age_files(&lab, 72);
+    let plan = reseal(consolidation(&lab, ONE), |_| {});
+    let (mut p, _) = plan.into_parts();
+    p.samples = vec![RootedPath::new(
+        RootId::completed(),
+        removarr_domain::path::RelPath::new("Orphan/Sample/s.mkv").unwrap(),
+    )];
+    let sealed = HashedPlan::seal(p).unwrap();
+    // `approve_auto` refuses it, so no automatic ticket exists; a manual one is refused by the
+    // runner's approver check as well.
+    assert!(sealed.approve_auto(NOW).is_err());
+    let d = automatic_defects_for_test(sealed.plan(), &sealed, None, &lab.settings(), NOW, true);
+    assert!(
+        d.values().flatten().any(|b| b.code == BlockerCode::Sample),
+        "{d:?}"
+    );
+}
