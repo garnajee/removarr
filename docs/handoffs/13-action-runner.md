@@ -336,3 +336,74 @@ remove_tree, remove_empty_dir, set_mode}` in `crates/fs/src/mutate.rs` (handle b
 * `cargo clippy --workspace --all-targets -- -D warnings`: pass.
 * `cargo test --workspace`: pass, 682 passed, 0 failed, 1 ignored (opt-in ffprobe).
 * No `deleteFiles=true` anywhere; no shell or `Command` in the runner or mutator.
+
+
+## Stage C (CP2-tier4 fixes + tier 4)
+
+Review: `docs/reviews/cp2-tier4.md` (PASS with one condition, F01). Step 1 (fixes F01-F07) and
+step 2 (tier 4) are done; `IMPLEMENTED_TIER = T4`. Automatic plans are refused by the runner
+(tier 5). Nothing was committed; no real storage or service was touched.
+
+New modules: `actions/replace.rs` (`ReplaceRelease` + `DeleteMediaFile`), `actions/arrcmd.rs`
+(grab, queue removal, monitoring). New families `Family::Replace` and `Family::ArrCommand`
+(a plan never mixes families). Domain edit (additive, outside my ownership):
+`FsMutator::remove_media_file` with a refusing default (the dedicated, separately reviewed
+media-root entry point of T4-13); `LiveFsMutator` implements it, `remove_file` still refuses
+media roots. `ActionSettings` gained `capabilities` (callers that build it: only tests today).
+
+### Per-finding status
+
+| ID | Status | What changed | Test |
+|---|---|---|---|
+| F01 | fixed | `run.rs` gates on `plans::gate::action_tier(kind, origin)` (an `AutoPolicy` plan is T5) live and simulated, before any intent: `NotInBuild`, plan `Invalidated` live. The auto-stop branches in `consolidate.rs`/`delete.rs` stay for tier 5. `actions_consolidate.rs::an_automatic_plan_stops_...` now covers the manual continuation only. | `actions_stage_c.rs::f01_automatic_plans_are_refused_before_any_intent_live_and_simulated` (approved automatic deletion and consolidation, zero intents, zero fs/qBittorrent/service mutations), `actions_consolidate.rs::tier_five_automatic_plans_are_explicit_refusals` |
+| F02 | fixed | `Ctx::remove_tasks_observed`: an error with every hash gone from a fresh listing is a removal that happened (journaled `Done`, `tx.removed`). Same rule for `manual_import`, grab, queue removal and monitoring (T4-20). | `actions_stage_c.rs::f02_a_task_removal_that_happened_despite_a_transport_error_is_observed` (stalled and torrent-held paths; fake `remove_then_fail`) |
+| F03 | fixed | `stop_torrents` refuses (nothing stopped, `Failed`) when a hash is missing from the fresh listing; the stalled path no longer defaults an unreadable listing to empty. | `::f03_a_listing_fault_before_the_stop_never_leaves_a_torrent_stopped_and_unreported` (fault injected at every listing call position) |
+| F04 | fixed | Mode must keep every current bit and may add only `0o200` (files) / `0o300` (directories): enforced by the runner (`ProtectedZone`, plan `Invalidated`, no intent) and by `LiveFsMutator::set_mode` (`Validation`). The tier-3 test that applied `0o750` now first sets a compatible mode. | `::f04_a_mode_that_removes_bits_or_adds_foreign_ones_is_refused_before_any_intent`, `fs/tests/mutate_remove.rs::set_mode_is_targeted_verified_and_refuses_symlinks_or_changed_entries` |
+| F05 | fixed | `run.rs::mandatory_defects`: plan config fingerprint must equal `settings.config_fingerprint`, the kind's capability must be in `ActionSettings.capabilities`, every `torrent_hashes` entry needs its `TorrentWantedFiles` pin; otherwise `NotExecuted` before any intent. | `::f05_missing_pins_a_changed_config_and_a_disabled_capability_refuse_the_plan`, `actions_tier4.rs::t4_01_*` |
+| F06 | fixed | Both leftover-link notes asserted (replace intent and probe intent crashes). | `actions_crash.rs::f06_leftover_temporary_links_are_named_in_the_recovery_notes` |
+| F07 | **justified deviation** | `check_live_holders` keeps its narrower reach (torrents whose base paths are near an action path, inventories of the action's own roots). It is data-safe for tier-3 deletions (`compare_nlink = true`). Tier 4 does not rely on it for inode accounting: `NoTorrentReferences`/`OldCoverageRecoverable`/`OldFileAccounted` use the full view and fresh `stat`. | `actions_tier4.rs::t4_07_*` |
+
+### Per-requirement status (T4-01..T4-20)
+
+| Req. | Status | Tests (`crates/workflows/tests/actions_tier4.rs` unless noted) |
+|---|---|---|
+| T4-01 gates | done: origin-aware tier (F01), runner capability check (F05), `Replace` family, no mixed families | `t4_01_gates_capability_families_and_missing_preconditions_refuse_before_any_intent`, `actions_stage_c.rs::f01_*` |
+| T4-02 `importMode` copy | done: the runner builds no ARR body (`ManualImportRequest` has no mode); the single literal stays in `arr/src/commands.rs`; a move is detected | `t4_02_t4_05_an_import_that_moves_the_source_needs_review_and_cancels_the_rest` |
+| T4-03 mandatory preconditions + preview | done: `ArrFingerprint`, `OldCoverageRecoverable`, `NoArrImport`, per-source `EntryUnchanged`/`SameDevice` must be present; preview re-read right before the command (every candidate still approved with the planned episodes); score/profile/settings change invalidates | `t4_01_*`, `t4_03_a_changed_score_profile_or_hardlink_setting_invalidates_the_plan`, `t4_13_a_deletion_that_does_not_follow_a_verified_import_is_refused` (rejected candidate) |
+| T4-04 one importer | done: `NoArrImport` in both passes and a dedicated queue read immediately before `manual_import` | `t4_04_one_importer_per_media_checked_again_right_before_the_command` |
+| T4-05 source inode | done: re-`stat` after the command; moved -> `FailedNeedsReview`, `PathStillHasInode` fails with "ArrImportMoved", dependants `NotExecuted` with `ArrImportMoved`, hashes modified -> recheck -> left stopped | `t4_02_t4_05_*`, crash test with `Move` |
+| T4-06 verified per media | done: (a) ARR's fresh current file is a new library file not in the old coverage, (b) source keeps `(dev, ino)`, (c) library file shares it (synthetic `InodeEquals`), command completion observed (`ArrCommandCompleted`); (a)+(b) without (c) is `ExecutedUnverified` + `AddedCost`; timeout is never success | `t4_06_a_hardlinked_import_*`, `t4_06_t4_08_a_copy_import_*`, `t4_06_a_command_that_does_not_complete_in_time_*` |
+| T4-07 old coverage | done: per-file `acknowledged_unrecoverable` checked by the runner (forged approval refused), `OtherLink` re-checked after the import, `OldFileAccounted` per old file | `t4_07_unrecoverable_old_files_need_each_acknowledgement_and_other_links_keep_them` |
+| T4-08 hardlinks disabled | done: copy import never `Verified`; `AddedCost` recorded once | `t4_06_t4_08_*` |
+| T4-09 coverage | runner side: all episodes of the request must map to a new ARR file, one action per media (all or nothing); the proof itself is the planner's (`arrplans::coverage`). No runner test with several episodes (open) | - |
+| T4-10 numbering | done at execution (preview episodes must equal the plan); planning side is 12's | `t4_10_a_numbering_difference_in_the_execution_time_preview_refuses` |
+| T4-11 ffprobe blockers | planning-only (12/matching); the runner re-checks nothing from ffprobe by design | - |
+| T4-12 grab | done: fresh search must contain the token (`ReleaseNotInSearch`), adapter refusal mapped to the same blocker, never re-sent, verified by a new queue item within the timeout, search never grabs; live-only because a dry-run process can only simulate | `t4_12_grab_is_manual_through_a_fresh_search_and_verified_by_the_queue`, crash tests |
+| T4-13 `DeleteMediaFile` | done: depends on a `Verified` import of this run, never the new inode, never ARR's current file, `nlink` unchanged, `remove_media_file` only; an already removed file (ARR's upgrade) is `NotExecuted`, never "success" | `t4_13_*`, `fs/tests/mutate_remove.rs::t4_13_remove_media_file_is_the_only_media_removal_and_is_strictly_confined` |
+| T4-14 old completed release | not in this family: it is a tier-3 deletion plan; the runner does not tie it to an import (open for 12 if wanted) | - |
+| T4-15 `AddedCost` and net | done: one `AddedCost` record per new inode (size as the allocated estimate), deletion gains only for `Verified` deletes | `t4_06_t4_08_*`, `t4_13_the_old_media_file_goes_only_after_*` |
+| T4-16 queue and monitoring | done: queue removal only for a non-importing item whose download is not a live torrent (`QueueItemHidesError`, `ImportInProgress`), previous monitored value journaled, both judged by a re-read | `t4_16_queue_removal_only_for_a_proven_stale_item_and_monitoring_journals_the_previous_value` |
+| T4-17 recovery | done for `ArrManualImport` (sources re-`stat`ed; moved -> `FailedNeedsReview`, torrents stay stopped), `ArrGrab` (possibly executed, never re-sent), `ArrRemoveQueueItem` (queue), `ArrSetMonitored` (flag vs journaled previous), `FsRemoveFile` on media (disk); the unreachable fallback arm was removed (every `JournalStep` is handled) | `crash_boundaries_around_the_import_*`, `crash_boundaries_around_the_old_media_deletion_*`, `crash_boundaries_around_grab_queue_removal_and_monitoring_*` |
+| T4-18 tests | done except the open items above; fake ARR is a port-level scriptable fake with real fs effects (hardlink, copy, move, recycle bin, hardlink setting), not the testkit HTTP server (deviation below) | all of the above |
+| T4-19 Jellyfin | informational only: the runner never lets Jellyfin decide `Verified` | - |
+| T4-20 F02-F05 | done with the findings | see above |
+
+### Stage C deviations and notes
+
+* The tier-4 tests use `actions_common/arrfake.rs`, a port-level fake that models the V10 import
+  effects (hardlink, copy, move), recycle bin and hardlink setting on real temporary directories.
+  The testkit HTTP fake needs the real `removarr-arr` connector, path mapping and a bridge; the
+  connector keeps its own tests. An integration test through the HTTP fake is for 17.
+* `AddedCost` bytes are the new file's size (the signature has no allocated size).
+* `FsRemoveFile` is the journal step of `DeleteMediaFile` (no new step variant); the intent
+  target is the media path.
+* A plan whose `ReplaceRelease` or companion is refused before the stop is void as a whole
+  (`Invalidated`), because a replacement is global (INV-35).
+* Open: T4-09 multi-episode runner test, T4-14, T3-12 (tier 5), T3-19 (14).
+
+### Commands run and results (host target, macOS, rustc 1.98)
+
+* `cargo fmt --all --check`: pass.
+* `cargo clippy --workspace --all-targets -- -D warnings`: pass.
+* `cargo test --workspace`: pass, 706 passed, 0 failed, 1 ignored (opt-in ffprobe).
+* One `"importMode": "copy"` literal, one `("deleteFiles", "false")` literal; no `Command` in the runner or mutator.

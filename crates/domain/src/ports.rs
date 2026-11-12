@@ -117,6 +117,19 @@ pub trait FsMutator: Send + Sync {
     fn remove_file(&self, target: &RootedPath, expect: &EntrySignature) -> Result<(), PortError>;
     fn remove_tree(&self, dir: &RootedPath, expect: &DirSnapshot) -> Result<(), PortError>;
     fn remove_empty_dir(&self, dir: &RootedPath, expect: &EntrySignature) -> Result<(), PortError>;
+    /// Tier 4 only (`DeleteMediaFile`, CP2T4 T4-13): removes one regular media-root file whose
+    /// signature (including `nlink`) matches. A dedicated entry point, so `remove_file` keeps
+    /// refusing media roots. The default refuses; only the live adapter implements it.
+    fn remove_media_file(
+        &self,
+        _target: &RootedPath,
+        _expect: &EntrySignature,
+    ) -> Result<(), PortError> {
+        Err(PortError::new(
+            crate::error::ErrorClass::CapabilityDisabled,
+            "removing a media file is not available in this adapter",
+        ))
+    }
     fn set_mode(
         &self,
         target: &RootedPath,

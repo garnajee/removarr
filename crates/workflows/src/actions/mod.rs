@@ -22,14 +22,15 @@
 //! 8. unfinished live intents found at startup are resolved by [`recovery::recover`] without
 //!    ever redoing a mutation; the plan becomes `Interrupted`.
 //!
-//! Tiers 1-3 (stage B step 2): the live exact-copy consolidation, the tier-2 service commands
-//! (`ArrRescan`, `JellyfinRefresh`), the deletions under the completed root with their
-//! companions, the manual stalled-incomplete cleanup and the targeted mode fix, each with its
-//! simulation. Tier-4 kinds are explicit `NotInBuild` refusals, live and simulated alike,
-//! until their CP2 review passes (MASTER section 10). A plan mixing families is refused too.
+//! Tiers 1-4 (stages B and C): the live exact-copy consolidation, the tier-2 service commands,
+//! the deletions under the completed root and the manual stalled cleanup, the targeted mode fix,
+//! and the tier-4 release replacement (`ReplaceRelease` + `DeleteMediaFile`) and ARR commands
+//! (grab, queue removal, monitoring), each with its simulation. Automatic plans are tier 5 and
+//! refused (`NotInBuild`) whatever their kinds (CP2T4-F01). A plan mixing families is refused too.
 //! A simulation (`simulate = true`, or any run of a dry-run process) always executes on the
 //! recording adapters: `execute` swaps them in before the context exists (CP2T3-F04).
 
+mod arrcmd;
 mod batch;
 mod consolidate;
 mod delete;
@@ -38,6 +39,7 @@ pub mod events;
 mod journal;
 mod qbit;
 pub mod recovery;
+mod replace;
 mod revalidate;
 mod run;
 mod simple;
@@ -66,8 +68,8 @@ pub use recovery::{RecoveredPlan, RecoveryReport, recover};
 pub use run::{ActionResult, ExecutionReport, execute};
 
 /// Highest risk tier this build executes (architecture 6.7, 13.1). Raised only after the
-/// tier's crash-point and dry-run tests pass and CP2 passes. Stage B step 2: tier 3.
-pub const IMPLEMENTED_TIER: RiskTier = RiskTier::T3;
+/// tier's crash-point and dry-run tests pass and CP2 passes. Stage C: tier 4.
+pub const IMPLEMENTED_TIER: RiskTier = RiskTier::T4;
 
 /// Kinds this build can execute live: every kind at or below [`IMPLEMENTED_TIER`].
 #[must_use]
@@ -83,6 +85,10 @@ pub enum Family {
     StalledCleanup,
     FixMode,
     Service,
+    /// `ReplaceRelease` with its `DeleteMediaFile` companions (tier 4).
+    Replace,
+    /// Grab, queue removal and monitoring commands (tier 4).
+    ArrCommand,
 }
 
 /// The family of a kind, `None` for kinds outside this build.
@@ -100,8 +106,8 @@ pub fn family(kind: ActionKind) -> Option<Family> {
         CleanupStalledIncomplete => Some(Family::StalledCleanup),
         FixMode => Some(Family::FixMode),
         ArrRescan | JellyfinRefresh => Some(Family::Service),
-        ReplaceRelease | DeleteMediaFile | ArrGrabRelease | ArrRemoveQueueItem
-        | ArrSetMonitored => None,
+        ReplaceRelease | DeleteMediaFile => Some(Family::Replace),
+        ArrGrabRelease | ArrRemoveQueueItem | ArrSetMonitored => Some(Family::ArrCommand),
     }
 }
 
@@ -146,6 +152,9 @@ impl std::fmt::Debug for ActionPorts {
 pub struct ActionSettings {
     /// `Config::fingerprint()`: must equal every action's `ConfigFingerprint` precondition.
     pub config_fingerprint: String,
+    /// Capability flags that are on (`plans/gate.rs` checks them at planning time; the runner
+    /// checks them again, CP2T4-F05).
+    pub capabilities: std::collections::BTreeSet<removarr_domain::policy::Capability>,
     /// `thresholds.recheck_timeout_seconds`.
     pub recheck_timeout: Duration,
     /// Poll interval of the recheck (architecture: 2 s).

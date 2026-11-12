@@ -337,15 +337,87 @@ fn set_mode_is_targeted_verified_and_refuses_symlinks_or_changed_entries() {
     let child_before = fs::metadata(completed(&lab, "Rel/Subs/a.srt"))
         .unwrap()
         .mode();
-    m.set_mode(&subs, &ss, 0o750).expect("dir mode set");
+    // CP2T4-F04: bits may not be removed, nor group/other/special bits added.
+    let current = ss.mode;
+    for bad in [current & !0o444, current | 0o002, current | 0o4000, 0o000] {
+        assert_eq!(
+            m.set_mode(&subs, &ss, bad).unwrap_err().class,
+            ErrorClass::Validation,
+            "{bad:o}"
+        );
+    }
+    fs::set_permissions(
+        completed(&lab, "Rel/Subs"),
+        fs::Permissions::from_mode(0o555),
+    )
+    .unwrap();
+    let ss = sig(&lab, &c, "Rel/Subs");
+    m.set_mode(&subs, &ss, 0o755).expect("dir mode set");
     assert_eq!(
         fs::metadata(completed(&lab, "Rel/Subs")).unwrap().mode() & 0o7777,
-        0o750
+        0o755
     );
     assert_eq!(
         fs::metadata(completed(&lab, "Rel/Subs/a.srt"))
             .unwrap()
             .mode(),
         child_before
+    );
+}
+
+#[test]
+fn t4_13_remove_media_file_is_the_only_media_removal_and_is_strictly_confined() {
+    let lab = lab();
+    let m = mutator(&lab);
+    let c = RootId::completed();
+    let p = rp(&lab.media, "Movies/m.mkv");
+    let s = sig(&lab, &lab.media, "Movies/m.mkv");
+    // Never outside a media root, never through `remove_file`.
+    let a = sig(&lab, &c, "Rel/a.nfo");
+    assert_eq!(
+        m.remove_media_file(&rp(&c, "Rel/a.nfo"), &a)
+            .unwrap_err()
+            .class,
+        ErrorClass::Confinement
+    );
+    assert!(completed(&lab, "Rel/a.nfo").exists());
+    assert_eq!(
+        m.remove_file(&p, &s).unwrap_err().class,
+        ErrorClass::Confinement
+    );
+    // A changed link count (a new hardlink) refuses.
+    let mp = lab.base.join("media/Movies/m.mkv");
+    fs::hard_link(&mp, lab.base.join("media/Movies/m2.mkv")).unwrap();
+    assert_eq!(
+        m.remove_media_file(&p, &s).unwrap_err().class,
+        ErrorClass::StateChanged
+    );
+    assert!(mp.exists());
+    fs::remove_file(lab.base.join("media/Movies/m2.mkv")).unwrap();
+    // A symlink is never followed.
+    std::os::unix::fs::symlink("../../outside.txt", lab.base.join("media/Movies/l")).unwrap();
+    let ls = sig(&lab, &lab.media, "Movies/l");
+    assert_eq!(
+        m.remove_media_file(&rp(&lab.media, "Movies/l"), &ls)
+            .unwrap_err()
+            .class,
+        ErrorClass::Confinement
+    );
+    assert!(lab.base.join("outside.txt").exists());
+    // The unchanged regular file goes; the root and a directory never do.
+    m.remove_media_file(&p, &s).expect("removed");
+    assert!(!mp.exists());
+    let d = sig(&lab, &lab.media, "Movies");
+    assert_eq!(
+        m.remove_media_file(&rp(&lab.media, "Movies"), &d)
+            .unwrap_err()
+            .class,
+        ErrorClass::StateChanged
+    );
+    assert_eq!(
+        m.remove_media_file(&rp(&lab.media, ""), &d)
+            .unwrap_err()
+            .class,
+        ErrorClass::Confinement
     );
 }

@@ -574,7 +574,6 @@ impl Ctx<'_> {
                 }
             }
         }
-        let ctl = self.mutators.qbit.clone();
         let set: BTreeSet<TorrentHash> = [hash.clone()].into();
         let run = self
             .step(
@@ -583,10 +582,7 @@ impl Ctx<'_> {
                 json(&RemoveTaskTarget { hash: hash.clone() }),
                 serde_json::Value::Null,
                 set.clone(),
-                || async move {
-                    let ctl = ctl.ok_or_else(super::qbit::no_controller)?;
-                    ctl.remove_tasks_keep_data(&set).await
-                },
+                || self.remove_tasks_observed(&set),
             )
             .await?;
         Ok(match run {

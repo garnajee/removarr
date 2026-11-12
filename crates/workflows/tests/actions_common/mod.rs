@@ -204,6 +204,9 @@ impl HangJournal {
     }
 }
 
+pub mod arrfake;
+pub mod tier4;
+
 // ------------------------------------------------------------------ qBittorrent fake
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -235,6 +238,11 @@ pub struct FakeQbit {
     pub fail_files: Mutex<bool>,
     pub fail_mutations: Mutex<Option<String>>,
     pub fail_remove: Mutex<bool>,
+    /// The task is removed, then the call reports a transport error (CP2T4-F02).
+    pub remove_then_fail: Mutex<bool>,
+    /// The n-th (0-based) `torrents()` call fails (CP2T4-F03).
+    pub fail_listing_at: Mutex<Option<usize>>,
+    pub listing_calls: AtomicUsize,
     rechecked: Mutex<bool>,
     pub hang: Arc<Hang>,
 }
@@ -417,6 +425,13 @@ impl FakeQbit {
             .lock()
             .unwrap()
             .push((kind.to_string(), hashes.clone()));
+        if kind == "remove" && *self.remove_then_fail.lock().unwrap() {
+            let mut t = self.torrents.lock().unwrap();
+            for h in hashes {
+                t.remove(h);
+            }
+            return Err(PortError::new(ErrorClass::Unavailable, "connection reset"));
+        }
         let mut t = self.torrents.lock().unwrap();
         for h in hashes {
             let e = t.get_mut(h).ok_or_else(|| {
@@ -462,6 +477,10 @@ impl QbitRead for FakeQbit {
         Ok("v5.0.4".into())
     }
     async fn torrents(&self) -> Result<Vec<TorrentInfo>, PortError> {
+        let n = self.listing_calls.fetch_add(1, Ordering::SeqCst);
+        if *self.fail_listing_at.lock().unwrap() == Some(n) {
+            return Err(PortError::new(ErrorClass::Unavailable, "listing fault"));
+        }
         if *self.fail_reads.lock().unwrap() {
             return Err(PortError::new(ErrorClass::Unavailable, "qbittorrent down"));
         }
@@ -720,6 +739,7 @@ pub struct CountingMutator {
     pub trees: AtomicUsize,
     pub empty_dirs: AtomicUsize,
     pub modes: AtomicUsize,
+    pub media_removes: AtomicUsize,
     pub after_replace: Mutex<Option<Box<dyn Fn() + Send + Sync>>>,
     /// Perform the replacement, then report an error (the link is in place).
     pub fail_after_replace: Mutex<bool>,
@@ -735,6 +755,7 @@ impl CountingMutator {
             trees: AtomicUsize::new(0),
             empty_dirs: AtomicUsize::new(0),
             modes: AtomicUsize::new(0),
+            media_removes: AtomicUsize::new(0),
             after_replace: Mutex::new(None),
             fail_after_replace: Mutex::new(false),
         })
@@ -744,6 +765,7 @@ impl CountingMutator {
             + self.replaces.load(Ordering::SeqCst)
             + self.removals()
             + self.modes.load(Ordering::SeqCst)
+            + self.media_removes.load(Ordering::SeqCst)
     }
     pub fn removals(&self) -> usize {
         self.removes.load(Ordering::SeqCst)
@@ -780,6 +802,10 @@ impl FsMutator for CountingMutator {
     fn remove_file(&self, t: &RootedPath, e: &EntrySignature) -> Result<(), PortError> {
         self.removes.fetch_add(1, Ordering::SeqCst);
         self.inner.remove_file(t, e)
+    }
+    fn remove_media_file(&self, t: &RootedPath, e: &EntrySignature) -> Result<(), PortError> {
+        self.media_removes.fetch_add(1, Ordering::SeqCst);
+        self.inner.remove_media_file(t, e)
     }
     fn remove_tree(&self, d: &RootedPath, e: &DirSnapshot) -> Result<(), PortError> {
         self.trees.fetch_add(1, Ordering::SeqCst);
@@ -857,9 +883,12 @@ pub struct Lab {
     pub qbit: Arc<FakeQbit>,
     pub session: SessionId,
     pub arr_cmd: Arc<CountingArr>,
+    pub arr: Arc<arrfake::FakeArr>,
     pub jellyfin_cmd: Arc<CountingJellyfin>,
     pub scans: Arc<FailingScans>,
     pub rewrite_done_as_failed: Arc<Mutex<Option<JournalStep>>>,
+    /// Capability flags that are on (all of them by default).
+    pub capabilities: Mutex<BTreeSet<removarr_domain::policy::Capability>>,
 }
 
 impl Lab {
@@ -931,11 +960,13 @@ impl Lab {
             "stalledDL",
             0.4,
         );
+        let arr_counter = Arc::new(CountingArr::default());
+        let (arr_completed, arr_media) = (base.join("completed"), base.join("media"));
         let lab = Self {
             _tmp: tmp,
             base,
             roots,
-            media: media_id,
+            media: media_id.clone(),
             fs,
             content,
             repos,
@@ -944,7 +975,8 @@ impl Lab {
             hang,
             qbit,
             session: SessionId::new(RawUuid::from_u128(7)),
-            arr_cmd: Arc::new(CountingArr::default()),
+            arr_cmd: arr_counter.clone(),
+            arr: arrfake::FakeArr::new(arr_completed, arr_media, media_id.clone(), arr_counter),
             jellyfin_cmd: Arc::new(CountingJellyfin::default()),
             scans: Arc::new(FailingScans {
                 inner: repos_scans,
@@ -952,6 +984,20 @@ impl Lab {
                 calls: AtomicUsize::new(0),
             }),
             rewrite_done_as_failed: Arc::new(Mutex::new(None)),
+            capabilities: Mutex::new({
+                use removarr_domain::policy::Capability::*;
+                [
+                    Consolidate,
+                    DeleteCompleted,
+                    CleanupIncomplete,
+                    FixPermissions,
+                    ArrManualImport,
+                    ArrQueueRemove,
+                    ArrSetMonitored,
+                    ArrGrab,
+                ]
+                .into()
+            }),
         };
         lab.store_observation().await;
         lab
@@ -1555,7 +1601,7 @@ impl Lab {
             fs: self.fs.clone(),
             content: self.content.clone(),
             qbit: Some(self.qbit.clone()),
-            arr: vec![Arc::new(ArrReadFake)],
+            arr: vec![self.arr.clone()],
             jellyfin: Some(Arc::new(JellyfinReadFake)),
             clock: self.clock.clone(),
             ids: self.ids.clone(),
@@ -1565,6 +1611,7 @@ impl Lab {
     pub fn settings(&self) -> ActionSettings {
         ActionSettings {
             config_fingerprint: CFG.into(),
+            capabilities: self.capabilities.lock().unwrap().clone(),
             recheck_timeout: Duration::from_millis(80),
             recheck_interval: Duration::from_millis(5),
             verifier: ContentVerifier::new(ReadLimiter::new(1), 65_536),
@@ -1578,10 +1625,7 @@ impl Lab {
         let m = Mutators::live(
             counting.clone(),
             Some(self.qbit.clone()),
-            vec![(
-                removarr_domain::arr::ArrService::Sonarr,
-                self.arr_cmd.clone(),
-            )],
+            vec![(removarr_domain::arr::ArrService::Sonarr, self.arr.clone())],
             Some(self.jellyfin_cmd.clone()),
         );
         (m, counting)

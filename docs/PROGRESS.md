@@ -31,7 +31,7 @@ Status values: `todo`, `running`, `done`, `blocked`.
 | 9 | `13-action-runner` | running | stage A done (tiers 1-2, 634 tests); CP2-tier3 PASS w/ condition; stage B step 1 done (F01, F02, F04-F14 fixed, 647 tests); F03 needs domain patch 3; tier 3 pending |
 | 9 | `03-domain-model` patch 3 (TorrentWantedFiles precondition, ChangedSincePlanning/Interrupted blocker codes) | done | 649 tests; golden hash unchanged |
 | 9 | `12-plan-engine` emit TorrentWantedFiles | done | 651 tests; StaleReason::WantedFilesChanged |
-| 9 | `13-action-runner` stage C (CP2T4 fixes + tier 4) | running | |
+| 9 | `13-action-runner` stage C (CP2T4 fixes + tier 4) | done | 706 tests; IMPLEMENTED_TIER=T4; automatic plans refused; domain trait addition FsMutator::remove_media_file (default refuse) flagged for CP2-tier5 |
 | 9 | `13-action-runner` stage B step 2 (tier 3) | done | 682 tests; IMPLEMENTED_TIER=T3; F03/F10 fixed; FixMode exempt from live-holder check (for CP2 review); T3-12 deferred to tier 5, T3-19 owned by 14; agent model switched to sonnet (user request) |
 | 10 | `14-job-runner` | todo | |
 | 11 | `15-reporting` | todo | |
@@ -55,9 +55,9 @@ Status values: `todo`, `running`, `done`, `blocked`.
 | CP1 architecture (after wave 1) | PASS (iter 2); follow-up F20 + F19/F21-F25 fixed | 2/3 | `docs/reviews/cp1.md` |
 | CP2 tier 3 (deletions) | PASS with condition (iter 1): fix F01-F04 before raising IMPLEMENTED_TIER to T3; CP2-tier4 re-checks them | 1/3 | `docs/reviews/cp2-tier3.md` |
 | CP2 tier 4 (ARR replacement) | PASS with condition (iter 1): fix CP2T4-F01 (runner must refuse automatic plans until tier 5) first; CP2-tier5 re-checks it + T4-01..T4-20 | 1/3 | `docs/reviews/cp2-tier4.md` |
-| CP2 tier 5 (automatic mode) | pending | 0/3 | `docs/reviews/cp2-tier5.md` |
+| CP2 tier 5 (automatic mode) | running | 1/3 | `docs/reviews/cp2-tier5.md` |
 | CP3 release gate | pending | — | `docs/release-readiness.md` |
 
 ## Last quality gate
 
-After wave 9 tier 3: fmt OK, clippy -D warnings OK, tests OK (682 passed, 1 ignored = opt-in real-ffprobe test). Safety greps OK (deleteFiles literal false only in qbit/control.rs; importMode copy literal). Toolchain: cargo/rustc 1.98.0 (Homebrew, no rustup), Docker 29.7.2, ffprobe available.
+After wave 9 tier 4: fmt OK, clippy -D warnings OK, tests OK (706 passed, 1 ignored = opt-in real-ffprobe test). Safety greps OK (deleteFiles literal false only in qbit/control.rs; importMode copy literal). Toolchain: cargo/rustc 1.98.0 (Homebrew, no rustup), Docker 29.7.2, ffprobe available.

@@ -64,6 +64,21 @@ impl std::fmt::Debug for LiveFsMutator {
 }
 
 impl LiveFsMutator {
+    fn unlink_regular(
+        &self,
+        target: &RootedPath,
+        expect: &EntrySignature,
+    ) -> Result<(), PortError> {
+        let (dir, name) = self.open_parent(target)?;
+        let sig = lstat_regular(&dir, &name, "target")?;
+        if !sig.matches(expect, true) {
+            return Err(state_changed("target changed since the plan was built"));
+        }
+        unlinkat(&dir, &name, AtFlags::empty()).map_err(|e| handle::port_error(e, "unlink"))?;
+        fsync(&dir).map_err(|e| handle::port_error(e, "fsync of the parent directory"))?;
+        Ok(())
+    }
+
     /// The `LiveMode` token proves `dry_run = false`; without it this type cannot exist.
     #[must_use]
     pub fn new(roots: &Roots, _live: &LiveMode) -> Self {
@@ -395,14 +410,23 @@ impl FsMutator for LiveFsMutator {
     /// missing entry is a state change (never "already gone = success", CONTEXTE 3.15).
     fn remove_file(&self, target: &RootedPath, expect: &EntrySignature) -> Result<(), PortError> {
         refuse_media(target)?;
-        let (dir, name) = self.open_parent(target)?;
-        let sig = lstat_regular(&dir, &name, "target")?;
-        if !sig.matches(expect, true) {
-            return Err(state_changed("target changed since the plan was built"));
+        self.unlink_regular(target, expect)
+    }
+
+    /// The only removal allowed under a media root (tier 4 `DeleteMediaFile`): the target must
+    /// be a regular file of a media root and match the planned signature including `nlink`.
+    /// Everything else about it is `remove_file`: handle-based, no symlink, no root.
+    fn remove_media_file(
+        &self,
+        target: &RootedPath,
+        expect: &EntrySignature,
+    ) -> Result<(), PortError> {
+        if target.root.kind() != RootKind::Media {
+            return Err(handle::confinement_error(
+                "remove_media_file only removes files under a media root",
+            ));
         }
-        unlinkat(&dir, &name, AtFlags::empty()).map_err(|e| handle::port_error(e, "unlink"))?;
-        fsync(&dir).map_err(|e| handle::port_error(e, "fsync of the parent directory"))?;
-        Ok(())
+        self.unlink_regular(target, expect)
     }
 
     /// All or nothing at the decision point (T3-4): a fresh recursive walk through handles
@@ -539,6 +563,19 @@ impl FsMutator for LiveFsMutator {
         };
         if !sig.matches(expect, false) {
             return Err(state_changed("target changed since the plan was built"));
+        }
+        // CP2T4-F04: only the owner's write bit (and search on directories) may be added.
+        let extra = if sig.kind == EntryKind::Dir {
+            0o300
+        } else {
+            0o200
+        };
+        let (cur, new) = (sig.mode & 0o7777, mode & 0o7777);
+        if mode != new || new & cur != cur || new & !cur & !extra != 0 {
+            return Err(PortError::new(
+                ErrorClass::Validation,
+                "a mode fix may only add the owner write bit (and search on a directory)",
+            ));
         }
         if sig.uid != rustix::process::geteuid().as_raw() {
             return Err(PortError::new(

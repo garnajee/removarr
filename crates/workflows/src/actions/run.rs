@@ -18,6 +18,7 @@ use super::journal::Ctx;
 use super::qbit::LeftStoppedReason;
 use super::{ActionPorts, ActionSettings, Family, IMPLEMENTED_TIER, Mutators, family, supported};
 use crate::plans::ExecutionTicket;
+use crate::plans::gate::action_tier;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ActionResult {
@@ -156,15 +157,24 @@ pub async fn execute(
     let unsupported: Vec<&removarr_domain::plan::PlannedAction> = plan
         .actions
         .iter()
-        .filter(|a| a.kind.tier() > IMPLEMENTED_TIER || !supported(a.kind))
+        .filter(|a| action_tier(a.kind, plan.origin) > IMPLEMENTED_TIER || !supported(a.kind))
         .collect();
     let families: BTreeSet<Option<Family>> = plan.actions.iter().map(|a| family(a.kind)).collect();
     let mixed = families.len() > 1;
-    if !unsupported.is_empty() || mixed {
+    let defects = mandatory_defects(plan, settings);
+    if !unsupported.is_empty() || mixed || !defects.is_empty() {
         let outcomes: Vec<(u32, ActionOutcome)> = plan
             .actions
             .iter()
             .map(|a| {
+                if let Some(b) = defects.get(&a.index) {
+                    return (
+                        a.index,
+                        ActionOutcome::NotExecuted {
+                            blockers: vec![b.clone()],
+                        },
+                    );
+                }
                 let detail = if unsupported.iter().any(|u| u.index == a.index) {
                     format!(
                         "{:?} is not executable in this build (implemented tier {:?})",
@@ -215,6 +225,8 @@ pub async fn execute(
         Some(Family::StalledCleanup) => ctx.stalled_batch(&actions).await?,
         Some(Family::FixMode) => ctx.fix_mode_batch(&actions).await?,
         Some(Family::Service) => ctx.service_batch(&actions).await?,
+        Some(Family::Replace) => ctx.replace_batch(&actions).await?,
+        Some(Family::ArrCommand) => ctx.arr_command_batch(&actions).await?,
     };
 
     let mut outcomes: Vec<(u32, ActionOutcome)> = Vec::new();
@@ -238,7 +250,7 @@ pub async fn execute(
         for (i, o) in &outcomes {
             ports.journal.record_outcome(ctx.action_ref(*i), o).await?;
         }
-        record_gains(&ctx, &outcomes, free_before).await;
+        record_gains(&ctx, &outcomes, &batch.added_costs, free_before).await;
         let status = final_status(
             &outcomes.iter().map(|(_, o)| o.clone()).collect::<Vec<_>>(),
             batch.invalidated,
@@ -261,6 +273,50 @@ pub async fn execute(
         a.verification = results.remove(&a.index).unwrap_or_default();
     }
     Ok(report)
+}
+
+/// CP2T4-F05: the runner does not trust the planner for the presence of mandatory
+/// preconditions. The config fingerprint must match, every enabled capability must be on, and
+/// every affected hash needs its wanted-file pin.
+fn mandatory_defects(
+    plan: &removarr_domain::plan::ActionPlan,
+    settings: &ActionSettings,
+) -> BTreeMap<u32, Blocker> {
+    let mut out = BTreeMap::new();
+    for a in &plan.actions {
+        if plan.config_fingerprint != settings.config_fingerprint {
+            out.insert(
+                a.index,
+                Blocker::new(
+                    BlockerCode::ChangedSincePlanning,
+                    "configuration changed since the plan was built; re-plan",
+                ),
+            );
+        } else if let Some(c) = a.kind.capability()
+            && !settings.capabilities.contains(&c)
+        {
+            out.insert(
+                a.index,
+                Blocker::new(
+                    BlockerCode::CapabilityDisabled,
+                    format!("capability {} is disabled", c.as_str()),
+                ),
+            );
+        } else if let Some(h) = a.torrent_hashes.iter().find(|h| {
+            !a.preconditions.iter().any(|p| {
+                matches!(p, removarr_domain::plan::Precondition::TorrentWantedFiles { hash, .. } if hash == *h)
+            })
+        }) {
+            out.insert(
+                a.index,
+                Blocker::new(
+                    BlockerCode::ChangedSincePlanning,
+                    format!("the plan lacks the wanted-file pin of torrent {}", h.as_str()),
+                ),
+            );
+        }
+    }
+    out
 }
 
 fn finish(
@@ -326,11 +382,23 @@ async fn free_space(ctx: &Ctx<'_>, roots: &BTreeSet<RootId>) -> BTreeMap<RootId,
 async fn record_gains(
     ctx: &Ctx<'_>,
     outcomes: &[(u32, ActionOutcome)],
+    added_costs: &[(u32, removarr_domain::fs::EntrySignature)],
     free_before: BTreeMap<RootId, u64>,
 ) {
     let now = ctx.ports.clock.now();
     let mut records = Vec::new();
     let mut roots = BTreeSet::new();
+    // T4-15: library files ARR copied instead of hardlinking, one record per new inode.
+    for (index, sig) in added_costs {
+        records.push(GainRecord {
+            gain_id: gain_id(sig.phys(), sig.size, sig.mtime_ns),
+            action: ctx.action_ref(*index),
+            kind: GainKind::AddedCost,
+            phys: sig.phys(),
+            bytes: sig.size,
+            recorded_at: now,
+        });
+    }
     for (index, o) in outcomes {
         if !o.is_success() {
             continue;
@@ -346,7 +414,8 @@ async fn record_gains(
                 ActionKind::DeleteCompletedFile
                 | ActionKind::DeleteCompletedFolder
                 | ActionKind::DeleteJunk
-                | ActionKind::DeleteIncompleteOrphan,
+                | ActionKind::DeleteIncompleteOrphan
+                | ActionKind::DeleteMediaFile,
                 ActionTarget::Path { path },
             ) => (path, GainKind::AttributableDeletion),
             (ActionKind::CleanupStalledIncomplete, ActionTarget::Torrent { data_paths, .. }) => {

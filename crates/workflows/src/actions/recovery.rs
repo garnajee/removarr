@@ -392,31 +392,25 @@ async fn recover_plan(ctx: &Ctx<'_>, plan: &ActionPlan) -> Result<RecoveredPlan,
                     mark(&mut executed, intent.action.index, Executed::Mutated);
                 }
             }
-            _ => {
-                // Tier-4 steps (none is reachable in this build): unless the result rules
-                // the mutation out, treat it as possibly done (F01 rule).
-                let ruled_out = matches!(
-                    result.as_ref().map(|r| &r.outcome),
-                    Some(StepOutcome::Skipped { .. } | StepOutcome::Simulated)
-                );
-                if !ruled_out {
-                    out.notes.push(format!(
-                        "action {}: {:?} intent cannot be re-observed in this build; treated as \
-                         possibly executed",
-                        intent.action.index, intent.step
-                    ));
-                    tx.modified.extend(intent.hashes.iter().cloned());
-                    executed.insert(intent.action.index, Executed::Unobservable);
-                }
+            JournalStep::ArrManualImport
+            | JournalStep::ArrGrab
+            | JournalStep::ArrRemoveQueueItem
+            | JournalStep::ArrSetMonitored => {
+                // T4-17: re-observe through ARR and the disk, never re-issue a command.
+                let (what, write, note) = ctx
+                    .observe_arr_intent(intent, result.as_ref().map(|r| &r.outcome))
+                    .await;
                 if result.is_none() {
-                    ctx.write_result(
-                        intent,
-                        StepOutcome::Failed {
-                            class: ErrorClass::StateChanged,
-                            message: "interrupted; not re-observable in this build".into(),
-                        },
-                    )
-                    .await?;
+                    ctx.write_result(intent, write).await?;
+                }
+                if let Some(n) = note {
+                    out.notes
+                        .push(format!("action {}: {n}", intent.action.index));
+                }
+                mark(&mut executed, intent.action.index, what);
+                // Only a moved or unreadable import source can have changed torrent data.
+                if what == Executed::Unobservable {
+                    tx.modified.extend(intent.hashes.iter().cloned());
                 }
             }
         }
@@ -532,6 +526,155 @@ impl Ctx<'_> {
             outcome,
         });
         Ok(())
+    }
+
+    /// What ARR and the disk show for a tier-4 command intent, the result to write when none
+    /// exists, and a note. A command is never sent again (T4-17).
+    async fn observe_arr_intent(
+        &self,
+        intent: &IntentRecord,
+        result: Option<&StepOutcome>,
+    ) -> (Executed, StepOutcome, Option<String>) {
+        use super::arrcmd::{MonitorObserved, MonitorTarget, QueueTarget, read_monitored};
+        use super::replace::ImportTarget;
+        let done = |why: &str| StepOutcome::Done {
+            final_state: serde_json::json!({ "recovered": why }),
+        };
+        let skipped = |why: &str| StepOutcome::Skipped { reason: why.into() };
+        let unobservable = |why: &str| StepOutcome::Failed {
+            class: ErrorClass::StateChanged,
+            message: why.into(),
+        };
+        let ruled_out = matches!(
+            result,
+            Some(StepOutcome::Skipped { .. } | StepOutcome::Simulated)
+        );
+        match intent.step {
+            JournalStep::ArrManualImport => {
+                let Ok(t) = serde_json::from_value::<ImportTarget>(intent.target.clone()) else {
+                    return (
+                        Executed::Unobservable,
+                        unobservable("the import target cannot be read"),
+                        None,
+                    );
+                };
+                let mut moved = false;
+                for (p, phys) in &t.sources {
+                    match self.stat_path(p).await {
+                        Ok(Some(s)) if s.phys() == *phys => {}
+                        _ => moved = true,
+                    }
+                }
+                if moved {
+                    return (
+                        Executed::Unobservable,
+                        unobservable("ArrImportMoved: a completed source is gone or changed"),
+                        Some(
+                            "ArrImportMoved: ARR may have moved a completed source; its torrents \
+                             stay stopped for review"
+                                .into(),
+                        ),
+                    );
+                }
+                let what = match result {
+                    _ if ruled_out => Executed::Untouched,
+                    Some(StepOutcome::Failed { .. }) => Executed::Untouched,
+                    _ => Executed::Mutated,
+                };
+                let note = (what == Executed::Mutated && result.is_none()).then(|| {
+                    "the import command may have been sent; it is never sent again".to_string()
+                });
+                (what, done("the import may have run; sources intact"), note)
+            }
+            JournalStep::ArrGrab => {
+                let what = match result {
+                    _ if ruled_out => Executed::Untouched,
+                    Some(StepOutcome::Failed { .. }) => Executed::Untouched,
+                    _ => Executed::Mutated,
+                };
+                let note = (what == Executed::Mutated && result.is_none())
+                    .then(|| "the grab may have been sent; it is never sent again".to_string());
+                (what, done("the grab may have been sent"), note)
+            }
+            JournalStep::ArrRemoveQueueItem => {
+                if matches!(result, Some(StepOutcome::Done { .. })) {
+                    return (Executed::Mutated, done("recorded done"), None);
+                }
+                if ruled_out {
+                    return (Executed::Untouched, skipped("not sent"), None);
+                }
+                let Ok(t) = serde_json::from_value::<QueueTarget>(intent.target.clone()) else {
+                    return (
+                        Executed::Unobservable,
+                        unobservable("unreadable target"),
+                        None,
+                    );
+                };
+                let queue = match self.ports.arr.iter().find(|r| r.service() == t.service) {
+                    Some(r) => r.queue().await.ok(),
+                    None => None,
+                };
+                match queue {
+                    Some(q) if q.iter().all(|i| i.id != t.id) => {
+                        (Executed::Mutated, done("the queue item is gone"), None)
+                    }
+                    Some(_) => (
+                        Executed::Untouched,
+                        skipped("interrupted before the removal; the item is still queued"),
+                        None,
+                    ),
+                    None => (
+                        Executed::Unobservable,
+                        unobservable("the queue could not be read"),
+                        None,
+                    ),
+                }
+            }
+            _ => {
+                if matches!(result, Some(StepOutcome::Done { .. })) {
+                    return (Executed::Mutated, done("recorded done"), None);
+                }
+                if ruled_out {
+                    return (Executed::Untouched, skipped("not sent"), None);
+                }
+                let (Ok(t), Ok(o)) = (
+                    serde_json::from_value::<MonitorTarget>(intent.target.clone()),
+                    serde_json::from_value::<MonitorObserved>(intent.observed.clone()),
+                ) else {
+                    return (
+                        Executed::Unobservable,
+                        unobservable("unreadable target"),
+                        None,
+                    );
+                };
+                let now = match self
+                    .ports
+                    .arr
+                    .iter()
+                    .find(|r| r.service() == t.media.service)
+                {
+                    Some(r) => read_monitored(&**r, &t.media).await.ok(),
+                    None => None,
+                };
+                match now {
+                    Some(v) if v == t.monitored && o.previous != t.monitored => (
+                        Executed::Mutated,
+                        done("the flag shows the requested value"),
+                        None,
+                    ),
+                    Some(_) => (
+                        Executed::Untouched,
+                        skipped("interrupted before the change; the flag is unchanged"),
+                        None,
+                    ),
+                    None => (
+                        Executed::Unobservable,
+                        unobservable("the monitored flag could not be read"),
+                        None,
+                    ),
+                }
+            }
+        }
     }
 
     /// What the disk shows for a removal or mode intent (CP2T3-F01, T3-15).

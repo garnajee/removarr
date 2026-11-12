@@ -114,8 +114,31 @@ pub(crate) fn no_controller() -> PortError {
 }
 
 impl Ctx<'_> {
+    /// `remove_tasks_keep_data` judged by what qBittorrent shows (CP2T4-F02): an error with
+    /// every hash gone from a fresh listing is a removal that happened.
+    pub(crate) async fn remove_tasks_observed(
+        &self,
+        set: &BTreeSet<TorrentHash>,
+    ) -> Result<(), PortError> {
+        let ctl = self.mutators.qbit.clone().ok_or_else(no_controller)?;
+        match ctl.remove_tasks_keep_data(set).await {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                let gone = match &self.ports.qbit {
+                    Some(r) => r
+                        .torrents()
+                        .await
+                        .is_ok_and(|l| l.iter().all(|t| !set.contains(&t.hash))),
+                    None => false,
+                };
+                if gone { Ok(()) } else { Err(e) }
+            }
+        }
+    }
+
     /// Journaled stop of `hashes`. `listing` is the fresh listing the revalidation just read;
-    /// the initial states come from it.
+    /// the initial states come from it. A hash missing from the listing refuses the stop
+    /// (CP2T4-F03): a stopped torrent with no initial state would stay stopped and unreported.
     pub async fn stop_torrents(
         &self,
         action: u32,
@@ -125,6 +148,18 @@ impl Ctx<'_> {
     ) -> Result<StepRun<()>, PortError> {
         if hashes.is_empty() {
             return Ok(StepRun::Done(()));
+        }
+        if let Some(h) = hashes
+            .iter()
+            .find(|h| !listing.iter().any(|t| &t.hash == *h))
+        {
+            return Ok(StepRun::Failed(PortError::new(
+                ErrorClass::Unavailable,
+                format!(
+                    "torrent {} is not in the fresh listing; nothing was stopped",
+                    h.as_str()
+                ),
+            )));
         }
         tx.initial = listing
             .iter()

@@ -69,6 +69,32 @@ impl Ctx<'_> {
                 Precondition::EntryUnchanged { path: q, sig, .. } if q == path => Some(*sig),
                 _ => None,
             });
+            // CP2T4-F04: the runner enforces what the planner promises (additive owner bits).
+            let extra = if sig.is_some_and(|s| s.kind == EntryKind::Dir) {
+                0o300
+            } else {
+                0o200
+            };
+            if let Some(sig) = sig
+                && (*mode != *mode & 0o7777
+                    || *mode & sig.mode != sig.mode
+                    || *mode & !sig.mode & !extra != 0)
+            {
+                b.outcomes.insert(
+                    a.index,
+                    (
+                        not_executed(vec![Blocker::new(
+                            BlockerCode::ProtectedZone,
+                            format!(
+                                "a mode fix may only add the owner write bit (and search on a directory): {path}"
+                            ),
+                        )]),
+                        vec![],
+                    ),
+                );
+                b.invalidated = true;
+                continue;
+            }
             match sig {
                 Some(sig) if matches!(sig.kind, EntryKind::File | EntryKind::Dir) => {
                     items.push((*a, path.clone(), sig, *mode));

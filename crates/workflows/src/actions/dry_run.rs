@@ -70,6 +70,11 @@ impl FsMutator for RecordingFsMutator {
         Ok(())
     }
 
+    fn remove_media_file(&self, _: &RootedPath, _: &EntrySignature) -> Result<(), PortError> {
+        self.counter.hit();
+        Ok(())
+    }
+
     fn remove_empty_dir(&self, _: &RootedPath, _: &EntrySignature) -> Result<(), PortError> {
         self.counter.hit();
         Ok(())

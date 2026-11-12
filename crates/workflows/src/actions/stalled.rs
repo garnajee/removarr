@@ -209,7 +209,6 @@ impl Ctx<'_> {
             return Ok(());
         }
         // Remove the task (never the data), journaled.
-        let ctl = self.mutators.qbit.clone();
         let set = hashes.clone();
         let run = self
             .step(
@@ -220,10 +219,7 @@ impl Ctx<'_> {
                 }),
                 serde_json::Value::Null,
                 hashes.clone(),
-                || async move {
-                    let ctl = ctl.ok_or_else(super::qbit::no_controller)?;
-                    ctl.remove_tasks_keep_data(&set).await
-                },
+                || self.remove_tasks_observed(&set),
             )
             .await?;
         match run {

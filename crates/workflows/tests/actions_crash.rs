@@ -397,3 +397,35 @@ async fn crash_before_the_stop_intent_touches_no_torrent_and_interrupts_the_plan
     assert!(matches!(p.actions[0].1, ActionOutcome::NotExecuted { .. }));
     assert_eq!(lab.phys(&lab.media_path("Movies/Rel/a.mkv")), before);
 }
+
+#[tokio::test]
+async fn f06_leftover_temporary_links_are_named_in_the_recovery_notes() {
+    // Interrupted replacement: a `.<name>.removarr-link-*` link may remain.
+    let lab = Lab::new().await;
+    crash_at(
+        &lab,
+        CrashPoint::AfterIntent(JournalStep::FsReplaceWithHardlink),
+    )
+    .await;
+    let (report, _) = run_recovery(&lab).await;
+    assert!(
+        report.plans[0]
+            .notes
+            .iter()
+            .any(|n| n.contains(".<name>.removarr-link-*")),
+        "{:?}",
+        report.plans[0].notes
+    );
+    // Interrupted probe: a `.<name>.removarr-probe-*` link may remain.
+    let lab = Lab::new().await;
+    crash_at(&lab, CrashPoint::AfterIntent(JournalStep::FsProbeHardlink)).await;
+    let (report, _) = run_recovery(&lab).await;
+    assert!(
+        report.plans[0]
+            .notes
+            .iter()
+            .any(|n| n.contains(".<name>.removarr-probe-*")),
+        "{:?}",
+        report.plans[0].notes
+    );
+}

@@ -26,6 +26,9 @@ pub(crate) struct Batch {
     pub invalidated: bool,
     /// Cancellation: no further mutation was issued.
     pub interrupted: bool,
+    /// Library files ARR copied instead of hardlinking: `(action, signature)`, recorded as
+    /// `AddedCost` gains (T4-15).
+    pub added_costs: Vec<(u32, removarr_domain::fs::EntrySignature)>,
 }
 
 pub(crate) fn not_executed(blockers: Vec<Blocker>) -> ActionOutcome {

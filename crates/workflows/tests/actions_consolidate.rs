@@ -799,9 +799,14 @@ async fn a_stop_failure_leaves_nothing_modified_and_restores_what_it_can() {
     assert_eq!(lab.status(plan_id).await, PlanStatus::Failed);
 }
 
+/// An approved automatic plan: tier 5, never executable in this build.
+fn auto_plan(lab: &Lab) -> removarr_domain::plan::HashedPlan {
+    lab.plan(ONE, PlanMode::Live, PlanOrigin::AutoPolicy)
+}
+
 #[tokio::test]
-async fn tiers_four_and_five_are_explicit_refusals() {
-    assert_eq!(IMPLEMENTED_TIER, RiskTier::T3);
+async fn tier_five_automatic_plans_are_explicit_refusals() {
+    assert_eq!(IMPLEMENTED_TIER, RiskTier::T4);
     for k in [
         ActionKind::ReplaceRelease,
         ActionKind::DeleteMediaFile,
@@ -809,7 +814,7 @@ async fn tiers_four_and_five_are_explicit_refusals() {
         ActionKind::ArrRemoveQueueItem,
         ActionKind::ArrSetMonitored,
     ] {
-        assert!(!supported(k), "{k:?}");
+        assert!(supported(k), "{k:?}");
     }
     for k in [
         ActionKind::ConsolidateHardlink,
@@ -827,7 +832,7 @@ async fn tiers_four_and_five_are_explicit_refusals() {
         assert!(supported(k), "{k:?}");
     }
     let lab = Lab::new().await;
-    let ticket = lab.ticket(lab.tier4_plan(), false).await;
+    let ticket = lab.ticket(auto_plan(&lab), false).await;
     let plan_id = ticket.plan.plan().id;
     let (mutators, counting) = lab.live();
     let report = execute(
@@ -852,7 +857,7 @@ async fn tiers_four_and_five_are_explicit_refusals() {
     assert_eq!(counting.mutations() + lab.qbit.mutation_count(), 0);
     assert!(lab.completed_path("Rel/a.mkv").exists());
     // Simulating a refused kind touches nothing and changes nothing either.
-    let ticket = lab.ticket(lab.tier4_plan(), true).await;
+    let ticket = lab.ticket(auto_plan(&lab), true).await;
     let plan_id = ticket.plan.plan().id;
     let report = execute(
         &lab.ports(),
@@ -873,7 +878,9 @@ async fn tiers_four_and_five_are_explicit_refusals() {
 
 #[tokio::test]
 async fn an_automatic_plan_stops_at_the_first_failure_and_a_manual_one_continues() {
-    for origin in [PlanOrigin::AutoPolicy, PlanOrigin::User] {
+    // CP2T4-F01: automatic plans are refused by the runner until tier 5 (see
+    // `actions_fixes.rs::f01_t4_*`), so only the manual continuation is executable.
+    for origin in [PlanOrigin::User] {
         let lab = Lab::new().await;
         let ticket = lab
             .ticket(lab.plan(TWO, PlanMode::Live, origin), false)

@@ -653,7 +653,7 @@ fn tier3_plans(lab: &Lab, mode: PlanMode) -> Vec<(HashedPlan, Vec<JournalStep>)>
         ),
         (
             lab.seal_mode(
-                vec![lab.fix_mode_action(0, "Rel/b.mkv", 0o664)],
+                vec![lab.fix_mode_action(0, "Rel/b.mkv", 0o644)],
                 mode,
                 user(),
                 vec![],
