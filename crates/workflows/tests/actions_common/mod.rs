@@ -1619,6 +1619,7 @@ impl Lab {
         ActionSettings {
             config_fingerprint: CFG.into(),
             capabilities: self.capabilities.lock().unwrap().clone(),
+            auto_mode_active: true,
             auto_min_age_hours: 48,
             recheck_timeout: Duration::from_millis(80),
             recheck_interval: Duration::from_millis(5),

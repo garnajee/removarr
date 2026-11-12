@@ -21,8 +21,8 @@ use removarr_domain::ports::{CancelFlag, StateStore};
 use removarr_domain::time::Timestamp;
 use removarr_jobs::auto::{
     ActionFacts, ActionHistory, AutoControl, CycleDeps, CycleEngine, ExecutedAction, KEY_CYCLE,
-    KEY_PAUSED, PhaseError, PhasePlan, PhasePlans, Refusal, RescanSummary, assess, failed_sets,
-    run_cycle,
+    KEY_PAUSED, PhaseError, PhasePlan, PhasePlans, Refusal, RescanSummary, Verdict, assess,
+    classify_blockers, failed_sets, run_cycle,
 };
 use removarr_jobs::events::{Hub, ProgressHandle};
 use removarr_jobs::handler::{JobCtx, JobError, RecoverySummary};
@@ -135,6 +135,8 @@ struct Engine {
     marker_seen: Mutex<Vec<Option<String>>>,
     state: Arc<MemState>,
     simulate_flags: Mutex<Vec<bool>>,
+    auto_flags: Mutex<Vec<bool>>,
+    pending_discards: Mutex<u32>,
 }
 
 impl Engine {
@@ -158,6 +160,8 @@ impl Engine {
             marker_seen: Mutex::default(),
             state,
             simulate_flags: Mutex::default(),
+            auto_flags: Mutex::default(),
+            pending_discards: Mutex::new(0),
         }
     }
     fn phase(&self, p: AutoPhase, plans: Vec<PhasePlan>) {
@@ -210,6 +214,10 @@ impl CycleEngine for Engine {
         self.discarded.lock().unwrap().push(plan);
         Ok(())
     }
+    async fn discard_pending(&self) -> Result<u32, PortError> {
+        *self.pending_discards.lock().unwrap() += 1;
+        Ok(0)
+    }
     async fn recover(&self, _sink: EventSink) -> Result<RecoverySummary, PortError> {
         self.log.lock().unwrap().push("recover".into());
         self.recover
@@ -222,6 +230,7 @@ impl CycleEngine for Engine {
         &self,
         plan: PlanId,
         simulate: bool,
+        auto_active: bool,
         _c: &CancelFlag,
         _s: EventSink,
     ) -> Result<ExecutionReport, PortError> {
@@ -230,6 +239,7 @@ impl CycleEngine for Engine {
             .unwrap()
             .push(format!("execute:{}", plan.0.as_u128()));
         self.simulate_flags.lock().unwrap().push(simulate);
+        self.auto_flags.lock().unwrap().push(auto_active);
         let marker = self.state.get(KEY_CYCLE).await.unwrap();
         self.marker_seen.lock().unwrap().push(marker);
         if self.hang {
@@ -683,6 +693,7 @@ async fn planning_failures_and_policy_errors_stop_the_cycle_but_a_refused_a1_doe
             refused: vec![Refusal {
                 reason: "plan lacks the ARR pin".into(),
                 benign: false,
+                blockers: vec![],
             }],
         }),
     );
@@ -700,6 +711,7 @@ async fn planning_failures_and_policy_errors_stop_the_cycle_but_a_refused_a1_doe
             refused: vec![Refusal {
                 reason: "3 item(s) excluded".into(),
                 benign: true,
+                blockers: vec![],
             }],
         }),
     );
@@ -1001,4 +1013,279 @@ fn assess_applies_the_t5_08_rule_per_outcome() {
         assert!(a.stop.is_some());
         assert!(a.failed_paths.contains(&rp("completed", "m/a.mkv")));
     }
+}
+
+fn blocker(code: removarr_domain::issue::BlockerCode, d: &str) -> removarr_domain::issue::Blocker {
+    removarr_domain::issue::Blocker::new(code, d)
+}
+
+fn pause_class_blockers() -> Vec<(&'static str, removarr_domain::issue::Blocker)> {
+    use removarr_domain::issue::BlockerCode as B;
+    use removarr_domain::session::ServiceKind as S;
+    vec![
+        (
+            "qbittorrent down",
+            blocker(
+                B::ServiceUnavailable(S::Qbittorrent),
+                "qbittorrent did not answer",
+            ),
+        ),
+        (
+            "arr down",
+            blocker(B::ServiceUnavailable(S::Sonarr), "sonarr did not answer"),
+        ),
+        (
+            "service not configured",
+            blocker(B::ServiceNotConfigured(S::Qbittorrent), ""),
+        ),
+        ("mapping", blocker(B::MappingError, "no rule")),
+        (
+            "scan incomplete",
+            blocker(B::ScanIncomplete, "root not finished"),
+        ),
+        ("scan errors", blocker(B::ScanErrorUnder, "2 scan errors")),
+        (
+            "ignore list unreadable",
+            blocker(B::Ignored, "ignore list unreadable: db"),
+        ),
+        ("arr ambiguous", blocker(B::ArrAmbiguous, "ARR unreadable")),
+        (
+            "capability",
+            blocker(
+                B::CapabilityDisabled,
+                "automatic mode is disabled or paused",
+            ),
+        ),
+        (
+            "config drift",
+            blocker(
+                B::ChangedSincePlanning,
+                "configuration changed since the plan was built; re-plan",
+            ),
+        ),
+        (
+            "missing pin",
+            blocker(
+                B::ChangedSincePlanning,
+                "the plan lacks the wanted-file pin of torrent x",
+            ),
+        ),
+        ("not in build", blocker(B::NotInBuild, "tier")),
+        (
+            "unknown code fails closed",
+            blocker(B::Symlink, "anything else"),
+        ),
+        ("interrupted", blocker(B::Interrupted, "batch stopped")),
+    ]
+}
+
+#[test]
+fn f01_every_uncertainty_or_defect_code_pauses_and_ordinary_changes_continue() {
+    use removarr_domain::issue::BlockerCode as B;
+    for (name, b) in pause_class_blockers() {
+        assert!(
+            matches!(classify_blockers(&[b]), Verdict::Pause(_)),
+            "{name}"
+        );
+    }
+    for (name, b) in [
+        (
+            "entry changed",
+            blocker(
+                B::ChangedSincePlanning,
+                "entry changed since the plan was built: completed:a",
+            ),
+        ),
+        (
+            "torrent protected",
+            blocker(B::TorrentProtectedState, "now checking"),
+        ),
+        (
+            "torrent references",
+            blocker(B::TorrentReferencesTarget, ""),
+        ),
+        (
+            "too young",
+            blocker(B::Recent, "younger than the minimum age"),
+        ),
+        (
+            "ignored by the user",
+            blocker(B::Ignored, "the subject is on the ignore list"),
+        ),
+        ("import in progress", blocker(B::ImportInProgress, "")),
+        (
+            "arr now upgrades",
+            blocker(
+                B::ArrNotUpgradeEvidence,
+                "ARR no longer rejects x as not an upgrade",
+            ),
+        ),
+    ] {
+        assert_eq!(classify_blockers(&[b]), Verdict::Ordinary, "{name}");
+    }
+    // One bad blocker among ordinary ones still pauses.
+    let mixed = [blocker(B::Recent, ""), blocker(B::MappingError, "x")];
+    assert!(matches!(classify_blockers(&mixed), Verdict::Pause(_)));
+}
+
+#[tokio::test(start_paused = true)]
+async fn f01_each_pause_class_stops_the_cycle_end_to_end_and_an_ordinary_refusal_continues() {
+    use removarr_domain::issue::BlockerCode as B;
+    for (name, b) in pause_class_blockers() {
+        let h = harness(true);
+        h.engine.phase(
+            AutoPhase::Consolidations,
+            vec![phase_plan(10, ActionKind::ConsolidateHardlink, "m/a.mkv")],
+        );
+        h.engine.phase(
+            AutoPhase::Deletions,
+            vec![phase_plan(20, ActionKind::DeleteCompletedFile, "m/c.mkv")],
+        );
+        h.engine.report(report(
+            10,
+            ActionKind::ConsolidateHardlink,
+            ActionOutcome::NotExecuted { blockers: vec![b] },
+            false,
+            false,
+        ));
+        let r = cycle(&h).await.unwrap();
+        assert_eq!(r.metrics["paused"], 1, "{name}");
+        let why = paused(&h).await.unwrap_or_default();
+        assert!(
+            why.contains("was refused"),
+            "{name}: the reason is recorded: {why}"
+        );
+        assert!(
+            !h.engine.log().contains(&"plan:Deletions".to_string()),
+            "{name}"
+        );
+        assert_eq!(
+            *h.engine.pending_discards.lock().unwrap(),
+            1,
+            "{name}: pending automatic plans are discarded"
+        );
+    }
+    let h = harness(true);
+    h.engine.phase(
+        AutoPhase::Consolidations,
+        vec![phase_plan(10, ActionKind::ConsolidateHardlink, "m/a.mkv")],
+    );
+    let b = blocker(
+        B::ChangedSincePlanning,
+        "entry changed since the plan was built: completed:m/a.mkv",
+    );
+    h.engine.report(report(
+        10,
+        ActionKind::ConsolidateHardlink,
+        ActionOutcome::NotExecuted { blockers: vec![b] },
+        false,
+        false,
+    ));
+    cycle(&h).await.unwrap();
+    assert_eq!(paused(&h).await, None);
+    assert!(h.engine.log().contains(&"plan:Deletions".to_string()));
+}
+
+#[tokio::test(start_paused = true)]
+async fn f05_nothing_plannable_is_harmless_only_without_uncertainty_exclusions() {
+    use removarr_domain::issue::BlockerCode as B;
+    let h = harness(true);
+    h.engine.phases.lock().unwrap().insert(
+        "Consolidations".into(),
+        Ok(PhasePlans {
+            plans: vec![],
+            refused: vec![Refusal {
+                reason: "3 item(s) excluded".into(),
+                benign: true,
+                blockers: vec![blocker(
+                    B::ServiceUnavailable(removarr_domain::session::ServiceKind::Sonarr),
+                    "ARR down",
+                )],
+            }],
+        }),
+    );
+    cycle(&h).await.unwrap();
+    assert!(paused(&h).await.unwrap().contains("policy refusal"));
+    // The same text with only ordinary exclusions stays harmless.
+    let h = harness(true);
+    h.engine.phases.lock().unwrap().insert(
+        "Consolidations".into(),
+        Ok(PhasePlans {
+            plans: vec![],
+            refused: vec![Refusal {
+                reason: "3 item(s) excluded".into(),
+                benign: true,
+                blockers: vec![blocker(B::Recent, "")],
+            }],
+        }),
+    );
+    cycle(&h).await.unwrap();
+    assert_eq!(paused(&h).await, None);
+}
+
+#[tokio::test(start_paused = true)]
+async fn f06_only_a_cycle_run_while_enabled_and_not_paused_is_active() {
+    let h = harness(true);
+    h.engine.phase(
+        AutoPhase::Consolidations,
+        vec![phase_plan(10, ActionKind::ConsolidateHardlink, "m/a.mkv")],
+    );
+    h.engine.report(ok_consolidation(10));
+    cycle(&h).await.unwrap();
+    assert_eq!(*h.engine.auto_flags.lock().unwrap(), [true]);
+    // Off or paused: nothing executes at all, so the flag can never be true.
+    let h = harness(false);
+    cycle(&h).await.unwrap();
+    assert!(h.engine.auto_flags.lock().unwrap().is_empty());
+}
+
+#[tokio::test(start_paused = true)]
+async fn f07_t4_era_refusals_do_not_block_subjects() {
+    let h = harness(true);
+    let now = h.clock.now_ts();
+    let mk = |rel: &str, outcome: ActionOutcome| ExecutedAction {
+        plan: pid(1),
+        at: now,
+        action: consolidation_action(rel),
+        outcome: Some(outcome),
+    };
+    let not_in_build = ActionOutcome::NotExecuted {
+        blockers: vec![blocker(
+            removarr_domain::issue::BlockerCode::NotInBuild,
+            "tier",
+        )],
+    };
+    let other = ActionOutcome::NotExecuted {
+        blockers: vec![blocker(
+            removarr_domain::issue::BlockerCode::Recent,
+            "young",
+        )],
+    };
+    *h.hist.0.lock().unwrap() = vec![
+        mk("t4/era.mkv", not_in_build),
+        mk("real/failure.mkv", other),
+    ];
+    let sets = failed_sets(&h.hist, now).await.unwrap();
+    assert!(!sets.paths.contains(&rp("completed", "t4/era.mkv")));
+    assert!(
+        !sets
+            .subjects
+            .contains(&SubjectKey("p:completed:t4/era.mkv".into()))
+    );
+    assert!(sets.paths.contains(&rp("completed", "real/failure.mkv")));
+    // The window is keyed on the outcome time: an old plan whose outcome is recent counts.
+    let old_plan_recent_outcome = ExecutedAction {
+        plan: pid(2),
+        at: Timestamp(now.0 - 6 * 86_400_000),
+        action: consolidation_action("late/recovered.mkv"),
+        outcome: Some(ActionOutcome::FailedNeedsReview),
+    };
+    h.hist.0.lock().unwrap().push(old_plan_recent_outcome);
+    assert!(
+        failed_sets(&h.hist, now)
+            .await
+            .unwrap()
+            .paths
+            .contains(&rp("completed", "late/recovered.mkv"))
+    );
 }

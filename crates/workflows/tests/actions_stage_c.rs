@@ -55,7 +55,7 @@ fn first_blocker(o: &ActionOutcome) -> BlockerCode {
 }
 
 #[tokio::test]
-async fn f01_automatic_plans_are_refused_before_any_intent_live_and_simulated() {
+async fn f01_an_automatic_plan_failing_an_automatic_check_is_refused_before_any_intent() {
     for simulate in [false, true] {
         let lab = Lab::new().await;
         let deletion = lab.seal(
@@ -74,12 +74,22 @@ async fn f01_automatic_plans_are_refused_before_any_intent_live_and_simulated() 
             PlanMode::Live,
             PlanOrigin::AutoPolicy,
         );
-        for plan in [deletion, consolidation] {
+        // Live: a user approval of an automatic plan. Simulated: no evidence for the deletion,
+        // files younger than the minimum age for the consolidation.
+        for (plan, sim_code) in [
+            (deletion, BlockerCode::ArrAmbiguous),
+            (consolidation, BlockerCode::Recent),
+        ] {
             let id = plan.plan().id;
             let (report, counting) = run(&lab, plan, simulate).await;
-            assert_eq!(
-                first_blocker(&report.actions[0].outcome),
-                BlockerCode::NotInBuild,
+            let expected = if simulate {
+                sim_code
+            } else {
+                BlockerCode::CapabilityDisabled
+            };
+            assert!(
+                matches!(&report.actions[0].outcome, ActionOutcome::NotExecuted { blockers }
+                    if blockers.iter().any(|b| b.code == expected)),
                 "{report:?}"
             );
             assert!(lab.steps(id).await.is_empty(), "no intent");

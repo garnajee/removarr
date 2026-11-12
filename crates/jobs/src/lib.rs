@@ -24,7 +24,9 @@ pub mod runtime;
 pub mod schedule;
 pub mod workflow;
 
-pub use auto::{ActionHistory, AutoControl, CycleEngine, ExecutedAction, FailedSets};
+pub use auto::{
+    ActionHistory, AutoControl, CycleEngine, ExecutedAction, FailedSets, PendingAutoPlans,
+};
 pub use config::{JobsConfig, LimitsConfig, RetryConfig, ScheduleConfig};
 pub use events::{Hub, JobEvent, JobEventKind, JobProgress, LogLevel};
 pub use handler::{JobCtx, JobError, JobHandler, JobSuccess, RecoverySummary, ScanSummary};

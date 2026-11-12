@@ -106,8 +106,7 @@ pub async fn execute(
     .await
 }
 
-/// Test-only entry with an explicit tier gate, so the tier-5 runner path is exercised without
-/// raising `IMPLEMENTED_TIER`. It exists only under the `tier5-test-gate` feature, which this
+/// Test-only entry with an explicit tier gate (lower-gate tests). It exists only under the `tier5-test-gate` feature, which this
 /// crate enables solely through its own dev-dependency: no production build contains it.
 #[cfg(feature = "tier5-test-gate")]
 pub async fn execute_with_gate(

@@ -16,6 +16,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use async_trait::async_trait;
 use removarr_domain::error::PortError;
 use removarr_domain::ids::{PlanId, SessionId, SubjectKey};
+use removarr_domain::issue::{Blocker, BlockerCode};
 use removarr_domain::journal::{ActionOutcome, JournalStep, StepOutcome};
 use removarr_domain::path::{RootId, RootedPath};
 use removarr_domain::plan::{ActionKind, PlannedAction};
@@ -170,7 +171,8 @@ impl AutoControl {
 #[derive(Debug, Clone)]
 pub struct ExecutedAction {
     pub plan: PlanId,
-    /// When the plan last changed (any instant inside the failure window is enough).
+    /// When the outcome was recorded (the last journal result or intent of the plan, else the
+    /// plan's creation). The 7-day window is keyed on it, not on the plan's `created_at`.
     pub at: Timestamp,
     pub action: PlannedAction,
     /// `None` = no final outcome was recorded (an unresolved action).
@@ -210,12 +212,27 @@ pub async fn failed_sets(
         ) {
             continue;
         }
+        // A refusal by the build (a T4-era automatic plan, or a planner/runner tier mismatch)
+        // is not a failure of the subject: it must not block it for a week (F07).
+        if let Some(ActionOutcome::NotExecuted { blockers }) = &h.outcome
+            && blockers.iter().any(|b| b.code == BlockerCode::NotInBuild)
+        {
+            continue;
+        }
         sets.subjects.extend(action_subjects(&h.action));
         if h.action.kind == ActionKind::ConsolidateHardlink {
             sets.paths.extend(action_paths(&h.action));
         }
     }
     Ok(sets)
+}
+
+/// Approved plans of origin `AutoPolicy` that have not run (to wire in 16 over
+/// `PlanRepo::ids_with_status(Approved)` and `PlanStore::get`). They are discarded at startup and
+/// whenever automatic mode pauses, so a user job can never execute them (F06).
+#[async_trait]
+pub trait PendingAutoPlans: Send + Sync {
+    async fn approved_automatic(&self) -> Result<Vec<PlanId>, PortError>;
 }
 
 // ---- the cycle ------------------------------------------------------------------------------
@@ -245,6 +262,9 @@ pub struct Refusal {
     pub reason: String,
     /// A normal policy exclusion (some units were not eligible) rather than an error.
     pub benign: bool,
+    /// Typed reasons, when the planner supplies them. Any pause-class blocker stops the cycle
+    /// even when `benign` is true (F05).
+    pub blockers: Vec<Blocker>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -285,11 +305,16 @@ pub trait CycleEngine: Send + Sync {
     async fn ignored(&self) -> Result<BTreeSet<SubjectKey>, PortError>;
     /// Discards a plan that will not run, so it can never be executed later.
     async fn discard(&self, plan: PlanId) -> Result<(), PortError>;
+    /// Discards every approved automatic plan still waiting (so a user job cannot run it).
+    async fn discard_pending(&self) -> Result<u32, PortError>;
     async fn recover(&self, sink: EventSink) -> Result<RecoverySummary, PortError>;
+    /// `auto_active` becomes `ActionSettings.auto_mode_active` of this run: true only for a
+    /// cycle execution while automatic mode is enabled and not paused (F06).
     async fn execute(
         &self,
         plan: PlanId,
         simulate: bool,
+        auto_active: bool,
         cancel: &CancelFlag,
         sink: EventSink,
     ) -> Result<ExecutionReport, PortError>;
@@ -325,6 +350,47 @@ pub struct Assessment {
     pub verified: u64,
 }
 
+/// How a refusal affects the cycle.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Verdict {
+    /// An ordinary state change: the world moved, the entry is not ours to touch now.
+    Ordinary,
+    /// An uncertainty or a defect: stop and pause with this reason.
+    Pause(String),
+}
+
+/// Classifies refusal blockers (CP2T5F-F01). Only ordinary state changes continue; anything
+/// else, an unknown code included, stops the cycle (fail closed). `ChangedSincePlanning` and
+/// `Ignored` share a code between ordinary and defect causes, so their detail text decides.
+#[must_use]
+pub fn classify_blockers(blockers: &[Blocker]) -> Verdict {
+    for b in blockers {
+        let d = b.detail.as_str();
+        let ordinary = match &b.code {
+            BlockerCode::TorrentProtectedState
+            | BlockerCode::TorrentReferencesTarget
+            | BlockerCode::Recent
+            | BlockerCode::ImportInProgress
+            | BlockerCode::ContentDiffers => true,
+            BlockerCode::Ignored => !d.contains("unreadable"),
+            BlockerCode::ArrNotUpgradeEvidence => d.contains("no longer rejects"),
+            BlockerCode::ChangedSincePlanning => ![
+                "configuration changed",
+                "lacks",
+                "could not be read",
+                "unreadable",
+            ]
+            .iter()
+            .any(|t| d.contains(t)),
+            _ => false,
+        };
+        if !ordinary {
+            return Verdict::Pause(format!("{:?}: {d}", b.code));
+        }
+    }
+    Verdict::Ordinary
+}
+
 fn is_service_step(step: JournalStep) -> bool {
     matches!(
         step,
@@ -348,7 +414,14 @@ pub fn assess(plan: &PhasePlan, report: &ExecutionReport) -> Assessment {
                 false
             }
             ActionOutcome::Simulated => false,
-            ActionOutcome::NotExecuted { .. } => true,
+            ActionOutcome::NotExecuted { blockers } => {
+                if let Verdict::Pause(why) = classify_blockers(blockers) {
+                    a.stop.get_or_insert_with(|| {
+                        format!("action {} ({:?}) was refused: {why}", r.index, r.kind)
+                    });
+                }
+                true
+            }
             other => {
                 a.stop.get_or_insert_with(|| {
                     format!("action {} ({:?}) ended as {other:?}", r.index, r.kind)
@@ -415,16 +488,24 @@ impl Cycle<'_, '_> {
         ctx.progress
             .warn(&format!("automatic cycle stopped: {reason}"));
         ctx.auto.pause(&reason).await;
+        // F06: no approved automatic plan may stay executable by a user job while paused.
+        if let Err(e) = self.d.engine.discard_pending().await {
+            tracing::error!(class = ?e.class, "could not discard pending automatic plans");
+        }
         self.m.insert("paused".into(), 1);
         Flow::Stop
     }
 
-    async fn discard(&self, plans: &[PhasePlan]) {
+    /// Discards unused plans. Returns false when one could not be discarded.
+    async fn discard(&self, plans: &[PhasePlan]) -> bool {
+        let mut ok = true;
         for p in plans {
             if let Err(e) = self.d.engine.discard(p.plan).await {
+                ok = false;
                 tracing::warn!(plan = %p.plan, class = ?e.class, "could not discard an unused automatic plan");
             }
         }
+        ok
     }
 
     async fn phase(&mut self, phase: AutoPhase) -> Result<Flow, JobError> {
@@ -456,9 +537,18 @@ impl Cycle<'_, '_> {
             }
         };
         self.count("plans_planned", planned.plans.len() as u64);
-        if let Some(r) = planned.refused.iter().find(|r| !r.benign) {
+        let refusal = planned.refused.iter().find_map(|r| {
+            if !r.benign {
+                return Some(r.reason.clone());
+            }
+            match classify_blockers(&r.blockers) {
+                Verdict::Pause(why) => Some(format!("{} ({why})", r.reason)),
+                Verdict::Ordinary => None,
+            }
+        });
+        if let Some(why) = refusal {
             self.discard(&planned.plans).await;
-            return Ok(self.stop(format!("policy refusal: {}", r.reason)).await);
+            return Ok(self.stop(format!("policy refusal: {why}")).await);
         }
         let ignored = match d.engine.ignored().await {
             Ok(i) => i,
@@ -484,7 +574,12 @@ impl Cycle<'_, '_> {
                 .iter()
                 .any(|a| a.subjects.iter().any(|s| ignored.contains(s)))
             {
-                self.discard(std::slice::from_ref(plan)).await;
+                if !self.discard(std::slice::from_ref(plan)).await {
+                    self.discard(&rest[1..]).await;
+                    return Ok(self
+                        .stop("an ignored automatic plan could not be discarded".into())
+                        .await);
+                }
                 self.count("plans_skipped_ignored", 1);
                 continue;
             }
@@ -516,7 +611,13 @@ impl Cycle<'_, '_> {
             };
             let result = d
                 .engine
-                .execute(plan.plan, simulate, &ctx.cancel, ctx.progress.action_sink())
+                .execute(
+                    plan.plan,
+                    simulate,
+                    ctx.auto.enabled() && ctx.auto.paused().is_none(),
+                    &ctx.cancel,
+                    ctx.progress.action_sink(),
+                )
                 .await;
             drop(guard);
             self.count("plans_executed", 1);

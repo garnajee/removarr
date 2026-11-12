@@ -365,12 +365,11 @@ impl Inner {
                     );
                     if sum.plans > 0 && self.auto.enabled() {
                         // T5-16: automatic mode never resumes by itself after an interruption.
-                        self.auto
-                            .pause(&format!(
-                                "recovery resolved {} interrupted plan(s)",
-                                sum.plans
-                            ))
-                            .await;
+                        self.pause_auto(&format!(
+                            "recovery resolved {} interrupted plan(s)",
+                            sum.plans
+                        ))
+                        .await;
                     }
                     return true;
                 }
@@ -585,6 +584,31 @@ impl Inner {
         }
     }
 
+    /// Pauses automatic mode and discards approved automatic plans left waiting (F06).
+    async fn pause_auto(&self, reason: &str) {
+        self.auto.pause(reason).await;
+        self.discard_pending().await;
+    }
+
+    async fn discard_pending(&self) {
+        match self.handler.discard_pending_auto().await {
+            Ok(n) if n > 0 => self.hub.publish(
+                None,
+                JobEventKind::Log {
+                    level: LogLevel::Warn,
+                    message: format!("{n} approved automatic plan(s) discarded"),
+                },
+            ),
+            Ok(_) => {}
+            Err(e) => {
+                tracing::error!(class = ?e.class, "could not discard pending automatic plans");
+                self.auto
+                    .pause("approved automatic plans could not be discarded")
+                    .await;
+            }
+        }
+    }
+
     /// Automatic mode follows a scheduled scan only when it is complete and clean; otherwise it
     /// stops (scan, mappings, permissions, APIs).
     async fn after_scheduled_scan(&self, s: &ScanSummary) {
@@ -603,8 +627,7 @@ impl Inner {
                 .uncertainties
                 .first()
                 .map_or("the scheduled scan is incomplete", String::as_str);
-            self.auto
-                .pause(&format!("scheduled scan is not clean: {why}"))
+            self.pause_auto(&format!("scheduled scan is not clean: {why}"))
                 .await;
         }
     }
@@ -727,21 +750,21 @@ impl JobRuntime {
                 }
                 Lane::Execute => {
                     if matches!(old.kind, JobKind::AutoCycle { .. }) {
-                        i.auto
-                            .pause("an automatic cycle was interrupted by a restart")
+                        i.pause_auto("an automatic cycle was interrupted by a restart")
                             .await;
                     }
                 }
             }
         }
         if let Some(marker) = i.auto.unfinished_cycle().await? {
-            i.auto
-                .pause(&format!(
-                    "an automatic cycle (session {marker}) never finished"
-                ))
-                .await;
+            i.pause_auto(&format!(
+                "an automatic cycle (session {marker}) never finished"
+            ))
+            .await;
             i.auto.clear_cycle().await?;
         }
+        // F06: whatever the previous process left approved is never run by a user job.
+        i.discard_pending().await;
         report.auto_paused = i.auto.paused();
         {
             let mut tasks = lock(&self.tasks);

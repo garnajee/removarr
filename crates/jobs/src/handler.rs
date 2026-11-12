@@ -141,6 +141,13 @@ pub trait JobHandler: Send + Sync {
     /// retry mutating calls.
     async fn run(&self, kind: &JobKind, ctx: &JobCtx) -> Result<JobSuccess, JobError>;
 
+    /// Discards every approved automatic plan still waiting, so no user job can run it while
+    /// automatic mode is off, paused or restarting (CP2T5F-F06). Called at startup and after
+    /// every pause. The default finds nothing.
+    async fn discard_pending_auto(&self) -> Result<u32, PortError> {
+        Ok(0)
+    }
+
     /// Resolves interrupted plans (`actions::recover`). `Err` means unresolved: the runtime
     /// retries with backoff and starts no execute job meanwhile.
     async fn recover(&self, sink: EventSink) -> Result<RecoverySummary, PortError>;

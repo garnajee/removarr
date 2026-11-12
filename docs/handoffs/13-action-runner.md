@@ -468,3 +468,36 @@ Not mine (T5-02, T5-10, T5-11, T5-12, T5-14 runner part is unchanged and covered
 * `cargo clippy --workspace --all-targets -- -D warnings`: pass.
 * `cargo test --workspace`: pass, 721 passed, 0 failed, 1 ignored (opt-in ffprobe).
 * Note: an earlier wrapper in this stage swallowed compiler errors (`timeout` is not installed on macOS); every result above comes from the final plain runs.
+
+
+## Gate raise to T5 (runner part)
+
+Review: `docs/reviews/cp2-tier5-final.md`. `IMPLEMENTED_TIER = RiskTier::T5`
+(`actions/mod.rs`); the production `execute` now accepts a valid automatic plan and refuses an
+invalid one (wrong kind, missing evidence, ignored subject, too young, user approval, automatic
+mode inactive). Automatic mode itself stays off by default: that is configuration and the job
+runner. Every automatic-only check of stage D is kept. Nothing committed; the gate raise lands in
+one commit with job-runner's fixes.
+
+| Finding | Status | What changed | Test (`actions_tier5.rs`) |
+|---|---|---|---|
+| F02 | fixed | `auto_live_checks` uses `plans::action_subjects` (holding torrents, `q:`/`m:` keys included); the local `subjects_of` is gone. | `cp2t5f_f02_f03_runner_uses_the_planners_subjects_and_age_set` |
+| F03 | fixed | Age is checked on the pinned signatures whose path is in `plans::action_paths` (targets, folder entries), never on the replacement evidence pin. | same test (young replacement, old target: `Verified`) |
+| F04 | fixed | The ARR preview is read once per folder and judged for video files only; sidecars (`.nfo .srt .sub .idx .ass .ssa .vtt .jpg .jpeg .png .webp .gif .tbn .txt`) are skipped (covered by the `DirUnchanged` pin, so one added after planning still invalidates); samples refuse (`Sample`); a video the preview does not reject refuses (`ArrNotUpgradeEvidence`); any other non-video file refuses (`ArrAmbiguous`). The video and sidecar lists are constants in `actions/auto.rs` (the runner has no `IssueSettings`). | `cp2t5f_f04_an_automatic_folder_with_sidecars_runs_and_an_unlisted_extra_video_refuses` (accepted folder removed with one `remove_tree`, extra video, file added after planning, unknown file) |
+| F06 | fixed (runner part) | New `ActionSettings.auto_mode_active` (fails closed): a live `AutoPolicy` plan is refused with `CapabilityDisabled` while it is false, before any intent; simulations stay allowed. **Job-runner must set it true only for the automatic cycle while automatic mode is enabled and not paused** (and discard leftover approved plans / refuse `submit(ExecutePlan)` for `AutoPolicy`). | `cp2t5f_f06_an_approved_automatic_plan_never_runs_while_automatic_mode_is_inactive` |
+| F01, F05, F07, F08 | job-runner / plan-engine / integration owners | - | - |
+
+Rewritten tests: `actions_consolidate.rs::tier_five_is_enabled_and_an_automatic_plan_needs_every_automatic_check`,
+`actions_stage_c.rs::f01_an_automatic_plan_failing_an_automatic_check_is_refused_before_any_intent`
+(live: user approval refused; simulated: missing evidence / too young; zero intents and mutations),
+`actions_tier5.rs::t5_01_the_production_execute_accepts_a_valid_automatic_plan_and_refuses_invalid_ones`
+(the other `t5_*` tests now call the production `execute`; dry-run zero-mutation assertions kept).
+
+**`tier5-test-gate` is kept**: `crates/jobs` (a dev-dependency, `real_runner.rs`) still calls
+`execute_with_gate`. Here it is used only to prove a lower gate (T4) still refuses automatic plans;
+`automatic_defects_for_test` feeds unsealed plans (T5-18). `cargo tree -p removarr -e normal,features
+| grep tier5` prints nothing. The feature can be removed once job-runner drops `execute_with_gate`.
+
+Doc comments updated: `actions/mod.rs` header, `actions/auto.rs` header, `execute_with_gate`.
+Wiring owed by 16/14: `ActionSettings.auto_mode_active`, `capabilities`, `auto_min_age_hours`,
+`ActionPorts.ignores` (all fail closed when missing).

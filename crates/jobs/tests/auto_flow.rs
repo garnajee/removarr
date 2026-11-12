@@ -128,3 +128,23 @@ async fn manual_scans_off_and_paused_never_start_a_cycle() {
         "resuming twice is a no-op"
     );
 }
+
+#[tokio::test(start_paused = true)]
+async fn f06_pending_automatic_plans_are_discarded_at_startup_and_whenever_automatic_mode_pauses() {
+    use std::sync::atomic::Ordering;
+    let r = scheduled(true);
+    r.script
+        .on_run(scan_ok(false, vec!["root completed was not observed"]));
+    r.rt.start().await.unwrap();
+    settle().await;
+    assert_eq!(r.script.discards.load(Ordering::SeqCst), 1, "at startup");
+    tokio::time::sleep(Duration::from_secs(2 * 3600 + 120)).await;
+    until("paused by the scheduled scan", || {
+        r.rt.status().auto_paused.is_some()
+    })
+    .await;
+    until("discarded after the pause", || {
+        r.script.discards.load(Ordering::SeqCst) == 2
+    })
+    .await;
+}

@@ -183,3 +183,29 @@ Not 14's: T5-01, T5-03..T5-07, T5-13, T5-14 (12/13, done), T5-18, T5-20..T5-22 (
 * `cargo tree -p removarr-jobs -e normal --prefix none | grep '^removarr-'`: domain, matching, workflows only.
 * Tests use fake and paused clocks (`tokio` `start_paused`) except `real_runner.rs` and the SQLite restart test (real time, temp
   dirs, loopback-free). No network beyond crates.io; nothing committed.
+
+## Gate raise to T5 (job-runner part)
+
+Review: `docs/reviews/cp2-tier5-final.md`. `IMPLEMENTED_TIER = T5` (runner part, handoff 13). `crates/jobs/**` only; nothing
+committed. `WorkflowHandler` now calls the production `execute` with `ActionSettings.auto_mode_active` set per call: true only
+for a cycle execution while automatic mode is enabled and not paused, false for every user job (`ExecutePlan`).
+
+| Finding | Status | What changed | Tests |
+|---|---|---|---|
+| F01 (major) | fixed | `auto::classify_blockers` / `assess`: a `NotExecuted` continues the cycle only for ordinary state changes (`ChangedSincePlanning` from a moved world, `TorrentProtectedState`, `TorrentReferencesTarget`, `Recent`, a user `Ignored`, `ImportInProgress`, `ContentDiffers`, ARR "no longer rejects"). Every other code, unknown ones included, stops the cycle and persists `auto_paused` with `"action i (Kind) was refused: Code: detail"` (service down, mapping, scan or perimeter, unreadable ignore list or ARR, `CapabilityDisabled`, `NotInBuild`, config drift, missing pin, `Interrupted`). `ChangedSincePlanning` and `Ignored` share a code between ordinary and defect causes, so the detail text decides ("configuration changed", "lacks", "could not be read", "unreadable" pause) | `auto_cycle.rs::f01_every_uncertainty_or_defect_code_pauses_and_ordinary_changes_continue` (14 pause classes, 7 continue cases, a mixed list, an unknown code), `::f01_each_pause_class_stops_the_cycle_end_to_end_...`, `real_runner.rs::f06_...` (real runner `CapabilityDisabled` pauses) |
+| F05 | fixed within the planner's data | `Refusal` carries typed `blockers`; any pause-class blocker stops the cycle even when `benign`. Today `create_auto` returns only text, so `WorkflowHandler` marks "n item(s) excluded" benign only while the last scan or rescan has no perimeter uncertainty (service, mapping, scan, permission blockers); any other text pauses | `auto_cycle.rs::f05_nothing_plannable_is_harmless_only_without_uncertainty_exclusions` |
+| F06 | fixed | `CycleEngine::execute(.., auto_active, ..)`; user jobs run with the flag off. New `PendingAutoPlans` trait (to wire in 16 over `PlanRepo::ids_with_status(Approved)` + origin `AutoPolicy`) and `JobHandler::discard_pending_auto`: called at `start()`, after every pause (cycle stop, uncertain scheduled scan, recovery), and a discard that fails pauses. A failed discard of a skipped plan pauses the cycle | `auto_cycle.rs::f06_only_a_cycle_run_while_enabled_and_not_paused_is_active`, `auto_flow.rs::f06_pending_automatic_plans_are_discarded_at_startup_and_whenever_automatic_mode_pauses`, `real_runner.rs::f06_an_automatic_plan_never_runs_while_automatic_mode_is_inactive_and_the_refusal_pauses` |
+| F07 | fixed | `failed_sets` skips `NotExecuted` outcomes carrying `NotInBuild`. `ExecutedAction.at` is now the outcome time (reference `StoreHistory` uses the latest journal intent or result of the plan, else `created_at`) | `auto_cycle.rs::f07_t4_era_refusals_do_not_block_subjects` (also an old plan with a recent outcome counts) |
+| F08 | deviation kept | `observe::run_scan` cannot be restricted without changing workflows (no root parameter; classification needs every root). `WorkflowHandler::rescan` still observes every root; the cycle computes the touched roots and rescans only when there are some | - |
+| create_auto text match | deviation kept | workflows exposes no typed reason; the suffix match stays, an unrecognised text pauses (fail closed) | `auto_cycle.rs::planning_failures_and_policy_errors_...` |
+| real_runner | done | `LabEngine` uses the production `execute` (no `execute_with_gate`); the old "production gate refuses" test is now "automatic mode inactive refuses and pauses"; the first test runs a valid automatic plan end to end | `real_runner.rs` (3 tests) |
+
+`tier5-test-gate`: jobs no longer enables or calls it (dev-dependency feature removed from `crates/jobs/Cargo.toml`). The feature in
+`crates/workflows/Cargo.toml` (and `execute_with_gate`, `automatic_defects_for_test`) can now be removed by its owner if workflows'
+own tests do not need it. `cargo tree -p removarr -e normal,features | grep tier5` prints nothing.
+
+Wiring owed by 16: `WorkflowDeps.pending` (`PendingAutoPlans`), `WorkflowDeps.history` (`StoreHistory` with the outcome-time `at`),
+`ActionSettings.auto_mode_active` stays false in the base settings (the handler overrides it per call).
+
+Commands: `cargo fmt --all --check` pass; `cargo clippy --workspace --all-targets -- -D warnings` pass; `cargo test --workspace` pass,
+798 passed, 0 failed.

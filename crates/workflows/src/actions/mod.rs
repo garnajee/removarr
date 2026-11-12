@@ -22,11 +22,13 @@
 //! 8. unfinished live intents found at startup are resolved by [`recovery::recover`] without
 //!    ever redoing a mutation; the plan becomes `Interrupted`.
 //!
-//! Tiers 1-4 (stages B and C): the live exact-copy consolidation, the tier-2 service commands,
-//! the deletions under the completed root and the manual stalled cleanup, the targeted mode fix,
-//! and the tier-4 release replacement (`ReplaceRelease` + `DeleteMediaFile`) and ARR commands
-//! (grab, queue removal, monitoring), each with its simulation. Automatic plans are tier 5 and
-//! refused (`NotInBuild`) whatever their kinds (CP2T4-F01). A plan mixing families is refused too.
+//! Tiers 1-5: the live exact-copy consolidation, the tier-2 service commands, the deletions
+//! under the completed root and the manual stalled cleanup, the targeted mode fix, the tier-4
+//! release replacement and ARR commands, and automatic plans (tier 5), each with its simulation.
+//! An `AutoPolicy` plan is executed only through the automatic checks of `auto.rs` (kind
+//! allowlist, `approve_auto`-only approval, evidence, perimeter, age, ARR re-read, ignore list)
+//! and only while automatic mode is active (`ActionSettings.auto_mode_active`). A plan mixing
+//! families is refused.
 //! A simulation (`simulate = true`, or any run of a dry-run process) always executes on the
 //! recording adapters: `execute` swaps them in before the context exists (CP2T3-F04).
 
@@ -73,8 +75,8 @@ pub use run::execute_with_gate;
 pub use run::{ActionResult, ExecutionReport, execute};
 
 /// Highest risk tier this build executes (architecture 6.7, 13.1). Raised only after the
-/// tier's crash-point and dry-run tests pass and CP2 passes. Stage C: tier 4.
-pub const IMPLEMENTED_TIER: RiskTier = RiskTier::T4;
+/// tier's crash-point and dry-run tests pass and CP2 passes. Gate raised to tier 5 (CP2-tier5 final).
+pub const IMPLEMENTED_TIER: RiskTier = RiskTier::T5;
 
 /// Kinds this build can execute live: every kind at or below [`IMPLEMENTED_TIER`].
 #[must_use]
@@ -164,6 +166,10 @@ pub struct ActionSettings {
     /// checks them again, CP2T4-F05).
     pub capabilities: std::collections::BTreeSet<removarr_domain::policy::Capability>,
     /// `thresholds.recheck_timeout_seconds`.
+    /// True only while automatic mode is enabled and not paused (set by the job runner for
+    /// the automatic cycle). An approved `AutoPolicy` plan, for example one left over after a
+    /// crash, is refused live otherwise (CP2T5F-F06). Fails closed: `false` refuses.
+    pub auto_mode_active: bool,
     /// `thresholds.auto_min_age_hours` (A3), re-checked at execution of an automatic plan.
     pub auto_min_age_hours: u32,
     pub recheck_timeout: Duration,

@@ -222,6 +222,7 @@ pub struct Script {
     pub log: Mutex<Vec<String>>,
     pub recover_results: Mutex<VecDeque<Result<RecoverySummary, PortError>>>,
     pub recover_calls: AtomicU32,
+    pub discards: AtomicU32,
     calls: Mutex<HashMap<String, u32>>,
     current: Mutex<BTreeMap<&'static str, usize>>,
     pub max: Mutex<BTreeMap<&'static str, usize>>,
@@ -237,6 +238,7 @@ impl Script {
             log: Mutex::new(Vec::new()),
             recover_results: Mutex::new(VecDeque::new()),
             recover_calls: AtomicU32::new(0),
+            discards: AtomicU32::new(0),
             calls: Mutex::new(HashMap::new()),
             current: Mutex::new(BTreeMap::new()),
             max: Mutex::new(BTreeMap::new()),
@@ -307,6 +309,11 @@ impl JobHandler for Script {
         self.log.lock().unwrap().push(format!("end:{key}"));
         self.leave(lane);
         r
+    }
+
+    async fn discard_pending_auto(&self) -> Result<u32, PortError> {
+        self.discards.fetch_add(1, Ordering::SeqCst);
+        Ok(0)
     }
 
     async fn recover(&self, _sink: EventSink) -> Result<RecoverySummary, PortError> {

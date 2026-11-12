@@ -31,8 +31,8 @@ use removarr_workflows::plans::{
 };
 
 use crate::auto::{
-    ActionFacts, ActionHistory, CycleDeps, CycleEngine, PhaseError, PhasePlan, PhasePlans, Refusal,
-    RescanSummary, run_cycle,
+    ActionFacts, ActionHistory, CycleDeps, CycleEngine, PendingAutoPlans, PhaseError, PhasePlan,
+    PhasePlans, Refusal, RescanSummary, run_cycle,
 };
 use crate::handler::{JobCtx, JobError, JobHandler, JobSuccess, RecoverySummary, ScanSummary};
 use crate::locks::Scope;
@@ -47,6 +47,7 @@ pub struct WorkflowDeps {
     pub action_settings: ActionSettings,
     pub verify: VerifyPorts,
     pub history: Arc<dyn ActionHistory>,
+    pub pending: Arc<dyn PendingAutoPlans>,
 }
 
 impl std::fmt::Debug for WorkflowDeps {
@@ -60,6 +61,9 @@ struct Memory {
     cache: ServiceCache,
     session: Option<SessionId>,
     issue_ids: Vec<IssueId>,
+    /// Perimeter blockers of the last scan or rescan; a "nothing plannable" phase is harmless
+    /// only when this is empty (F05).
+    uncertainties: Vec<String>,
 }
 
 pub struct WorkflowHandler {
@@ -113,6 +117,7 @@ impl WorkflowHandler {
             .map(|c| c.active().map(|i| i.id.clone()).collect())
             .unwrap_or_default();
         m.cache = report.services.clone();
+        m.uncertainties = self.summary(report).uncertainties;
     }
 
     fn summary(&self, report: &ScanReport) -> ScanSummary {
@@ -161,9 +166,16 @@ impl WorkflowHandler {
         &self,
         plan: PlanId,
         simulate: bool,
+        auto_active: bool,
         cancel: &CancelFlag,
         sink: EventSink,
     ) -> Result<ExecutionReport, PortError> {
+        // F06: only a cycle run, while automatic mode is enabled and not paused, may execute an
+        // automatic plan live; every user job runs with the flag off.
+        let settings = ActionSettings {
+            auto_mode_active: auto_active,
+            ..self.d.action_settings.clone()
+        };
         let ticket = self
             .d
             .planner
@@ -174,7 +186,7 @@ impl WorkflowHandler {
         actions::execute(
             &self.d.actions,
             &self.d.mutators,
-            &self.d.action_settings,
+            &settings,
             ticket,
             cancel,
             &reporter,
@@ -316,7 +328,13 @@ impl JobHandler for WorkflowHandler {
                     })
                     .await;
                 let report = self
-                    .execute_plan(*plan_id, *simulate, &ctx.cancel, ctx.progress.action_sink())
+                    .execute_plan(
+                        *plan_id,
+                        *simulate,
+                        false,
+                        &ctx.cancel,
+                        ctx.progress.action_sink(),
+                    )
                     .await?;
                 for a in report.actions.iter().filter(|a| !a.outcome.is_success()) {
                     ctx.progress.warn(&format!(
@@ -347,6 +365,15 @@ impl JobHandler for WorkflowHandler {
         }
     }
 
+    async fn discard_pending_auto(&self) -> Result<u32, PortError> {
+        let mut n = 0;
+        for id in self.d.pending.approved_automatic().await? {
+            self.d.planner.discard(id).await.map_err(|e| port_err(&e))?;
+            n += 1;
+        }
+        Ok(n)
+    }
+
     async fn recover(&self, sink: EventSink) -> Result<RecoverySummary, PortError> {
         self.recover_inner(sink).await
     }
@@ -364,14 +391,18 @@ impl CycleEngine for WorkflowHandler {
         ctx: &AutoContext,
         session: SessionId,
     ) -> Result<PhasePlans, PhaseError> {
-        let (ids, arr) = {
+        let (ids, arr, uncertainties) = {
             let m = self.memory.lock().await;
             if m.session != Some(session) {
                 return Err(PhaseError::Failed(
                     "no in-memory scan result for this session".into(),
                 ));
             }
-            (m.issue_ids.clone(), m.cache.arr.clone().unwrap_or_default())
+            (
+                m.issue_ids.clone(),
+                m.cache.arr.clone().unwrap_or_default(),
+                m.uncertainties.clone(),
+            )
         };
         let out = self
             .d
@@ -406,12 +437,15 @@ impl CycleEngine for WorkflowHandler {
             .collect();
         // The planner reports a normal policy exclusion as "<n> item(s) excluded"; any other
         // text is a defect or an approval error.
+        // The text carries no blocker codes, so "nothing plannable" is harmless only while the
+        // last observation has no perimeter uncertainty (F05); an unknown text always pauses.
         let refused = out
             .refused
             .into_iter()
             .map(|(_, reason)| Refusal {
-                benign: reason.ends_with("item(s) excluded"),
+                benign: reason.ends_with("item(s) excluded") && uncertainties.is_empty(),
                 reason,
+                blockers: Vec::new(),
             })
             .collect();
         Ok(PhasePlans { plans, refused })
@@ -425,6 +459,10 @@ impl CycleEngine for WorkflowHandler {
         self.d.planner.discard(plan).await.map_err(|e| port_err(&e))
     }
 
+    async fn discard_pending(&self) -> Result<u32, PortError> {
+        self.discard_pending_auto().await
+    }
+
     async fn recover(&self, sink: EventSink) -> Result<RecoverySummary, PortError> {
         self.recover_inner(sink).await
     }
@@ -433,10 +471,12 @@ impl CycleEngine for WorkflowHandler {
         &self,
         plan: PlanId,
         simulate: bool,
+        auto_active: bool,
         cancel: &CancelFlag,
         sink: EventSink,
     ) -> Result<ExecutionReport, PortError> {
-        self.execute_plan(plan, simulate, cancel, sink).await
+        self.execute_plan(plan, simulate, auto_active, cancel, sink)
+            .await
     }
 
     /// Deviation: `run_scan` has no root restriction (architecture 7.6 names

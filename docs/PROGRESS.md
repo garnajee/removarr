@@ -36,7 +36,7 @@ Status values: `todo`, `running`, `done`, `blocked`.
 | 9 | `13-action-runner` stage C (CP2T4 fixes + tier 4) | done | 706 tests; IMPLEMENTED_TIER=T4; automatic plans refused; domain trait addition FsMutator::remove_media_file (default refuse) flagged for CP2-tier5 |
 | 9 | `13-action-runner` stage B step 2 (tier 3) | done | 682 tests; IMPLEMENTED_TIER=T3; F03/F10 fixed; FixMode exempt from live-holder check (for CP2 review); T3-12 deferred to tier 5, T3-19 owned by 14; agent model switched to sonnet (user request) |
 | 10 | `14-job-runner` | done | 58 jobs tests; single execute lane, recover-before-execute, two-phase auto cycle, failed sets from journal; tier5 gate absent from production |
-| 11 | `15-reporting` | todo | |
+| 11 | `15-reporting` | running | |
 | 12 | `16-backend-api` | todo | |
 | 13 | `17-auth-guard` | todo | |
 | 13 | `18-ux-design` | todo | |
@@ -59,9 +59,9 @@ Status values: `todo`, `running`, `done`, `blocked`.
 | CP2 tier 4 (ARR replacement) | PASS with condition (iter 1): fix CP2T4-F01 (runner must refuse automatic plans until tier 5) first; CP2-tier5 re-checks it + T4-01..T4-20 | 1/3 | `docs/reviews/cp2-tier4.md` |
 | CP2 tier 5 (automatic mode) | PASS with condition (iter 1): build T5-01..T5-22 across 13/12/14, keep IMPLEMENTED_TIER=T4 until a dedicated final CP2-tier5 review (also checks CP2T5-F01) | 1/3 |
 | CP2 tier 5 final (before raising IMPLEMENTED_TIER to T5) | PASS with condition (iter 1): raise gate in the same change as CP2T5F-F01 fix + gate-raise steps; CP3 checks it | 1/3 |
-| 10 | gate raise to T5: `13-action-runner` (constant, F02-F04, F06, tests) + `14-job-runner` (F01, F05, F07, F08, tests), one commit | running | | `docs/reviews/cp2-tier5-final.md` | `docs/reviews/cp2-tier5.md` |
+| 10 | gate raise to T5: `13-action-runner` (constant, F02-F04, F06, tests) + `14-job-runner` (F01, F05, F07, F08, tests), one commit | done | 798 tests; IMPLEMENTED_TIER=T5; auto mode still off by default; for CP3: workflows keeps tier5-test-gate for its own tests only (absent from production tree), F08 full-root rescan and create_auto text match are recorded deviations | `docs/reviews/cp2-tier5-final.md` | `docs/reviews/cp2-tier5.md` |
 | CP3 release gate | pending | — | `docs/release-readiness.md` |
 
 ## Last quality gate
 
-After wave 10: fmt OK, clippy -D warnings OK, tests OK (789 passed, 1 ignored = opt-in real-ffprobe test). Safety greps OK (deleteFiles literal false only in qbit/control.rs; importMode copy literal). Toolchain: cargo/rustc 1.98.0 (Homebrew, no rustup), Docker 29.7.2, ffprobe available.
+After T5 gate raise: fmt OK, clippy -D warnings OK, tests OK (798 passed, 1 ignored = opt-in real-ffprobe test). Safety greps OK (deleteFiles literal false only in qbit/control.rs; importMode copy literal). Toolchain: cargo/rustc 1.98.0 (Homebrew, no rustup), Docker 29.7.2, ffprobe available.

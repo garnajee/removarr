@@ -805,8 +805,8 @@ fn auto_plan(lab: &Lab) -> removarr_domain::plan::HashedPlan {
 }
 
 #[tokio::test]
-async fn tier_five_automatic_plans_are_explicit_refusals() {
-    assert_eq!(IMPLEMENTED_TIER, RiskTier::T4);
+async fn tier_five_is_enabled_and_an_automatic_plan_needs_every_automatic_check() {
+    assert_eq!(IMPLEMENTED_TIER, RiskTier::T5);
     for k in [
         ActionKind::ReplaceRelease,
         ActionKind::DeleteMediaFile,
@@ -848,15 +848,17 @@ async fn tier_five_automatic_plans_are_explicit_refusals() {
     let ActionOutcome::NotExecuted { blockers } = &report.actions[0].outcome else {
         panic!("{report:?}");
     };
-    assert_eq!(blockers[0].code, BlockerCode::NotInBuild);
+    // A user approval of an automatic plan is refused by the runner (only `approve_auto`).
+    assert_eq!(blockers[0].code, BlockerCode::CapabilityDisabled);
     assert_eq!(lab.status(plan_id).await, PlanStatus::Invalidated);
     assert!(
         lab.steps(plan_id).await.is_empty(),
-        "no intent for a refused kind"
+        "no intent for a refused plan"
     );
     assert_eq!(counting.mutations() + lab.qbit.mutation_count(), 0);
     assert!(lab.completed_path("Rel/a.mkv").exists());
-    // Simulating a refused kind touches nothing and changes nothing either.
+    // Simulating a plan that fails the automatic checks (the lab files are younger than the
+    // minimum age) touches nothing and changes nothing either.
     let ticket = lab.ticket(auto_plan(&lab), true).await;
     let plan_id = ticket.plan.plan().id;
     let report = execute(

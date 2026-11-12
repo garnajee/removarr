@@ -2,10 +2,9 @@
 //! The automatic cycle on top of the real action runner, real SQLite and the real confined
 //! filesystem (the lab of `workflows/tests/actions_common`, included by path).
 //!
-//! `IMPLEMENTED_TIER` is T4, so the production `execute` refuses every automatic plan. The
-//! cycle is therefore driven through the `tier5-test-gate` entry (`execute_with_gate`), which
-//! only the test builds enable, to show it works once the gate is raised; and through the
-//! production entry to show that nothing runs today.
+//! `IMPLEMENTED_TIER` is T5: the production `execute` runs a valid automatic plan, but only while
+//! `ActionSettings.auto_mode_active` is set, which the cycle does only while automatic mode is
+//! enabled and not paused.
 
 #[path = "../../workflows/tests/actions_common/mod.rs"]
 mod actions_common;
@@ -22,7 +21,6 @@ use removarr_domain::evidence::EvidenceLevel;
 use removarr_domain::ids::{JobId, PlanId, RawUuid, SessionId, SubjectKey};
 use removarr_domain::path::RootId;
 use removarr_domain::plan::{Approval, Approver, HashedPlan, PlanMode, PlanOrigin, PlanStatus};
-use removarr_domain::policy::RiskTier;
 use removarr_domain::ports::{CancelFlag, PlanStore};
 use removarr_domain::time::Timestamp;
 use removarr_jobs::auto::{
@@ -34,7 +32,7 @@ use removarr_jobs::handler::{JobCtx, RecoverySummary};
 use removarr_jobs::limits::Limits;
 use removarr_jobs::locks::{Locks, Scope};
 use removarr_workflows::actions::{
-    EventSink, ExecutionReport, Reporter, execute, execute_with_gate, recover,
+    ActionSettings, EventSink, ExecutionReport, Reporter, execute, recover,
 };
 use removarr_workflows::plans::{
     AutoContext, AutoPhase, ExecutionTicket, action_paths, action_subjects,
@@ -65,6 +63,7 @@ fn age_files(lab: &Lab, hours: u64) {
 /// plans that started executing, their stored actions and recorded outcomes.
 struct StoreHistory {
     plans: removarr_storage::PlanRepo,
+    journal: removarr_storage::JournalRepo,
 }
 
 #[async_trait]
@@ -83,7 +82,15 @@ impl ActionHistory for StoreHistory {
                 let Some((plan, ..)) = PlanStore::get(&self.plans, id).await? else {
                     continue;
                 };
-                if plan.created_at < since {
+                // Keyed on when the outcome was recorded: the last journal intent or result.
+                let at = removarr_domain::ports::JournalStore::for_plan(&self.journal, id)
+                    .await?
+                    .iter()
+                    .flat_map(|(i, r)| [Some(i.created_at), r.as_ref().map(|r| r.at)])
+                    .flatten()
+                    .max()
+                    .unwrap_or(plan.created_at);
+                if at < since {
                     continue;
                 }
                 let rows = self.plans.actions(id).await?;
@@ -94,7 +101,7 @@ impl ActionHistory for StoreHistory {
                         .and_then(|r| r.outcome.clone());
                     out.push(ExecutedAction {
                         plan: id,
-                        at: plan.created_at,
+                        at,
                         action: a,
                         outcome,
                     });
@@ -109,17 +116,18 @@ impl ActionHistory for StoreHistory {
 /// session, covered by workflows' own tests), the real runner and the real recovery.
 struct LabEngine {
     lab: Arc<Lab>,
-    gate: Option<RiskTier>,
+    /// Models a user job: the runner is told automatic mode is not active.
+    inactive: bool,
     plans: Mutex<HashMap<PlanId, (HashedPlan, Approval)>>,
     rescans: Mutex<Vec<BTreeSet<RootId>>>,
     log: Mutex<Vec<String>>,
 }
 
 impl LabEngine {
-    fn new(lab: Arc<Lab>, gate: Option<RiskTier>) -> Arc<Self> {
+    fn new(lab: Arc<Lab>, inactive: bool) -> Arc<Self> {
         Arc::new(Self {
             lab,
-            gate,
+            inactive,
             plans: Mutex::default(),
             rescans: Mutex::default(),
             log: Mutex::default(),
@@ -186,6 +194,10 @@ impl CycleEngine for LabEngine {
         Ok(())
     }
 
+    async fn discard_pending(&self) -> Result<u32, PortError> {
+        Ok(0)
+    }
+
     async fn recover(&self, sink: EventSink) -> Result<RecoverySummary, PortError> {
         let (mutators, _) = self.lab.live();
         let report = recover(
@@ -214,6 +226,7 @@ impl CycleEngine for LabEngine {
         &self,
         plan: PlanId,
         simulate: bool,
+        auto_active: bool,
         cancel: &CancelFlag,
         sink: EventSink,
     ) -> Result<ExecutionReport, PortError> {
@@ -227,31 +240,19 @@ impl CycleEngine for LabEngine {
         };
         let (mutators, _) = self.lab.live();
         let reporter = Reporter::new().with_sink(sink);
-        match self.gate {
-            Some(g) => {
-                execute_with_gate(
-                    &self.lab.ports(),
-                    &mutators,
-                    &self.lab.settings(),
-                    ticket,
-                    cancel,
-                    &reporter,
-                    g,
-                )
-                .await
-            }
-            None => {
-                execute(
-                    &self.lab.ports(),
-                    &mutators,
-                    &self.lab.settings(),
-                    ticket,
-                    cancel,
-                    &reporter,
-                )
-                .await
-            }
-        }
+        let settings = ActionSettings {
+            auto_mode_active: auto_active && !self.inactive,
+            ..self.lab.settings()
+        };
+        execute(
+            &self.lab.ports(),
+            &mutators,
+            &settings,
+            ticket,
+            cancel,
+            &reporter,
+        )
+        .await
     }
 
     async fn rescan(
@@ -302,10 +303,11 @@ fn session() -> SessionId {
 async fn t5_the_cycle_runs_an_automatic_consolidation_end_to_end_once_the_gate_is_raised() {
     let lab = Arc::new(Lab::new().await);
     age_files(&lab, 72);
-    let engine = LabEngine::new(lab.clone(), Some(RiskTier::T5));
+    let engine = LabEngine::new(lab.clone(), false);
     let r = rig();
     let hist = StoreHistory {
         plans: lab.repos.plans.clone(),
+        journal: lab.repos.journal.clone(),
     };
     let out = run_cycle(
         &CycleDeps {
@@ -352,13 +354,15 @@ async fn t5_the_cycle_runs_an_automatic_consolidation_end_to_end_once_the_gate_i
 }
 
 #[tokio::test]
-async fn t5_with_the_production_gate_nothing_runs_and_the_refusal_feeds_the_failed_sets() {
+async fn f06_an_automatic_plan_never_runs_while_automatic_mode_is_inactive_and_the_refusal_pauses()
+{
     let lab = Arc::new(Lab::new().await);
     age_files(&lab, 72);
-    let engine = LabEngine::new(lab.clone(), None); // production `execute`: IMPLEMENTED_TIER = T4
+    let engine = LabEngine::new(lab.clone(), true); // a runner told automatic mode is not active
     let r = rig();
     let hist = StoreHistory {
         plans: lab.repos.plans.clone(),
+        journal: lab.repos.journal.clone(),
     };
     let (_, counting) = lab.live();
     let before = (
@@ -390,11 +394,9 @@ async fn t5_with_the_production_gate_nothing_runs_and_the_refusal_feeds_the_fail
         engine.rescans.lock().unwrap().is_empty(),
         "no live mutation, no rescan"
     );
-    assert_eq!(
-        r.auto.paused(),
-        None,
-        "NotExecuted by the gate is a refusal, not an uncertainty"
-    );
+    // CapabilityDisabled is a defect class (F01): the cycle stops and records why.
+    let why = r.auto.paused().expect("paused");
+    assert!(why.contains("CapabilityDisabled"), "{why}");
     let plan_id = *engine.plans.lock().unwrap().keys().next().unwrap();
     assert_eq!(lab.status(plan_id).await, PlanStatus::Invalidated);
     assert!(
@@ -413,10 +415,11 @@ async fn t5_with_the_production_gate_nothing_runs_and_the_refusal_feeds_the_fail
 async fn t5_16_a_crash_inside_the_cycle_is_recovered_first_and_stops_the_next_cycle() {
     let lab = Arc::new(Lab::new().await);
     age_files(&lab, 72);
-    let engine = LabEngine::new(lab.clone(), Some(RiskTier::T5));
+    let engine = LabEngine::new(lab.clone(), false);
     let r = rig();
     let hist = Arc::new(StoreHistory {
         plans: lab.repos.plans.clone(),
+        journal: lab.repos.journal.clone(),
     });
     lab.hang.arm(CrashPoint::AfterIntent(
         removarr_domain::journal::JournalStep::FsReplaceWithHardlink,
@@ -453,7 +456,7 @@ async fn t5_16_a_crash_inside_the_cycle_is_recovered_first_and_stops_the_next_cy
 
     // Next process: a fresh cycle first runs `recover` (T3-19). It resolves the interrupted
     // plan, which stops automatic execution (T5-08) before anything new is planned or run.
-    let engine2 = LabEngine::new(lab.clone(), Some(RiskTier::T5));
+    let engine2 = LabEngine::new(lab.clone(), false);
     let out = run_cycle(
         &CycleDeps {
             engine: &*engine2,
