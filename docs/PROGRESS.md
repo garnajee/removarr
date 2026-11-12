@@ -36,8 +36,8 @@ Status values: `todo`, `running`, `done`, `blocked`.
 | 9 | `13-action-runner` stage C (CP2T4 fixes + tier 4) | done | 706 tests; IMPLEMENTED_TIER=T4; automatic plans refused; domain trait addition FsMutator::remove_media_file (default refuse) flagged for CP2-tier5 |
 | 9 | `13-action-runner` stage B step 2 (tier 3) | done | 682 tests; IMPLEMENTED_TIER=T3; F03/F10 fixed; FixMode exempt from live-holder check (for CP2 review); T3-12 deferred to tier 5, T3-19 owned by 14; agent model switched to sonnet (user request) |
 | 10 | `14-job-runner` | done | 58 jobs tests; single execute lane, recover-before-execute, two-phase auto cycle, failed sets from journal; tier5 gate absent from production |
-| 11 | `15-reporting` | running | |
-| 12 | `16-backend-api` | todo | |
+| 11 | `15-reporting` | done | 40 tests; read-only SQL read model, gain kinds separated, CSV formula-neutralized, bounded sanitized logs, svg.rs geometry for web-ui reuse; RPT-05/08/09 not produced (deviation for CP3) |
+| 12 | `16-backend-api` | running | |
 | 13 | `17-auth-guard` | todo | |
 | 13 | `18-ux-design` | todo | |
 | 13 | `20-devops` | todo | |
@@ -64,4 +64,4 @@ Status values: `todo`, `running`, `done`, `blocked`.
 
 ## Last quality gate
 
-After T5 gate raise: fmt OK, clippy -D warnings OK, tests OK (798 passed, 1 ignored = opt-in real-ffprobe test). Safety greps OK (deleteFiles literal false only in qbit/control.rs; importMode copy literal). Toolchain: cargo/rustc 1.98.0 (Homebrew, no rustup), Docker 29.7.2, ffprobe available.
+After wave 11: fmt OK, clippy -D warnings OK, tests OK (838 passed, 1 ignored = opt-in real-ffprobe test). Safety greps OK (deleteFiles literal false only in qbit/control.rs; importMode copy literal). Toolchain: cargo/rustc 1.98.0 (Homebrew, no rustup), Docker 29.7.2, ffprobe available.
