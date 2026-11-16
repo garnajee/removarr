@@ -1,0 +1,153 @@
+[
+ {
+  "verdict": "rejected",
+  "fingerprint": "matching-ffprobe-unrestricted-demuxer-local-file-read",
+  "title": "ffprobe runs without a demuxer allowlist on untrusted media, but no attacker-visible result exists",
+  "description": "FfprobeProbe::probe runs ffprobe on files under the configured media roots with '-v error -protocol_whitelist file -print_format json -show_entries ...'. It passes no '-f' or '-formats' restriction and calls no env_clear, so the child inherits the parent environment. A file placed by a torrent provider could in theory be a playlist-style file that makes ffmpeg open other local files. The only outputs that leave the adapter are a fixed set of parsed fields (duration, codec names, width, height, channels, language) and, on a non-zero exit, a sanitized first stderr line of at most 200 characters embedded in a PortError, consumed server-side and shown to the authenticated operator. No source path returns probe output or errors to the party who supplied the file.",
+  "claimed_root_cause": "Missing demuxer restriction and environment clearing on the ffprobe spawn in crates/matching/src/ffprobe.rs.",
+  "trace": [
+   {
+    "kind": "entrypoint",
+    "file": "crates/matching/src/ffprobe.rs",
+    "line": 279,
+    "scope": "FfprobeProbe::probe (MediaProbe impl)",
+    "description": "Probes a RootedPath from the scanned inventory; content is controlled by whoever wrote the file to shared storage."
+   },
+   {
+    "kind": "propagation",
+    "file": "crates/matching/src/ffprobe.rs",
+    "line": 291,
+    "scope": "FfprobeProbe::probe argv construction",
+    "description": "argv is fixed with '-protocol_whitelist file' and a narrow show_entries list; no '-f' or '-formats' restriction."
+   },
+   {
+    "kind": "propagation",
+    "file": "crates/matching/src/ffprobe.rs",
+    "line": 114,
+    "scope": "FfprobeProbe::run",
+    "description": "Command spawn with null stdin, piped stdout and stderr, kill_on_drop, timeout and stdout cap; no env_clear."
+   },
+   {
+    "kind": "sink",
+    "file": "crates/matching/src/ffprobe.rs",
+    "line": 175,
+    "scope": "FfprobeProbe::run error path and parse_report",
+    "description": "Stdout is reduced to typed fields; a failure yields only the first non-empty stderr line, sanitized and truncated, in a PortError consumed by operator-only workflows."
+   }
+  ],
+  "evidence": [
+   {
+    "file": "crates/matching/src/ffprobe.rs",
+    "line": 294,
+    "description": "The protocol_whitelist is 'file' only, so network protocols are blocked."
+   },
+   {
+    "file": "crates/matching/src/ffprobe.rs",
+    "line": 299,
+    "description": "show_entries limits stdout to duration, codec_type, codec_name, width, height, channels, language and attached_pic."
+   },
+   {
+    "file": "crates/matching/src/ffprobe.rs",
+    "line": 228,
+    "description": "sanitize keeps only the first non-empty stderr line capped at 200 characters; stderr is read only on failure."
+   },
+   {
+    "file": "crates/app/src/wiring.rs",
+    "line": 249,
+    "description": "The probe is wired only into planner and evaluate workflows run as server-side jobs; the UI is behind operator authentication, so the file writer has no channel to read results."
+   }
+  ],
+  "reason": "There is no boundary crossing with an observable result. A file writer can influence ffprobe's behaviour, but nothing they can read back reaches them; results and error text are consumed server-side and shown only to the authenticated operator. What remains is hardening (add -f/-formats allowlisting, env_clear)."
+ },
+ {
+  "verdict": "needs_validation",
+  "fingerprint": "web-login-limiter-shared-bucket-without-trusted-proxies",
+  "title": "Login limiter collapses to one shared bucket behind a reverse proxy when trusted_proxies is unset",
+  "description": "The login rate limiter keys on the client IP derived from the TCP peer, and X-Forwarded-For is honoured only when the peer is in server.trusted_proxies, which defaults to empty. If the operator puts a reverse proxy in front and does not set REMOVARR_TRUSTED_PROXIES, every client shares the proxy's peer IP, so both the per-IP window (default 20 per 15 minutes) and the per-(IP, username) window (default 5 per 15 minutes) become global. An unauthenticated remote client could send 5 failed logins with the operator's username (the default is admin) per window, or 20 with any names, and keep the operator's login returning 429 for the rest of the window. The limiter reserves before password verification, so a correct password is refused too while a window is full. Existing sessions are unaffected. Source mitigations: the README (lines 55 and 101) and the docker-compose.yml comment tell operators to set REMOVARR_TRUSTED_PROXIES behind a proxy; compose publishes only on 127.0.0.1; refused attempts are not counted, so the attacker must keep sending failed attempts each window. No startup warning for a missing trusted_proxies setting was found. The impact depends on a deployment misconfiguration that source cannot show.",
+  "claimed_root_cause": "Default-empty trusted_proxies makes request::client_ip return the TCP peer address. Behind a proxy that address is the proxy, so the per-IP and per-(IP,user) limiter windows are shared by all clients. LoginLimiter::reserve runs before credential verification and refuses even correct-password attempts while either shared window is full.",
+  "trace": [
+   {
+    "kind": "entrypoint",
+    "file": "crates/web/src/auth/login.rs",
+    "line": 131,
+    "scope": "submit (POST /login handler)",
+    "description": "Unauthenticated login POST; the client address is taken from request::client_ip with the configured proxies."
+   },
+   {
+    "kind": "propagation",
+    "file": "crates/web/src/auth/request.rs",
+    "line": 22,
+    "scope": "client_ip",
+    "description": "Returns the ConnectInfo TCP peer unless the peer is a trusted proxy; X-Forwarded-For is ignored otherwise."
+   },
+   {
+    "kind": "propagation",
+    "file": "crates/config/src/proxy.rs",
+    "line": 60,
+    "scope": "TrustedProxies::client_ip",
+    "description": "With an empty trusted set the peer is returned as is, so the proxy IP becomes the limiter key."
+   },
+   {
+    "kind": "propagation",
+    "file": "crates/config/src/load.rs",
+    "line": 426,
+    "scope": "trusted_proxies loading",
+    "description": "Defaults to TrustedProxies::none() when REMOVARR_TRUSTED_PROXIES and the config file entry are absent."
+   },
+   {
+    "kind": "sink",
+    "file": "crates/web/src/auth/limiter.rs",
+    "line": 135,
+    "scope": "LoginLimiter::reserve",
+    "description": "Returns Err (login answers 429) when the per-IP window (default 20) or the per-(IP, normalized user) window (default 5) is full, before Argon2 and any credential check; refused attempts are not counted, failed ones are."
+   }
+  ],
+  "evidence": [
+   {
+    "file": "crates/web/src/auth/login.rs",
+    "line": 166,
+    "description": "reserve() is called before password verification, so a correct password is also refused with 429 while a window is full."
+   },
+   {
+    "file": "crates/web/src/auth/login.rs",
+    "line": 213,
+    "description": "succeeded() only runs after a successful login, which cannot happen while a window is full."
+   },
+   {
+    "file": "crates/web/src/auth/limiter.rs",
+    "line": 77,
+    "description": "blocked_for blocks when count >= limit for the given key; reserve checks the per-IP key and the (IP, user) key."
+   },
+   {
+    "file": "crates/config/src/load.rs",
+    "line": 859,
+    "description": "login_limit_per_ip defaults to 20; login_limit_per_ip_user defaults to 5 (line 867)."
+   },
+   {
+    "file": "docker-compose.yml",
+    "line": 31,
+    "description": "Port is published on 127.0.0.1:8012 only, so a proxy on the host is the expected remote path, and the peer address the container sees then depends on Docker networking."
+   },
+   {
+    "file": "README.md",
+    "line": 101,
+    "description": "Instructs operators to set REMOVARR_TRUSTED_PROXIES behind a reverse proxy so the real client address is used for rate limiting; a documented setup step."
+   },
+   {
+    "file": ".env.example",
+    "line": 44,
+    "description": "REMOVARR_TRUSTED_PROXIES is commented out and empty by default; no startup warning for a missing trusted_proxies setting was found in the crates."
+   }
+  ],
+  "blockers": [
+   "Whether the operator actually places a reverse proxy in front of the container; the shipped compose binds to loopback only and the proxy is not in the repository.",
+   "Whether REMOVARR_TRUSTED_PROXIES (or server.trusted_proxies) is set to the proxy address; if it is set, the real client IP is used and the shared bucket does not arise.",
+   "Which peer address the container sees for proxied connections under Docker port publishing (bridge gateway versus the proxy's own address), which depends on the host's Docker network and is not in the repository.",
+   "Whether an attacker can sustain at least 5 failed logins (with the operator's username) or 20 (any names) per 15-minute window through the proxy; the proxy or an upstream WAF may rate-limit this, and that is outside the repository."
+  ],
+  "validation_plan": {
+   "local": "In crates/web/tests/auth_flow.rs, using the existing World/Client harness (settings() with TrustedProxies::none(), Client.send inserting ConnectInfo(peer), the xff field, FakeClock, in-process router, no network): create a client with a fixed peer such as 172.18.0.1:5000, send 5 bad-password POSTs for USER with a different X-Forwarded-For value each time (expect 401), then submit the correct credentials with another XFF value. Expected: 429 (with Retry-After), showing the shared bucket. Also send bad logins for other usernames to confirm the per-IP window of 20 trips the same way. Repeat with s.trusted_proxies = TrustedProxies::parse([\"172.18.0.0/16\"]) and show that distinct XFF clients get separate buckets and the correct login returns 303. Advance FakeClock past 15 minutes to confirm the window expires.",
+   "deployment": "The owner checks their own configuration without sending any traffic to the live service. (1) Whether the container is reached through a reverse proxy at all. (2) Whether REMOVARR_TRUSTED_PROXIES or server.trusted_proxies is set to the proxy's address or network. (3) What the peer address is: the owner can inspect existing login_failed, login_succeeded or login_rate_limited security log lines' client_ip field from their own normal use. If client_ip equals the proxy or Docker gateway address for real users and trusted_proxies is empty, the exposure applies."
+  }
+ }
+]
