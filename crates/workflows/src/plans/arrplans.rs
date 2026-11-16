@@ -36,6 +36,36 @@ pub fn is_not_upgrade_reason(reason: &str) -> bool {
     !r.starts_with("removarr:") && (r.contains("upgrade") || r.contains("equal or higher"))
 }
 
+/// The pure rule shared by plan time and execution time: ARR must still reject the file, only
+/// for "not an upgrade" reasons, and must have identified it for the media.
+///
+/// # Errors
+/// The blocker that refuses the deletion.
+pub fn not_upgrade_verdict(d: &ArrCandidateDecision) -> Result<(), Blocker> {
+    if d.approved {
+        return Err(Blocker::new(
+            BlockerCode::ArrNotUpgradeEvidence,
+            "ARR would import the file: it is not replaced",
+        ));
+    }
+    if d.rejections
+        .iter()
+        .any(|r| r.to_ascii_lowercase().starts_with("removarr:"))
+    {
+        return Err(Blocker::new(
+            BlockerCode::ArrAmbiguous,
+            "ARR's preview could not identify the file for this media",
+        ));
+    }
+    if d.rejections.is_empty() || !d.rejections.iter().all(|r| is_not_upgrade_reason(r)) {
+        return Err(Blocker::new(
+            BlockerCode::ArrRejected,
+            "ARR rejects the file for a reason other than 'not an upgrade'",
+        ));
+    }
+    Ok(())
+}
+
 fn tag(path: &RootedPath, b: Blocker) -> Blocker {
     Blocker::new(b.code, format!("{path}: {}", b.detail))
 }
@@ -203,27 +233,7 @@ fn replaced_member(
             "ARR's import preview does not list the file",
         ))
     })?;
-    if d.approved {
-        return Err(one(Blocker::new(
-            BlockerCode::ArrNotUpgradeEvidence,
-            "ARR would import the file: it is not replaced",
-        )));
-    }
-    if d.rejections
-        .iter()
-        .any(|r| r.to_ascii_lowercase().starts_with("removarr:"))
-    {
-        return Err(one(Blocker::new(
-            BlockerCode::ArrAmbiguous,
-            "ARR's preview could not identify the file for this media",
-        )));
-    }
-    if d.rejections.is_empty() || !d.rejections.iter().all(|r| is_not_upgrade_reason(r)) {
-        return Err(one(Blocker::new(
-            BlockerCode::ArrRejected,
-            "ARR rejects the file for a reason other than 'not an upgrade'",
-        )));
-    }
+    not_upgrade_verdict(d).map_err(one)?;
     let files = current_files(a, &d.episode_ids).map_err(one)?;
     let mut pre = Vec::new();
     let mut b = Vec::new();

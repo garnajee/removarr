@@ -1,6 +1,6 @@
 //! Bounded `ffprobe` adapter implementing `MediaProbe` (architecture 2.1, 8.4; API-12, INV-50).
 //!
-//! - argv only, never a shell; the input is passed as `file:<absolute path>` with
+//! - argv only, never a shell, with a cleared environment (only a minimal `PATH`); the input is passed as `file:<absolute path>` with
 //!   `-protocol_whitelist file`, so a crafted file cannot make ffprobe open network URLs;
 //! - the path is built from a configured root and a validated `RelPath`; every component is
 //!   checked with `symlink_metadata` (no symlink, final entry a regular file);
@@ -24,6 +24,9 @@ use removarr_domain::ports::MediaProbe;
 use serde::Deserialize;
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::Command;
+
+/// The only environment variable the child gets (a bare `ffprobe` is resolved through it).
+const CHILD_PATH: &str = "/usr/local/bin:/usr/bin:/bin";
 use tokio::sync::Semaphore;
 
 /// Settings filled by `app` from the configuration (`matching.ffprobe_path`,
@@ -113,6 +116,9 @@ impl FfprobeProbe {
             .map_err(|_| PortError::new(ErrorClass::Internal, "ffprobe limiter closed"))?;
         let mut child = Command::new(&self.settings.program)
             .args(&args)
+            // The child never sees the process environment (REMOVARR secrets, tokens).
+            .env_clear()
+            .env("PATH", CHILD_PATH)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())

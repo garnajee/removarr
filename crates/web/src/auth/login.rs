@@ -130,6 +130,15 @@ async fn submit(State(auth): State<Auth>, tr: Tr, req: Request) -> Response {
     let now = auth.now();
     let ip = request::client_ip(&req, &auth.inner.proxies);
     let trusted = request::peer_is_trusted(&req, &auth.inner.proxies);
+    // Misconfiguration hint, logged once: forwarded headers from a peer that is not a trusted
+    // proxy are ignored (fail-closed), so behind a reverse proxy every client then shares the
+    // proxy's rate-limit bucket. The header is never trusted here.
+    if !trusted
+        && req.headers().contains_key("x-forwarded-for")
+        && !auth.inner.forwarded_warned.swap(true, Ordering::Relaxed)
+    {
+        tracing::warn!(target: SECURITY_TARGET, event = "forwarded_header_untrusted_peer", peer_ip = %ip, "X-Forwarded-For received from a peer that is not in REMOVARR_TRUSTED_PROXIES and was ignored; behind a reverse proxy, set REMOVARR_TRUSTED_PROXIES to the proxy address or network, otherwise all clients share one login rate-limit bucket");
+    }
     let forbidden = |auth: &Auth, headers: &HeaderMap| {
         auth.form(
             tr,

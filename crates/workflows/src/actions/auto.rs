@@ -404,8 +404,16 @@ impl Ctx<'_> {
                     Ok(decisions) => {
                         let subject = target.to_string();
                         match decisions.iter().find(|d| d.subject == subject) {
-                            Some(d) if !d.approved || !d.rejections.is_empty() => {}
-                            _ => out.push(Blocker::new(
+                            Some(d) => {
+                                // The same pure rule as plan time.
+                                if let Err(b) = crate::plans::not_upgrade_verdict(d) {
+                                    out.push(Blocker::new(
+                                        b.code,
+                                        format!("{target}: {}", b.detail),
+                                    ));
+                                }
+                            }
+                            None => out.push(Blocker::new(
                                 BlockerCode::ArrNotUpgradeEvidence,
                                 format!("ARR no longer rejects {target} as not an upgrade"),
                             )),

@@ -101,6 +101,10 @@ secrets live in `.env` only, never in the TOML file.
 4. Behind a reverse proxy, set `REMOVARR_TRUSTED_PROXIES` to the proxy address(es) or networks (comma-separated, for example
    `172.18.0.0/16`) so the real client address is used for login rate limiting. The proxy must preserve the `Host` header or
    send `X-Forwarded-Host`, otherwise same-origin checks refuse form submissions. Leave it empty if there is no proxy.
+   If it is empty behind a proxy, forwarded headers are ignored on purpose (they are never trusted from an unknown peer), so
+   every client shares the proxy's login rate-limit bucket: a handful of failed logins from anyone can then block your own
+   login for 15 minutes. The log event `forwarded_header_untrusted_peer` flags this. Under Docker port publishing the peer may
+   be the bridge gateway rather than the proxy: check `client_ip` in the `login_*` log lines and trust that address or network.
 
 ### Healthcheck
 

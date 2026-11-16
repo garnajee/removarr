@@ -9,7 +9,7 @@
 bind = "0.0.0.0:8080"
 data_dir = "/config"            # SQLite lives here. Must be outside every root.
 log_level = "info"              # debug | info | warn | error
-trusted_proxies = []            # for example ["172.18.0.0/16"]. Empty = trust no proxy header.
+trusted_proxies = []            # for example ["172.18.0.0/16"]. Empty = trust no proxy header (behind a proxy, set it: else all clients share one login limit bucket).
 shutdown_grace_seconds = 45     # 5..=300
 
 [roots]                         # No default: every root is explicit, absolute, canonical, distinct.

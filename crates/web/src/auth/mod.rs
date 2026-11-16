@@ -139,6 +139,8 @@ struct Inner {
     sessions: Mutex<SessionStore>,
     limiter: Mutex<LoginLimiter>,
     password_checks: std::sync::atomic::AtomicU64,
+    /// Set once the "forwarded header from an untrusted peer" warning was logged.
+    forwarded_warned: std::sync::atomic::AtomicBool,
     clock: Arc<dyn Clock>,
 }
 
@@ -199,6 +201,7 @@ impl Auth {
                     capacity: limiter::DEFAULT_CAPACITY,
                 })),
                 password_checks: std::sync::atomic::AtomicU64::new(0),
+                forwarded_warned: std::sync::atomic::AtomicBool::new(false),
                 clock,
             }),
         })

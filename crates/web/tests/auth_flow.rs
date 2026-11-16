@@ -1029,6 +1029,64 @@ async fn forwarded_for_from_a_trusted_proxy_identifies_clients() {
     assert_eq!(r.status, StatusCode::FORBIDDEN);
 }
 
+#[tokio::test]
+async fn empty_trusted_proxies_behind_a_proxy_share_one_bucket_and_trusting_the_proxy_fixes_it() {
+    // Untrusted (default) peer: every client behind it shares one bucket, fail-closed.
+    let w = World::new();
+    let mut proxy = w.client("172.18.0.1:5000");
+    for i in 0..5 {
+        proxy.xff = Some(format!("203.0.113.{i}"));
+        assert_eq!(
+            proxy.login(USER, "wrong").await.status,
+            StatusCode::UNAUTHORIZED
+        );
+    }
+    proxy.xff = Some("198.51.100.200".into());
+    let r = proxy.login(USER, PASSWORD).await;
+    assert_eq!(r.status, StatusCode::TOO_MANY_REQUESTS);
+    assert!(r.retry_after().is_some());
+    // The per-IP window (20) trips the same way for other names.
+    let w2 = World::new();
+    let mut proxy2 = w2.client("172.18.0.1:5000");
+    for user in ["a", "b", "c", "d"] {
+        for i in 0..5 {
+            proxy2.xff = Some(format!("203.0.113.{i}"));
+            assert_eq!(
+                proxy2.login(user, "wrong").await.status,
+                StatusCode::UNAUTHORIZED
+            );
+        }
+    }
+    assert_eq!(
+        proxy2.login("e", "wrong").await.status,
+        StatusCode::TOO_MANY_REQUESTS
+    );
+    // The window expires.
+    w.clock.advance_millis(16 * MIN);
+    assert_eq!(
+        proxy.login(USER, PASSWORD).await.status,
+        StatusCode::SEE_OTHER
+    );
+
+    // Trusting the proxy network separates clients.
+    let mut s = settings();
+    s.trusted_proxies = TrustedProxies::parse(&["172.18.0.0/16"]).unwrap();
+    let w3 = World::with(s);
+    let mut proxy3 = w3.client("172.18.0.1:5000");
+    for i in 0..5 {
+        proxy3.xff = Some(format!("203.0.113.{i}"));
+        assert_eq!(
+            proxy3.login(USER, "wrong").await.status,
+            StatusCode::UNAUTHORIZED
+        );
+    }
+    proxy3.xff = Some("198.51.100.200".into());
+    assert_eq!(
+        proxy3.login(USER, PASSWORD).await.status,
+        StatusCode::SEE_OTHER
+    );
+}
+
 // ---- concurrency and bounded state -------------------------------------------------------------
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -1137,6 +1195,9 @@ async fn security_events_never_contain_credentials_or_cookies() {
     let login_token = form.csrf();
     let login_cookie = c.cookie("removarr_login_csrf").unwrap();
     c.login("probe-user-name", "probe-wrong-password").await;
+    c.xff = Some("203.0.113.77".into());
+    c.login("probe-user-name", "probe-wrong-password").await;
+    c.xff = None;
     let csrf = c.session().await;
     let session_cookie = c.cookie("removarr_session").unwrap();
     c.post("/scan", "", &[("x-csrf-token", "forged-token-value")])
@@ -1159,6 +1220,7 @@ async fn security_events_never_contain_credentials_or_cookies() {
         "csrf_rejected",
         "origin_rejected",
         "login_rate_limited",
+        "forwarded_header_untrusted_peer",
         "logout",
     ] {
         assert!(logs.contains(event), "missing event {event}:\n{logs}");

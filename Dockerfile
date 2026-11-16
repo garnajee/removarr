@@ -30,7 +30,8 @@ FROM alpine:${ALPINE_VERSION} AS runtime
 # ffprobe ships in the ffmpeg package. No shell login, no extra tools beyond busybox.
 RUN apk add --no-cache ffmpeg \
     && mkdir -p /config \
-    && chmod 1777 /config
+    && chown 65532:65532 /config \
+    && chmod 0700 /config
 COPY --from=build /out/removarr /usr/local/bin/removarr
 
 # Never root: the real identity is set at run time by `user: "${UID}:${GID}"` (Compose).

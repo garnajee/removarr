@@ -31,7 +31,7 @@ mod service;
 mod subjects;
 mod validate;
 
-pub use arrplans::{decision as preview_decision, is_not_upgrade_reason};
+pub use arrplans::{decision as preview_decision, is_not_upgrade_reason, not_upgrade_verdict};
 pub use auto::{AutoContext, AutoPhase, auto_plan_defects, auto_requests};
 pub use build::{BuildContext, Built, ExpectedGain, build_plan};
 pub use expiry::{ArrFingerprints, StaleReason, staleness, verdict};

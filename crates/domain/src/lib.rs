@@ -23,6 +23,7 @@ pub mod path;
 pub mod plan;
 pub mod policy;
 pub mod ports;
+pub mod redact;
 pub mod session;
 pub mod time;
 pub mod torrent;

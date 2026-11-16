@@ -55,7 +55,8 @@ Status values: `todo`, `running`, `done`, `blocked`.
 | 16 | fix: `19-web-ui` interrupted job display + sel-bar at 320 px | done | localized interrupted alert + warning, critical pill in jobs list; secondary selection actions in a `sel-more` details, bar capped at 55vh; 583 locale keys equal. Open (non-blocking): requeued job id not exposed by jobs (no link); 320 px layout not re-screenshotted in a real browser |
 | 17 | `24-sec-setup` | done | Cloudflare `security-audit` skill installed at project scope `.claude/skills/security-audit/` from github.com/cloudflare/security-audit-skill @ c1c8a8c1471069fb0e188eeaff69b8e8db6564a8 (MIT), `skills-lock.json`; discovered by a fresh session; no fallback needed |
 | 18 | `25-sec-audit` | done | full audit, standard profile, validators pass (38 coverage units, 2 findings records). 0 confirmed, 1 needs-validation (login limiter shared bucket behind a proxy with empty trusted_proxies), 1 rejected. Source-only (sandbox not enforceable; no parallel builds). Not covered: dependency CVEs (cargo deny needs network), deployment facts. Artifacts in `docs/security/` and `~/security-audit-skill/removarr-v2/run-1` |
-| 19 | `26-sec-fix` | running | resolve the limiter lead locally + fail-closed hardening notes (ARR history failure, auto-mode execution-time check, recovery, ffprobe env, scrubbers, devops) |
+| 19 | `26-sec-fix` | done | limiter lead reproduced locally: once-per-process warning on XFF from untrusted peer + REMOVARR_TRUSTED_PROXIES docs (limits unchanged; proxy facts deployment-dependent). Fixed: ARR history failure now fails the ARR service (B1), auto execution-time check reuses plan-time rule (B2), ffprobe env_clear (B4), single redaction in domain::redact (B5), /config 0700, latest only on non-prerelease tags, /config/ ignored (B6). Not a defect: dry-run recovery (B3a). Open low: temp-link sweep (B3b). 1053 tests |
+| 19 | targeted re-audit (`25-sec-audit`, fresh agent) | running | changed files of 26-sec-fix |
 | 20 | `27-release-gate` | todo | |
 | continuous | `21-unit-tests` (from wave 3) | running | pass 1 done (domain, 11 proptests, parity-matrix.md); pass 2 done (+14 tests); pass 3 done (+18 tests; found qbit fail-closed gap, fixed by 08); pass 4 done (+13 tests, no bugs); pass 5 done (+4 tests, no bugs, matrix re-checked) |
 
@@ -77,4 +78,4 @@ Status values: `todo`, `running`, `done`, `blocked`.
 
 ## Last quality gate
 
-After wave 16 + fixes (reporting, jobs, workflows observe, web-ui): fmt OK, clippy -D warnings OK, tests OK (1047 passed, 0 failed, 6 ignored = opt-in ffprobe + benchmarks). Safety greps OK (deleteFiles literal false only in qbit/control.rs; single cfg.live_mode() in app/wiring.rs).
+After wave 19 fixes: fmt OK, clippy -D warnings OK, tests OK (1053 passed, 0 failed). Safety greps OK (deleteFiles literal false only in qbit/control.rs; single cfg.live_mode() in app/wiring.rs).

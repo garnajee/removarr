@@ -411,6 +411,19 @@ async fn t5_05_the_arr_replacement_and_a_re_read_preview_are_checked_at_executio
     assert!(codes(&report.actions[0].outcome).contains(&BlockerCode::ArrNotUpgradeEvidence));
     untouched(&lab, &counting);
 
+    // ARR still rejects, but now for a reason other than "not an upgrade": as strict as plan time.
+    let lab = Lab::new().await;
+    age_files(&lab, 72);
+    let plan = arr_validated_deletion(&lab, false);
+    lab.arr.with(|s| {
+        for v in s.previews.values_mut() {
+            v[0].rejections = vec!["Unknown series".into()];
+        }
+    });
+    let (report, counting) = run_auto(&lab, plan, false).await;
+    assert!(codes(&report.actions[0].outcome).contains(&BlockerCode::ArrRejected));
+    untouched(&lab, &counting);
+
     // ARR's current file is no longer the pinned replacement.
     let lab = Lab::new().await;
     age_files(&lab, 72);

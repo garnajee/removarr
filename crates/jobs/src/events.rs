@@ -119,21 +119,11 @@ pub struct JobProgress {
     pub outcome: Option<JobOutcome>,
 }
 
-/// Removes anything URL-like from a message before it is published (no tracker URL, no
-/// credential in the log stream).
+/// Removes URLs and credentials from a message before it is published (no tracker URL, no
+/// credential in the log stream), with the one shared rule.
 #[must_use]
 pub fn redact(message: &str) -> String {
-    message
-        .split_whitespace()
-        .map(|w| {
-            if w.contains("://") || w.starts_with("magnet:") {
-                "[url]"
-            } else {
-                w
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
+    removarr_domain::redact::sanitize(message)
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -387,5 +377,19 @@ impl ProgressHandle {
     #[must_use]
     pub fn action_sink(&self) -> EventSink {
         self.hub.action_sink(Some(self.job))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::redact;
+
+    #[test]
+    fn redact_removes_credentials_as_well_as_urls() {
+        let m = redact("retry http://t.example/a?x=1 apikey=abc123 Authorization: Bearer tok9");
+        for leaked in ["t.example", "abc123", "tok9"] {
+            assert!(!m.contains(leaked), "{leaked} in {m}");
+        }
+        assert!(m.contains("retry"));
     }
 }

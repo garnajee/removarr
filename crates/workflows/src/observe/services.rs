@@ -184,14 +184,28 @@ pub async fn read_arr(
         let (arr, sem, h) = (Arc::clone(arr), Arc::clone(&sem), h.clone());
         set.spawn(async move {
             let _permit = sem.acquire_owned().await.ok();
-            arr.history_for_download(&h).await.unwrap_or_default()
+            arr.history_for_download(&h).await
         });
     }
     let mut history = Vec::new();
+    // A failed history call (or a panicked task) is an uncertainty, not "no history": the whole
+    // service is reported as failed so nothing derived from it can be proposed (fail-closed).
+    let mut failure: Option<ServiceState> = None;
     while let Some(res) = set.join_next().await {
-        if let Ok(h) = res {
-            history.extend(h);
+        match res {
+            Ok(Ok(h)) => history.extend(h),
+            Ok(Err(e)) => failure = failure.or_else(|| Some(failure_state(&e.class, &e.detail))),
+            Err(e) => {
+                failure = failure.or_else(|| {
+                    Some(ServiceState::Unavailable {
+                        reason: format!("history read aborted: {e}"),
+                    })
+                });
+            }
         }
+    }
+    if let Some(state) = failure {
+        return (empty(state.clone()), status(kind, state, now));
     }
     let state = ServiceState::Ok { version };
     (

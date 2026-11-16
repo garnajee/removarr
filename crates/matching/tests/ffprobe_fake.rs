@@ -101,6 +101,24 @@ fn probe_runs_argv_only_with_file_protocol_and_parses_the_report() {
 }
 
 #[test]
+fn the_child_does_not_inherit_the_process_environment() {
+    let e = env();
+    let log = e.base.join("env.log");
+    let prog = script(
+        &e.base,
+        "ffprobe",
+        &format!("env > '{}'\necho '{JSON}'", log.display()),
+    );
+    rt().block_on(probe_for(&e, prog).probe(&target(&e)))
+        .unwrap();
+    let env_dump = std::fs::read_to_string(log).unwrap();
+    assert!(env_dump.contains("PATH="), "{env_dump}");
+    for leaked in ["HOME=", "USER=", "REMOVARR_", "CARGO"] {
+        assert!(!env_dump.contains(leaked), "leaked {leaked}:\n{env_dump}");
+    }
+}
+
+#[test]
 fn failure_timeout_and_oversized_output_are_typed_errors_without_host_paths() {
     let e = env();
     let rt = rt();

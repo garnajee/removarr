@@ -64,51 +64,11 @@ where
     row.try_get(name).map_err(map_sqlx)
 }
 
-const SECRET_KEYS: &[&str] = &[
-    "apikey",
-    "api_key",
-    "token",
-    "passkey",
-    "password",
-    "pass",
-    "secret",
-    "auth",
-    "authorization",
-    "cookie",
-    "sid",
-    "key",
-];
-
-/// Removes URLs and credential-looking tokens from free text before it is persisted.
-/// Tracker URLs and secrets must never reach the database (MASTER 2 and 3).
+/// Removes URLs and credential-looking tokens from free text before it is persisted, with the
+/// one shared rule (`removarr_domain::redact::sanitize`). Tracker URLs and secrets must never
+/// reach the database (MASTER 2 and 3).
 pub(crate) fn scrub(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    let mut redact_next = false;
-    for chunk in text.split_inclusive(char::is_whitespace) {
-        let word = chunk.trim_end_matches(char::is_whitespace);
-        let ws = &chunk[word.len()..];
-        let lower = word.to_ascii_lowercase();
-        if redact_next && !word.is_empty() {
-            out.push_str("[redacted]");
-            redact_next = false;
-        } else if word.contains("://") || lower.starts_with("magnet:") {
-            out.push_str("[redacted-url]");
-        } else if let Some((k, _)) = word.split_once(['=', ':']) {
-            if SECRET_KEYS.contains(&k.to_ascii_lowercase().trim_matches('"')) {
-                out.push_str(k);
-                out.push_str("=[redacted]");
-            } else {
-                out.push_str(word);
-            }
-        } else {
-            out.push_str(word);
-        }
-        if lower == "bearer" || lower == "basic" {
-            redact_next = true;
-        }
-        out.push_str(ws);
-    }
-    out
+    removarr_domain::redact::sanitize(text)
 }
 
 /// Applies [`scrub`] to every string leaf of a JSON value.
@@ -130,11 +90,19 @@ mod tests {
     #[test]
     fn urls_and_secrets_are_removed() {
         let s = scrub(
-            "GET http://tracker.example/announce?passkey=abc failed apikey=xyz Authorization: Bearer tok done",
+            "GET http://tracker.example/announce?passkey=abc failed apikey=xyz Authorization: Bearer tok\ndone",
         );
         assert!(!s.contains("tracker"));
         assert!(!s.contains("abc") && !s.contains("xyz") && !s.contains("tok"));
         assert!(s.contains("failed") && s.contains("done"));
+    }
+
+    #[test]
+    fn scrub_is_as_strict_as_the_shared_sanitizer() {
+        let s = scrub("announce/x?passkey=abc123 {\"password\":\"pw-9\"} Cookie: sid=zzz9");
+        for leaked in ["abc123", "pw-9", "zzz9"] {
+            assert!(!s.contains(leaked), "{leaked} in {s}");
+        }
     }
 
     #[test]
