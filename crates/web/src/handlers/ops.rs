@@ -15,7 +15,7 @@ use removarr_domain::jobs::JobKind;
 use removarr_domain::session::ServiceKind;
 use removarr_workflows::plans::PlanRequest;
 
-use super::{Cmd, Ctx, iso, parse_form, render, see_other};
+use super::{Cmd, Ctx, iso, parse_form, render, see_other, see_other_flash};
 use crate::error::WebError;
 use crate::forms::{self, LocaleForm};
 use crate::i18n::{LOCALE_COOKIE, Locale};
@@ -40,7 +40,11 @@ fn configured_service(
 /// `POST /scan`: queues a scan (deduplicated with a running one).
 pub async fn scan(Cmd(ctx): Cmd, State(s): State<AppState>) -> Result<Response, WebError> {
     let job = s.jobs.submit(JobKind::Scan).await?;
-    Ok(see_other(&ctx, &format!("/jobs/{}", job.id)))
+    Ok(see_other_flash(
+        &ctx,
+        &format!("/jobs/{}", job.id),
+        "job_queued",
+    ))
 }
 
 /// `POST /services/{service}/refresh`: API-only re-read and reclassification (allowed in
@@ -52,7 +56,11 @@ pub async fn refresh(
 ) -> Result<Response, WebError> {
     let svc = configured_service(&s, path)?;
     let job = s.jobs.submit(JobKind::RefreshService(svc)).await?;
-    Ok(see_other(&ctx, &format!("/jobs/{}", job.id)))
+    Ok(see_other_flash(
+        &ctx,
+        &format!("/jobs/{}", job.id),
+        "job_queued",
+    ))
 }
 
 /// `POST /services/{sonarr|radarr|jellyfin}/rescan`: builds a one-action `ServiceRescan` plan
@@ -76,7 +84,11 @@ pub async fn rescan(
             media: None,
         })
         .await?;
-    Ok(see_other(&ctx, &format!("/plans/{}", plan.id)))
+    Ok(see_other_flash(
+        &ctx,
+        &format!("/plans/{}", plan.id),
+        "plan_created",
+    ))
 }
 
 /// `POST /recovery/retry`: re-arms recovery after the automatic attempts are exhausted.
@@ -126,7 +138,7 @@ pub async fn auto_status(ctx: Ctx, State(s): State<AppState>) -> Response {
 /// `POST /auto/resume`: the only way to clear `auto_paused`.
 pub async fn resume_auto(Cmd(ctx): Cmd, State(s): State<AppState>) -> Result<Response, WebError> {
     s.jobs.resume_auto().await?;
-    Ok(see_other(&ctx, "/auto"))
+    Ok(see_other_flash(&ctx, "/auto", "resumed"))
 }
 
 /// `POST /locale`: sets the locale cookie (not part of the session).

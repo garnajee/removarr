@@ -1,0 +1,2 @@
+{% macro badge(cls, icon, label) %}<span class="badge {{ cls }}"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><use href="#i-{{ icon }}"/></svg><span>{{ label }}</span></span>{% endmacro %}
+{% macro csrf(token) %}<input type="hidden" name="csrf_token" value="{{ token }}">{% endmacro %}

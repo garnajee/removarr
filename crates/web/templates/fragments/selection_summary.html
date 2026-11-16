@@ -1,1 +1,1 @@
-<p id="selection-summary" role="status">{{ ctx.tr.t("issues.selection") }}: {{ v.count }} ({{ v.size }}){% if v.unknown > 0 %} - {{ ctx.tr.t("issues.selection_unknown") }}: {{ v.unknown }}{% endif %}</p>
+<p id="selection-summary" role="status" aria-live="polite" aria-atomic="true">{{ v.text }}</p>

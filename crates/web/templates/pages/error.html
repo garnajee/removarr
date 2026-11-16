@@ -1,13 +1,13 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{{ code }}</title></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{{ code }}</title><link rel="stylesheet" href="/static/app.css"></head>
 <body>
-<main>
+<main class="wrap">
 <h1>{{ code }}</h1>
-<p role="alert">{{ message }}</p>
+<p class="state error" role="alert">{{ message }}</p>
 {% if !details.is_empty() %}<ul>{% for d in details %}<li>{{ d }}</li>{% endfor %}</ul>{% endif %}
-<p><small>{{ reference }}: <code>{{ correlation }}</code></small></p>
-<p><a href="/">removarr</a></p>
+<p class="tag">{{ reference }}: <code>{{ correlation }}</code></p>
+<p><a class="btn" href="/">removarr</a></p>
 </main>
 </body>
 </html>

@@ -7,7 +7,7 @@ use axum::response::Response;
 use removarr_jobs::{JobProgress, RecoveryStatus};
 use removarr_reporting::{DashboardInputs, DashboardVm};
 
-use super::{Ctx, bytes, category_key, iso, render};
+use super::{Ctx, bytes, category_key, iso, render, severity_look};
 use crate::error::WebError;
 use crate::state::AppState;
 
@@ -18,6 +18,9 @@ pub struct CategoryRow {
     pub count: u64,
     pub severity: &'static str,
     pub size: String,
+    pub level: &'static str,
+    pub icon: &'static str,
+    pub severity_key: &'static str,
 }
 
 #[derive(Debug, Clone)]
@@ -26,6 +29,8 @@ pub struct JobRow {
     pub label: String,
     pub status: String,
     pub stage: String,
+    pub done: u64,
+    pub total: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -34,6 +39,10 @@ pub struct ServiceRow {
     pub state: &'static str,
     pub version: Option<String>,
     pub current: bool,
+    /// css class of the state badge and its glyph (never colour alone).
+    pub level: &'static str,
+    pub icon: &'static str,
+    pub observed_at: String,
 }
 
 fn service_state_key(k: &str) -> &'static str {
@@ -71,6 +80,12 @@ pub struct DashboardView {
     pub services: Vec<ServiceRow>,
     pub potential: String,
     pub shared: String,
+    pub logical: String,
+    pub allocated: String,
+    pub overlap: String,
+    /// Configured services that accept a refresh / that accept a rescan plan.
+    pub refreshable: Vec<&'static str>,
+    pub rescannable: Vec<&'static str>,
     pub last_scan: Option<String>,
     pub jobs: Vec<JobRow>,
     pub auto_paused: Option<String>,
@@ -78,6 +93,8 @@ pub struct DashboardView {
     pub recovery_key: &'static str,
     pub recovery_needs_manual: bool,
     pub next_scan: Option<String>,
+    /// css class of the urgency badge: `ok`, `warn` or `crit`.
+    pub urgency_class: &'static str,
 }
 
 #[derive(Debug, Template)]
@@ -94,12 +111,22 @@ pub struct DashboardFragment<'a> {
     pub v: &'a DashboardView,
 }
 
+fn sev(s: removarr_domain::issue::Severity) -> &'static str {
+    match s {
+        removarr_domain::issue::Severity::Critical => "critical",
+        removarr_domain::issue::Severity::Warning => "warning",
+        removarr_domain::issue::Severity::Info => "info",
+    }
+}
+
 pub(crate) fn job_row(p: &JobProgress) -> JobRow {
     JobRow {
         id: p.id.to_string(),
         label: p.label.clone(),
         status: format!("{:?}", p.status),
         stage: p.stage.clone().unwrap_or_default(),
+        done: p.done,
+        total: p.total,
     }
 }
 
@@ -127,12 +154,11 @@ pub async fn show(ctx: Ctx, State(s): State<AppState>) -> Result<Response, WebEr
             slug: c.category.as_str(),
             label: ctx.tr.t(category_key(c.category)),
             count: c.count,
-            severity: match c.max_severity {
-                removarr_domain::issue::Severity::Critical => "critical",
-                removarr_domain::issue::Severity::Warning => "warning",
-                removarr_domain::issue::Severity::Info => "info",
-            },
+            severity: sev(c.max_severity),
             size: bytes(c.logical_bytes),
+            level: severity_look(sev(c.max_severity)).0,
+            icon: severity_look(sev(c.max_severity)).1,
+            severity_key: severity_look(sev(c.max_severity)).2,
         })
         .collect();
     let reasons = vm
@@ -149,6 +175,17 @@ pub async fn show(ctx: Ctx, State(s): State<AppState>) -> Result<Response, WebEr
             state: ctx.tr.t(service_state_key(x.state_key)),
             version: x.version.clone(),
             current: x.current,
+            level: match x.state_key {
+                "ok" => "ok",
+                "not_configured" | "unknown" => "info",
+                _ => "warn",
+            },
+            icon: match x.state_key {
+                "ok" => "check-circle",
+                "not_configured" | "unknown" => "info-circle",
+                _ => "alert-triangle",
+            },
+            observed_at: x.observed_at_iso.clone(),
         })
         .collect();
     let view = DashboardView {
@@ -156,6 +193,22 @@ pub async fn show(ctx: Ctx, State(s): State<AppState>) -> Result<Response, WebEr
         services,
         potential: bytes(vm.space.potential_bytes),
         shared: bytes(vm.space.shared_bytes),
+        logical: bytes(vm.space.logical_bytes),
+        allocated: bytes(vm.space.unique_allocated_bytes),
+        overlap: bytes(vm.space.potential_overlap_excluded_bytes),
+        refreshable: s
+            .settings
+            .configured_services
+            .iter()
+            .map(|k| k.as_str())
+            .collect(),
+        rescannable: s
+            .settings
+            .configured_services
+            .iter()
+            .filter(|k| **k != removarr_domain::session::ServiceKind::Qbittorrent)
+            .map(|k| k.as_str())
+            .collect(),
         last_scan: vm
             .last_scan
             .as_ref()
@@ -171,6 +224,11 @@ pub async fn show(ctx: Ctx, State(s): State<AppState>) -> Result<Response, WebEr
         },
         recovery_needs_manual: status.recovery == RecoveryStatus::NeedsManual,
         next_scan: status.next_scan.map(|t| iso(t.as_millis())),
+        urgency_class: match vm.urgency.level {
+            removarr_reporting::Urgency::Green => "ok",
+            removarr_reporting::Urgency::Orange => "warn",
+            removarr_reporting::Urgency::Red => "crit",
+        },
         vm,
     };
     Ok(render(

@@ -119,6 +119,7 @@ pub fn build(state: AppState) -> Router {
     let public = Router::new()
         .route("/healthz", get(health::healthz))
         .route("/readyz", get(health::readyz))
+        .route("/static/{file}", get(crate::assets::serve))
         .merge(login_routes);
 
     let pages = Router::new()

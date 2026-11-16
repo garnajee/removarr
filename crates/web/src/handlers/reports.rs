@@ -79,9 +79,38 @@ pub struct SeriesRow {
     pub points: Vec<(String, String, String)>,
 }
 
+/// One drawn series: geometry from `reporting::svg::chart_geometry`, labels translated.
+#[derive(Debug, Clone)]
+pub struct ChartLine {
+    pub label: &'static str,
+    /// Snake-case series kind (css class `s-<kind>`).
+    pub kind: &'static str,
+    pub path_d: String,
+    pub dash: &'static str,
+    pub marker: &'static str,
+    pub points: Vec<(f64, f64)>,
+}
+
+/// The inline SVG chart (markup in `fragments/stats.html`).
+#[derive(Debug, Clone)]
+pub struct ChartView {
+    pub width: u32,
+    pub height: u32,
+    pub plot_left: f64,
+    pub plot_right: f64,
+    pub plot_top: f64,
+    pub plot_bottom: f64,
+    pub empty: bool,
+    pub lines: Vec<ChartLine>,
+    pub y_ticks: Vec<(f64, String)>,
+    pub x_ticks: Vec<(f64, String)>,
+}
+
 #[derive(Debug, Clone)]
 pub struct StatsView {
     pub vm: StatsVm,
+    pub chart: ChartView,
+    pub caveats: Vec<String>,
     pub series: Vec<SeriesRow>,
     pub attributable: String,
     pub added: String,
@@ -100,6 +129,17 @@ pub struct StatsPage<'a> {
 pub struct StatsFragment<'a> {
     pub ctx: &'a Ctx,
     pub v: &'a StatsView,
+}
+
+fn kind_class(k: removarr_reporting::SeriesKind) -> &'static str {
+    use removarr_reporting::SeriesKind as K;
+    match k {
+        K::Potential => "potential",
+        K::Expected => "expected",
+        K::Attributable => "attributable",
+        K::AddedCost => "added_cost",
+        K::Observed => "observed",
+    }
 }
 
 /// `GET /stats`: series data (potential, expected, attributable, added, observed).
@@ -125,7 +165,48 @@ pub async fn stats(ctx: Ctx, State(s): State<AppState>) -> Result<Response, WebE
                 .collect(),
         })
         .collect();
+    let geo = removarr_reporting::svg::chart_geometry(&vm.series, 640, 320);
+    let chart = ChartView {
+        width: geo.width,
+        height: geo.height,
+        plot_left: geo.plot_left,
+        plot_right: geo.plot_right,
+        plot_top: geo.plot_top,
+        plot_bottom: geo.plot_bottom,
+        empty: geo.empty,
+        lines: geo
+            .lines
+            .iter()
+            .map(|l| ChartLine {
+                label: ctx.tr.t(l.label_key),
+                kind: kind_class(l.kind),
+                path_d: l.path_d.clone(),
+                dash: l.dash,
+                marker: l.marker,
+                points: l.points.iter().map(|p| (p.x, p.y)).collect(),
+            })
+            .collect(),
+        y_ticks: geo
+            .y_ticks
+            .iter()
+            .map(|t| {
+                let v = t
+                    .label
+                    .parse::<i64>()
+                    .map_or_else(|_| t.label.clone(), signed_bytes);
+                (t.position, v)
+            })
+            .collect(),
+        x_ticks: geo
+            .x_ticks
+            .iter()
+            .map(|t| (t.position, t.label.clone()))
+            .collect(),
+    };
+    let caveats = vm.caveats.iter().map(|c| ctx.explanation(c)).collect();
     let v = StatsView {
+        chart,
+        caveats,
         attributable: bytes(vm.totals.attributable_bytes),
         added: bytes(vm.totals.added_bytes),
         net: signed_bytes(vm.totals.net_bytes),
@@ -139,8 +220,21 @@ pub async fn stats(ctx: Ctx, State(s): State<AppState>) -> Result<Response, WebE
     ))
 }
 
+/// One log line: sanitized by the log buffer, escaped again by the template.
+#[derive(Debug, Clone)]
+pub struct LogRow {
+    pub at: String,
+    pub level: &'static str,
+    pub class: &'static str,
+    pub icon: &'static str,
+    pub target: String,
+    pub message: String,
+    pub fields: Vec<(String, String)>,
+}
+
 #[derive(Debug, Clone)]
 pub struct LogsView {
+    pub rows: Vec<LogRow>,
     pub vm: LogsVm,
     pub level: &'static str,
     pub q: String,
@@ -174,7 +268,33 @@ pub async fn logs(
         after_seq: None,
         limit: 200,
     });
+    let rows = vm
+        .entries
+        .iter()
+        .map(|e| {
+            use removarr_reporting::LogLevel as L;
+            let (class, icon) = match e.level {
+                L::Error => ("crit", "alert-octagon"),
+                L::Warn => ("warn", "alert-triangle"),
+                L::Info | L::Debug => ("info", "info-circle"),
+            };
+            LogRow {
+                at: e.at.clone(),
+                level: e.level.as_str(),
+                class,
+                icon,
+                target: e.target.clone(),
+                message: e.message.clone(),
+                fields: e
+                    .fields
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect(),
+            }
+        })
+        .collect();
     let v = LogsView {
+        rows,
         vm,
         level: match min_level {
             removarr_reporting::LogLevel::Debug => "debug",

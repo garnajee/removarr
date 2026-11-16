@@ -11,6 +11,7 @@
 //! - [`auth`]: the production guard (Argon2 login, sessions, CSRF, rate limit, trusted
 //!   proxies, security headers).
 
+pub mod assets;
 pub mod auth;
 pub mod error;
 pub mod forms;

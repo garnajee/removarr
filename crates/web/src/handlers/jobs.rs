@@ -9,7 +9,7 @@ use removarr_domain::jobs::JobOutcome;
 use removarr_jobs::{CancelResult, JobProgress};
 
 use super::dashboard::{JobRow, job_row};
-use super::{Cmd, Ctx, iso, render, see_other};
+use super::{Cmd, Ctx, iso, render, see_other_flash};
 use crate::error::WebError;
 use crate::forms;
 use crate::state::AppState;
@@ -154,7 +154,7 @@ pub async fn cancel(
     match s.jobs.cancel(id).await? {
         CancelResult::NotFound => Err(WebError::not_found()),
         CancelResult::CancelledQueued | CancelResult::Requested | CancelResult::NotActive => {
-            Ok(see_other(&ctx, &format!("/jobs/{id}")))
+            Ok(see_other_flash(&ctx, &format!("/jobs/{id}"), "job_cancel"))
         }
     }
 }

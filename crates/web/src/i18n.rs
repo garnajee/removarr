@@ -110,6 +110,41 @@ impl Tr {
     }
 }
 
+impl Tr {
+    /// The translation when the key exists in this locale or in English (no key fallback).
+    #[must_use]
+    pub fn get(&self, key: &str) -> Option<&'static str> {
+        table(self.locale)
+            .get(key)
+            .or_else(|| table(Locale::En).get(key))
+            .map(String::as_str)
+    }
+
+    /// Plural form: `<key>.one` for 1 (and 0 in French), `<key>.other` otherwise, with `{n}`
+    /// replaced by the number. Falls back to `<key>` then to the key itself.
+    #[must_use]
+    pub fn tn(&self, key: &str, n: u64) -> String {
+        let singular = n == 1 || (n == 0 && self.locale == Locale::Fr);
+        let suffix = if singular { "one" } else { "other" };
+        let text = self
+            .get(&format!("{key}.{suffix}"))
+            .or_else(|| self.get(key))
+            .unwrap_or(key);
+        text.replace("{n}", &n.to_string())
+    }
+
+    /// Text with named placeholders (`{a}`, `{b}`) replaced. Values are inserted as plain text;
+    /// the template escapes the result like any other string.
+    #[must_use]
+    pub fn fmt(&self, key: &str, params: &[(&str, &str)]) -> String {
+        let mut out = self.t(key).to_string();
+        for (k, v) in params {
+            out = out.replace(&format!("{{{k}}}"), v);
+        }
+        out
+    }
+}
+
 impl<S: Send + Sync> FromRequestParts<S> for Tr {
     type Rejection = Infallible;
 
@@ -142,6 +177,40 @@ mod tests {
         assert_eq!(Tr::new(Locale::En).t("nav.dashboard"), "Dashboard");
         assert_ne!(fr.t("nav.dashboard"), "nav.dashboard");
         assert_eq!(fr.t("no.such.key"), "no.such.key");
+    }
+
+    #[test]
+    fn plural_and_parameters() {
+        let en = Tr::new(Locale::En);
+        assert_eq!(en.tn("unit.item", 1), "1 item");
+        assert_eq!(en.tn("unit.item", 0), "0 items");
+        assert_eq!(en.tn("unit.item", 7), "7 items");
+        let fr = Tr::new(Locale::Fr);
+        assert_eq!(fr.tn("unit.item", 0), "0 élément");
+        assert_eq!(fr.tn("unit.item", 2), "2 éléments");
+        assert_eq!(
+            en.fmt("issues.sel_of", &[("n", "3"), ("m", "50")]),
+            "3 selected of 50 on this page"
+        );
+        assert_eq!(en.tn("no.such", 3), "no.such");
+    }
+
+    #[test]
+    fn placeholders_match_between_locales() {
+        let en: Table = serde_json::from_str(EN_JSON).unwrap();
+        let fr: Table = serde_json::from_str(FR_JSON).unwrap();
+        let names = |s: &str| {
+            let mut v: Vec<String> = s
+                .split('{')
+                .skip(1)
+                .filter_map(|x| x.split_once('}').map(|(n, _)| n.to_string()))
+                .collect();
+            v.sort();
+            v
+        };
+        for (k, v) in &en {
+            assert_eq!(names(v), names(&fr[k]), "placeholders differ for {k}");
+        }
     }
 
     #[test]

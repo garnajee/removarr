@@ -1,15 +1,21 @@
+{% import "components.html" as c %}
 <section id="logs" aria-labelledby="logs-title">
-<h1 id="logs-title">{{ ctx.tr.t("nav.logs") }}</h1>
-<form method="get">
-<label>{{ ctx.tr.t("logs.level") }} <select name="level">
-<option value="debug"{% if v.level == "debug" %} selected{% endif %}>DEBUG</option>
-<option value="info"{% if v.level == "info" %} selected{% endif %}>INFO</option>
-<option value="warn"{% if v.level == "warn" %} selected{% endif %}>WARN</option>
-<option value="error"{% if v.level == "error" %} selected{% endif %}>ERROR</option>
-</select></label>
-<label>{{ ctx.tr.t("issues.search") }} <input type="search" name="q" value="{{ v.q }}" maxlength="200"></label>
-<button type="submit">{{ ctx.tr.t("issues.refresh") }}</button>
+<h1 id="logs-title" tabindex="-1">{{ ctx.tr.t("nav.logs") }}</h1>
+<form method="get" role="search" aria-label="{{ ctx.tr.t("issues.filters") }}">
+<div class="row">
+<div class="field"><label for="l-level">{{ ctx.tr.t("logs.level") }}</label><select id="l-level" name="level">
+<option value="debug"{% if v.level == "debug" %} selected{% endif %}>{{ ctx.tr.t("logs.debug") }}</option>
+<option value="info"{% if v.level == "info" %} selected{% endif %}>{{ ctx.tr.t("logs.info") }}</option>
+<option value="warn"{% if v.level == "warn" %} selected{% endif %}>{{ ctx.tr.t("logs.warn") }}</option>
+<option value="error"{% if v.level == "error" %} selected{% endif %}>{{ ctx.tr.t("logs.error") }}</option>
+</select></div>
+<div class="field"><label for="l-q">{{ ctx.tr.t("issues.search") }}</label><input id="l-q" type="search" name="q" value="{{ v.q }}" maxlength="200" autocomplete="off"></div>
+<button type="submit" class="primary">{{ ctx.tr.t("issues.apply") }}</button>
+</div>
 </form>
-<p>{{ v.vm.matched }} / {{ v.vm.buffered }}</p>
-<ol>{% for e in v.vm.entries %}<li><time>{{ e.at }}</time> {{ e.level }} {{ e.target }}: {{ e.message }}</li>{% endfor %}</ol>
+<p role="status">{{ ctx.nm("logs.count", v.vm.matched, v.vm.buffered) }}{% if v.vm.truncated %} - {{ ctx.tr.t("logs.truncated") }}{% endif %}</p>
+{% if v.rows.is_empty() %}<p class="state">{{ ctx.tr.t("empty.logs") }}</p>{% endif %}
+<ol class="cards">{% for e in v.rows %}<li class="logline"><p>{% call c::badge(e.class, e.icon, ctx.coded("logs", e.level)) %} <time>{{ e.at }}</time> <code translate="no">{{ e.target }}</code></p>
+<p translate="no">{{ e.message }}</p>
+{% if !e.fields.is_empty() %}<details><summary>{{ ctx.tr.t("logs.fields") }}</summary><dl class="facts">{% for f in e.fields %}<dt translate="no">{{ f.0 }}</dt><dd translate="no">{{ f.1 }}</dd>{% endfor %}</dl></details>{% endif %}</li>{% endfor %}</ol>
 </section>

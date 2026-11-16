@@ -52,6 +52,43 @@ pub struct Ctx {
     pub tr: Tr,
     pub htmx: bool,
     pub chrome: Chrome,
+    /// i18n key of the one-shot confirmation left by the previous command (flash cookie).
+    pub flash: Option<&'static str>,
+    /// Request path, only used to mark the current navigation entry (`aria-current`).
+    pub path: String,
+}
+
+/// Cookie carrying a one-shot confirmation code across the redirect that follows a command.
+/// It holds only a code from [`FLASH_CODES`] (never text, never an id) and no authorization.
+pub const FLASH_COOKIE: &str = "removarr_flash";
+
+/// Accepted flash codes and their message keys; any other cookie value is ignored.
+pub const FLASH_CODES: [(&str, &str); 9] = [
+    ("ignored", "flash.ignored"),
+    ("restored", "flash.restored"),
+    ("plan_created", "flash.plan_created"),
+    ("approved", "flash.approved"),
+    ("discarded", "flash.discarded"),
+    ("job_queued", "flash.job_queued"),
+    ("job_cancel", "flash.job_cancel"),
+    ("resumed", "flash.resumed"),
+    ("locale", "flash.locale"),
+];
+
+fn flash_from(parts: &Parts) -> Option<&'static str> {
+    let code = parts
+        .headers
+        .get_all(header::COOKIE)
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .flat_map(|v| v.split(';'))
+        .filter_map(|kv| kv.trim().split_once('='))
+        .find(|(k, _)| *k == FLASH_COOKIE)
+        .map(|(_, v)| v.trim())?;
+    FLASH_CODES
+        .iter()
+        .find(|(c, _)| *c == code)
+        .map(|(_, k)| *k)
 }
 
 fn is_htmx(parts: &Parts) -> bool {
@@ -80,6 +117,8 @@ impl FromRequestParts<AppState> for Ctx {
                 dry_run: s.settings.dry_run,
                 lang: locale.as_str(),
             },
+            flash: flash_from(parts),
+            path: parts.uri.path().to_string(),
         })
     }
 }
@@ -116,6 +155,15 @@ pub(crate) fn render(ctx: &Ctx, page: &impl Template, fragment: &impl Template) 
                 r.headers_mut()
                     .insert(header::VARY, HeaderValue::from_static("HX-Request"));
             }
+            if ctx.flash.is_some() {
+                // Shown once: the cookie is consumed by the page that displays it.
+                r.headers_mut().append(
+                    header::SET_COOKIE,
+                    HeaderValue::from_static(
+                        "removarr_flash=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict",
+                    ),
+                );
+            }
             r
         }
         Err(e) => WebError::internal(&format!("template rendering failed: {e}")).into_response(),
@@ -149,6 +197,55 @@ pub(crate) fn see_other(ctx: &Ctx, to: &str) -> Response {
     Redirect::to(to).into_response()
 }
 
+/// Like [`see_other`], and leaves a one-shot confirmation (`code` from [`FLASH_CODES`]) for the
+/// destination page.
+pub(crate) fn see_other_flash(ctx: &Ctx, to: &str, code: &'static str) -> Response {
+    debug_assert!(FLASH_CODES.iter().any(|(c, _)| *c == code));
+    let mut r = see_other(ctx, to);
+    r.headers_mut().append(
+        header::SET_COOKIE,
+        HeaderValue::from_str(&format!(
+            "{FLASH_COOKIE}={code}; Path=/; Max-Age=60; HttpOnly; SameSite=Strict"
+        ))
+        .unwrap_or_else(|_| HeaderValue::from_static("removarr_flash=; Max-Age=0")),
+    );
+    r
+}
+
+/// `CamelCase` or `Variant:detail` to the `snake_case` part before the colon.
+fn snake(raw: &str) -> String {
+    let head = raw.split([':', '(', ' ']).next().unwrap_or(raw);
+    let mut out = String::with_capacity(head.len() + 4);
+    let mut prev_lower = false;
+    for ch in head.chars() {
+        if ch.is_ascii_uppercase() {
+            if prev_lower {
+                out.push('_');
+            }
+            out.push(ch.to_ascii_lowercase());
+            prev_lower = false;
+        } else if ch.is_ascii_alphanumeric() {
+            out.push(ch);
+            prev_lower = true;
+        } else {
+            out.push('_');
+            prev_lower = false;
+        }
+    }
+    out
+}
+
+/// Presentation of a severity: `(css class, glyph id, label key)`. The glyph shape differs per
+/// level so the state survives greyscale; the label is always rendered next to it.
+#[must_use]
+pub fn severity_look(sev: &str) -> (&'static str, &'static str, &'static str) {
+    match sev {
+        "critical" => ("crit", "alert-octagon", "severity.critical"),
+        "warning" => ("warn", "alert-triangle", "severity.warning"),
+        _ => ("info", "info-circle", "severity.info"),
+    }
+}
+
 /// i18n key of a category label (`category.<slug>`).
 #[must_use]
 pub fn category_key(c: IssueCategory) -> &'static str {
@@ -174,9 +271,89 @@ pub fn category_key(c: IssueCategory) -> &'static str {
 pub struct Tab {
     pub slug: &'static str,
     pub label: &'static str,
+    pub current: bool,
+}
+
+/// A number the templates pass to the plural helpers (values or references; negatives are 0).
+pub trait Count {
+    fn count(&self) -> u64;
+}
+
+macro_rules! count_impl {
+    ($($t:ty),*) => {$(impl Count for $t {
+        fn count(&self) -> u64 {
+            u64::try_from(*self).unwrap_or(0)
+        }
+    })*};
+}
+count_impl!(u8, u16, u32, u64, usize, i32, i64);
+
+impl<T: Count + ?Sized> Count for &T {
+    fn count(&self) -> u64 {
+        (**self).count()
+    }
 }
 
 impl Ctx {
+    /// Translates a machine code (`Draft`, `scan_incomplete`, `ServiceUnavailable:sonarr`) through
+    /// `<prefix>.<snake_case>`; an unknown code is shown as received (the template escapes it).
+    #[must_use]
+    pub fn coded(&self, prefix: &str, raw: &str) -> String {
+        match self.tr.get(&format!("{prefix}.{}", snake(raw))) {
+            Some(text) => match raw.split_once(':') {
+                Some((_, detail)) if !detail.is_empty() => format!("{text} ({detail})"),
+                _ => text.to_string(),
+            },
+            None => raw.to_string(),
+        }
+    }
+
+    /// Text of a reporting explanation: `explain.<code>` with its parameters when translated,
+    /// else the English text built by the reporting crate (escaped by the template).
+    #[must_use]
+    pub fn explanation(&self, e: &removarr_reporting::ExplanationVm) -> String {
+        match self.tr.get(&format!("explain.{}", e.code)) {
+            Some(text) => {
+                let mut out = text.to_string();
+                for (k, v) in &e.params {
+                    out = out.replace(&format!("{{{k}}}"), v);
+                }
+                out
+            }
+            None => e.text.clone(),
+        }
+    }
+
+    /// SRI value of the pinned HTMX file (`integrity` attribute of the script tag).
+    #[must_use]
+    pub fn htmx_sri(&self) -> &'static str {
+        crate::assets::HTMX_SRI
+    }
+
+    /// True when the current page is `path`, or below it when `prefix` is set.
+    #[must_use]
+    pub fn on(&self, path: &str, prefix: bool) -> bool {
+        if prefix {
+            self.path == path || self.path.starts_with(&format!("{path}/"))
+        } else {
+            self.path == path
+        }
+    }
+
+    /// Plural text with `{n}` (see [`Tr::tn`]).
+    #[must_use]
+    pub fn tn(&self, key: &str, n: impl Count) -> String {
+        self.tr.tn(key, n.count())
+    }
+
+    /// Text with `{n}` and `{m}` replaced (see [`Tr::fmt`]).
+    #[must_use]
+    pub fn nm(&self, key: &str, n: impl Count, m: impl Count) -> String {
+        let (n, m) = (n.count(), m.count());
+        self.tr
+            .fmt(key, &[("n", &n.to_string()), ("m", &m.to_string())])
+    }
+
     /// Issue tabs, in category order.
     #[must_use]
     pub fn tabs(&self) -> Vec<Tab> {
@@ -185,6 +362,7 @@ impl Ctx {
             .map(|c| Tab {
                 slug: c.as_str(),
                 label: self.tr.t(category_key(*c)),
+                current: self.on(&format!("/issues/{}", c.as_str()), true),
             })
             .collect()
     }
@@ -240,6 +418,15 @@ pub fn signed_bytes(n: i64) -> String {
 #[cfg(test)]
 mod unit_tests {
     use super::*;
+
+    #[test]
+    fn codes_become_snake_case_keys() {
+        assert_eq!(snake("ScanIncomplete"), "scan_incomplete");
+        assert_eq!(snake("ServiceUnavailable:sonarr"), "service_unavailable");
+        assert_eq!(snake("Failed (Io)"), "failed");
+        assert_eq!(snake("T4"), "t4");
+        assert_eq!(snake("ERROR"), "error");
+    }
 
     #[test]
     fn sizes_are_human_readable() {

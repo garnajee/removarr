@@ -33,6 +33,8 @@ pub async fn page(tr: Tr) -> Response {
             dry_run: false,
             lang: tr.locale.as_str(),
         },
+        flash: None,
+        path: "/login".to_string(),
     };
     let v = LoginView {
         error_key: Some("login.unavailable"),

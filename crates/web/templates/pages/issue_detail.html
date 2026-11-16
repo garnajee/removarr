@@ -1,2 +1,3 @@
 {% extends "base.html" %}
+{% block title %}{{ v.row.name }} - {{ ctx.tr.t("app.name") }}{% endblock %}
 {% block content %}{% include "fragments/issue_detail.html" %}{% endblock %}

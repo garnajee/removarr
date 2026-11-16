@@ -862,7 +862,7 @@ async fn authentication_failures_are_generic() {
     let empty = c.login("", "").await;
     for r in [&wrong_password, &unknown_user, &both, &empty] {
         assert_eq!(r.status, StatusCode::UNAUTHORIZED);
-        assert!(r.body.contains("login.failed"), "{}", r.body);
+        assert!(r.body.contains("Sign-in failed"), "{}", r.body);
         assert!(r.set_cookie("removarr_session").is_none());
         assert!(!r.body.contains("nobody") && !r.body.contains(PASSWORD));
     }

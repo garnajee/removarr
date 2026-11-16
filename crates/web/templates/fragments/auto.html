@@ -1,8 +1,13 @@
+{% import "components.html" as c %}
 <section id="auto" aria-labelledby="auto-title">
-<h1 id="auto-title">{{ ctx.tr.t("nav.auto") }}</h1>
-<p>{% if v.enabled %}{{ ctx.tr.t("auto.enabled") }}{% else %}{{ ctx.tr.t("auto.disabled") }}{% endif %}{% if v.dry_run %} - {{ ctx.tr.t("mode.dry_run") }}{% endif %}</p>
-<p>{{ ctx.tr.t("auto.read_once") }}</p>
-{% if let Some(r) = v.paused %}<p role="alert">{{ ctx.tr.t("auto.paused") }}: {{ r }}</p>
-<form method="post" action="/auto/resume"><input type="hidden" name="csrf_token" value="{{ ctx.chrome.csrf }}"><button type="submit">{{ ctx.tr.t("command.resume_auto") }}</button></form>{% endif %}
-{% if let Some(t) = v.next_scan %}<p>{{ ctx.tr.t("dashboard.next_scan") }}: {{ t }}</p>{% endif %}
+<h1 id="auto-title" tabindex="-1">{{ ctx.tr.t("nav.auto") }}</h1>
+<p>{% if v.enabled %}{% call c::badge("ok", "check-circle", ctx.tr.t("auto.enabled")) %}{% else %}{% call c::badge("info", "info-circle", ctx.tr.t("auto.disabled")) %}{% endif %}
+{% if v.dry_run %} {% call c::badge("info", "info-circle", ctx.tr.t("mode.dry_run")) %}{% endif %}</p>
+<p class="muted">{{ ctx.tr.t("auto.read_once") }}</p>
+<p>{{ ctx.tr.t("auto.explain") }}</p>
+{% if let Some(r) = v.paused %}<div class="state error" role="alert"><p>{% call c::badge("crit", "alert-octagon", ctx.tr.t("auto.paused")) %}</p>
+<p>{{ ctx.tr.t("auto.pause_reason") }}: {{ r }}</p><p>{{ ctx.tr.t("auto.resume_help") }}</p>
+<form method="post" action="/auto/resume">{% call c::csrf(ctx.chrome.csrf) %}<button type="submit">{{ ctx.tr.t("command.resume_auto") }}</button></form></div>
+{% else if v.enabled %}<p class="panel-ok">{{ ctx.tr.t("auto.not_paused") }}</p>{% endif %}
+{% if let Some(t) = v.next_scan %}<p>{{ ctx.tr.t("dashboard.next_scan") }}: <time datetime="{{ t }}">{{ t }}</time></p>{% endif %}
 </section>

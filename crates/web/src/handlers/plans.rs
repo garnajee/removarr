@@ -14,7 +14,7 @@ use removarr_domain::plan::{ActionTarget, PlanMode, PlanStatus};
 use removarr_reporting::PlanReportVm;
 use removarr_workflows::plans::{PlanPreview, PlanRequest};
 
-use super::{Cmd, Ctx, bytes, iso, parse_form, render, see_other, signed_bytes};
+use super::{Cmd, Ctx, bytes, iso, parse_form, render, see_other_flash, signed_bytes};
 use crate::error::WebError;
 use crate::forms::{self, ApproveForm, PlanForm};
 use crate::state::AppState;
@@ -69,6 +69,13 @@ pub struct PlanView {
     pub can_simulate: bool,
     pub can_execute: bool,
     pub can_discard: bool,
+    /// Gains recorded after execution (attributable, added) and the observed free-space deltas
+    /// per root: kept apart from the expected values above.
+    pub recorded_attributable: String,
+    pub recorded_added: String,
+    pub observed: Vec<(String, String)>,
+    /// Translated explanations of planned-versus-recorded differences.
+    pub differences: Vec<String>,
     pub report: Option<PlanReportVm>,
 }
 
@@ -100,29 +107,31 @@ pub struct ConfirmFragment<'a> {
     pub v: &'a PlanView,
 }
 
+/// The data part of an action target (rooted paths, hashes, ids). The action kind label is
+/// translated by the template; no English words are built here.
 fn target(t: &ActionTarget) -> String {
     match t {
         ActionTarget::Consolidate { source, target } => format!("{source} -> {target}"),
         ActionTarget::Path { path } | ActionTarget::FixMode { path, .. } => path.to_string(),
         ActionTarget::Torrent { hash, data_paths } => {
-            let mut s = format!("torrent {}", hash.as_str());
+            let mut s = hash.as_str().to_string();
             for p in data_paths.iter().take(20) {
                 s.push_str(&format!(", {p}"));
             }
             s
         }
-        ActionTarget::Replace { .. } => "ARR import (copy)".to_string(),
-        ActionTarget::Release { media, .. } => {
-            format!("{} media {}", media.service.as_str(), media.media_id)
+        ActionTarget::Replace { request } => request
+            .files
+            .iter()
+            .map(|(p, _)| p.to_string())
+            .collect::<Vec<_>>()
+            .join(", "),
+        ActionTarget::Release { media, .. } | ActionTarget::Monitor { media, .. } => {
+            format!("{} #{}", media.service.as_str(), media.media_id)
         }
-        ActionTarget::Queue { service, id } => format!("{} queue item {id}", service.as_str()),
-        ActionTarget::Monitor { media, monitored } => format!(
-            "{} media {} monitored={monitored}",
-            media.service.as_str(),
-            media.media_id
-        ),
-        ActionTarget::Rescan { service, .. } => format!("{} rescan", service.as_str()),
-        ActionTarget::JellyfinRefresh { .. } => "jellyfin library refresh".to_string(),
+        ActionTarget::Queue { service, id } => format!("{} #{id}", service.as_str()),
+        ActionTarget::Rescan { service, .. } => service.as_str().to_string(),
+        ActionTarget::JellyfinRefresh { .. } => "Jellyfin".to_string(),
     }
 }
 
@@ -197,6 +206,22 @@ pub(crate) fn plan_view(
             && p.mode == PlanMode::Live
             && !process_dry_run,
         can_discard: stored && matches!(status, Some(PlanStatus::Draft | PlanStatus::Approved)),
+        recorded_attributable: report
+            .as_ref()
+            .map_or_else(String::new, |r| bytes(r.recorded.attributable_bytes)),
+        recorded_added: report
+            .as_ref()
+            .map_or_else(String::new, |r| bytes(r.recorded.added_bytes)),
+        observed: report
+            .as_ref()
+            .map(|r| {
+                r.observed
+                    .iter()
+                    .map(|o| (o.root.clone(), signed_bytes(o.delta_local)))
+                    .collect()
+            })
+            .unwrap_or_default(),
+        differences: Vec::new(),
         report,
     }
 }
@@ -226,7 +251,11 @@ pub async fn create(
 ) -> Result<Response, WebError> {
     let req = request(&parse_form(f)?)?;
     let built = s.plans.create(&req).await?;
-    Ok(see_other(&ctx, &format!("/plans/{}", built.id)))
+    Ok(see_other_flash(
+        &ctx,
+        &format!("/plans/{}", built.id),
+        "plan_created",
+    ))
 }
 
 /// `POST /plans/preview`: the same plan through the same path, not stored.
@@ -260,7 +289,10 @@ pub async fn show(
     let id = id_of(path)?;
     let p = s.plans.get(id).await?;
     let report = s.read.plan_report(id).await.ok();
-    let view = plan_view(&p, true, s.settings.dry_run, report);
+    let mut view = plan_view(&p, true, s.settings.dry_run, report);
+    if let Some(r) = &view.report {
+        view.differences = r.differences.iter().map(|d| ctx.explanation(d)).collect();
+    }
     Ok(render(
         &ctx,
         &PlanPage {
@@ -307,7 +339,7 @@ pub async fn approve(
     let id = id_of(path)?;
     let req = parse_form(f)?.validate()?;
     s.plans.approve(id, &req).await?;
-    Ok(see_other(&ctx, &format!("/plans/{id}")))
+    Ok(see_other_flash(&ctx, &format!("/plans/{id}"), "approved"))
 }
 
 async fn enqueue(
@@ -324,7 +356,11 @@ async fn enqueue(
             simulate,
         })
         .await?;
-    Ok(see_other(ctx, &format!("/jobs/{}", job.id)))
+    Ok(see_other_flash(
+        ctx,
+        &format!("/jobs/{}", job.id),
+        "job_queued",
+    ))
 }
 
 /// `POST /plans/{id}/execute`: approved, unexpired live plan in a live process only.
@@ -355,5 +391,5 @@ pub async fn discard(
 ) -> Result<Response, WebError> {
     let id = id_of(path)?;
     s.plans.discard(id).await?;
-    Ok(see_other(&ctx, &format!("/plans/{id}")))
+    Ok(see_other_flash(&ctx, &format!("/plans/{id}"), "discarded"))
 }

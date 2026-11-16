@@ -150,10 +150,24 @@ fn stats_vm() -> StatsVm {
     }
 }
 
+/// Scenario data a UI test can swap in (the default fakes serve the fixed fixtures above).
+#[derive(Default)]
+struct Overrides {
+    dashboard: Option<DashboardVm>,
+    rows: Option<Vec<IssueRowVm>>,
+    /// `Some(None)` = no finished scan behind the issue list.
+    finished: Option<Option<String>>,
+    total_count: Option<u64>,
+    history: Option<HistoryVm>,
+    stats: Option<StatsVm>,
+    report: Option<PlanReportVm>,
+}
+
 #[derive(Default)]
 struct FakeRead {
     calls: AtomicUsize,
     fail_with: Mutex<Option<PortError>>,
+    over: Mutex<Overrides>,
 }
 
 impl FakeRead {
@@ -170,7 +184,13 @@ impl FakeRead {
 impl ReadModel for FakeRead {
     async fn dashboard(&self, _i: &DashboardInputs) -> Result<DashboardVm, PortError> {
         self.hit()?;
-        Ok(dashboard_vm())
+        Ok(self
+            .over
+            .lock()
+            .unwrap()
+            .dashboard
+            .clone()
+            .unwrap_or_else(dashboard_vm))
     }
     async fn issues(&self, q: &IssueQuery) -> Result<IssueListVm, PortError> {
         self.hit()?;
@@ -184,25 +204,31 @@ impl ReadModel for FakeRead {
                 true,
             ),
         ];
+        let o = self.over.lock().unwrap();
+        let all = o.rows.clone().unwrap_or(all);
         let rows: Vec<_> = all
             .into_iter()
             .filter(|r| q.category.is_none_or(|c| c == r.category))
             .collect();
+        let finished = o.finished.clone().unwrap_or(None);
         Ok(IssueListVm {
-            total_count: rows.len() as u64,
+            total_count: o.total_count.unwrap_or(rows.len() as u64),
             total_logical_bytes: 0,
             total_potential_bytes: 0,
             offset: 0,
             limit: q.limit,
             issues_session: None,
             session_finished_at: None,
-            session_finished_at_iso: None,
+            session_finished_at_iso: finished,
             explanations: vec![],
             rows,
         })
     }
     async fn history(&self, q: &HistoryQuery) -> Result<HistoryVm, PortError> {
         self.hit()?;
+        if let Some(h) = self.over.lock().unwrap().history.clone() {
+            return Ok(h);
+        }
         Ok(HistoryVm {
             rows: vec![],
             offset: q.offset,
@@ -213,11 +239,20 @@ impl ReadModel for FakeRead {
     }
     async fn stats(&self, _q: &StatsQuery) -> Result<StatsVm, PortError> {
         self.hit()?;
-        Ok(stats_vm())
+        Ok(self
+            .over
+            .lock()
+            .unwrap()
+            .stats
+            .clone()
+            .unwrap_or_else(stats_vm))
     }
     async fn plan_report(&self, _p: PlanId) -> Result<PlanReportVm, PortError> {
         self.hit()?;
-        Err(PortError::new(ErrorClass::NotFound, "no report"))
+        match self.over.lock().unwrap().report.clone() {
+            Some(r) => Ok(r),
+            None => Err(PortError::new(ErrorClass::NotFound, "no report")),
+        }
     }
     async fn report(
         &self,
@@ -248,6 +283,8 @@ impl ReadModel for FakeRead {
 
 #[derive(Default)]
 struct FakeJobs {
+    /// Replaces the fixed running job (and the pause reason) in UI scenarios.
+    scenario: Mutex<Option<(JobProgress, Option<String>)>>,
     submitted: Mutex<Vec<JobKind>>,
     cancels: AtomicUsize,
     resumes: AtomicUsize,
@@ -304,17 +341,29 @@ impl JobControl for FakeJobs {
         Ok(true)
     }
     fn status(&self) -> RuntimeStatus {
+        let (job, paused) = self
+            .scenario
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap_or_else(|| (progress(JobId::new(uuid(7))), Some("a reason".into())));
         RuntimeStatus {
-            jobs: vec![progress(JobId::new(uuid(7)))],
+            jobs: vec![job],
             auto_enabled: false,
-            auto_paused: Some("a reason".into()),
+            auto_paused: paused,
             recovery: RecoveryStatus::Clean,
             next_scan: None,
             next_refresh: None,
         }
     }
     fn progress(&self, id: JobId) -> Option<JobProgress> {
-        (id == JobId::new(uuid(7))).then(|| progress(id))
+        (id == JobId::new(uuid(7))).then(|| {
+            self.scenario
+                .lock()
+                .unwrap()
+                .clone()
+                .map_or_else(|| progress(id), |(j, _)| j)
+        })
     }
 }
 
@@ -344,6 +393,8 @@ fn preview(status: Option<PlanStatus>) -> PlanPreview {
 
 #[derive(Default)]
 struct FakePlans {
+    /// Replaces the stored plan served by `get` (UI scenarios).
+    stored: Mutex<Option<PlanPreview>>,
     created: Mutex<Vec<PlanRequest>>,
     previewed: Mutex<Vec<PlanRequest>>,
     approvals: Mutex<Vec<(PlanId, ApprovalRequest)>>,
@@ -373,7 +424,13 @@ impl PlanControl for FakePlans {
     async fn preview(&self, req: &PlanRequest) -> Result<PlanPreview, UseCaseError> {
         self.fail()?;
         self.previewed.lock().unwrap().push(req.clone());
-        Ok(preview(None))
+        Ok(self.stored.lock().unwrap().clone().map_or_else(
+            || preview(None),
+            |mut p| {
+                p.status = None;
+                p
+            },
+        ))
     }
     async fn create(&self, req: &PlanRequest) -> Result<PlanPreview, UseCaseError> {
         self.fail()?;
@@ -383,7 +440,12 @@ impl PlanControl for FakePlans {
     async fn get(&self, id: PlanId) -> Result<PlanPreview, UseCaseError> {
         self.gets.fetch_add(1, Ordering::SeqCst);
         if id == PlanId::new(uuid(42)) {
-            Ok(preview(Some(PlanStatus::Draft)))
+            Ok(self
+                .stored
+                .lock()
+                .unwrap()
+                .clone()
+                .unwrap_or_else(|| preview(Some(PlanStatus::Draft))))
         } else {
             Err(UseCaseError::new(
                 ErrorClass::NotFound,
@@ -507,6 +569,7 @@ struct World {
     plans: Arc<FakePlans>,
     ignores: Arc<FakeIgnores>,
     ready: Arc<FakeReady>,
+    logs: LogBuffer,
     app: Router,
 }
 
@@ -524,13 +587,14 @@ impl World {
             calls: AtomicUsize::new(0),
             fail: ready_fails,
         });
+        let logs = LogBuffer::new(100, LogLevel::Info);
         let state = AppState {
             read: read.clone(),
             jobs: jobs.clone(),
             plans: plans.clone(),
             ignores: ignores.clone(),
             readiness: ready.clone(),
-            logs: LogBuffer::new(100, LogLevel::Info),
+            logs: logs.clone(),
             guard,
             clock: Arc::new(FixedClock),
             settings: Arc::new(WebSettings {
@@ -547,6 +611,7 @@ impl World {
             plans,
             ignores,
             ready,
+            logs,
             app: crate::build(state),
         }
     }
@@ -581,6 +646,8 @@ impl World {
         .await
     }
 }
+
+mod ui;
 
 const GET_ROUTES: &[&str] = &[
     "/",
@@ -1099,8 +1166,9 @@ async fn the_selection_summary_is_read_only() {
         )
         .await;
     assert_eq!(s, StatusCode::OK);
-    assert!(body.contains(": 2 (2.0 KiB)"), "{body}");
-    assert!(body.contains("Not found: 1"));
+    assert!(body.contains("2 items selected"), "{body}");
+    assert!(body.contains("2.0 KiB"), "{body}");
+    assert!(body.contains("1 no longer found"), "{body}");
     assert_eq!(w.mutations(), 0);
 }
 

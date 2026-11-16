@@ -2,32 +2,63 @@
 <html lang="{{ ctx.chrome.lang }}">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{% block title %}removarr{% endblock %}</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="htmx-config" content='{"allowEval":false,"includeIndicatorStyles":false,"defaultSwapDelay":0,"defaultSettleDelay":0}'>
+<title>{% block title %}{{ ctx.tr.t("app.name") }}{% endblock %}</title>
+<link rel="stylesheet" href="/static/app.css">
+<script src="/static/htmx-2.0.4.min.js" integrity="{{ ctx.htmx_sri() }}" crossorigin="anonymous" defer></script>
 </head>
 <body>
-<header>
-<nav aria-label="{{ ctx.tr.t("nav.main") }}">
-<a href="/">{{ ctx.tr.t("nav.dashboard") }}</a>
-<a href="/ignored">{{ ctx.tr.t("nav.ignored") }}</a>
-<a href="/jobs">{{ ctx.tr.t("nav.jobs") }}</a>
-<a href="/auto">{{ ctx.tr.t("nav.auto") }}</a>
-<a href="/history">{{ ctx.tr.t("nav.history") }}</a>
-<a href="/stats">{{ ctx.tr.t("nav.stats") }}</a>
-<a href="/logs">{{ ctx.tr.t("nav.logs") }}</a>
-</nav>
-<nav aria-label="{{ ctx.tr.t("nav.issues") }}">
-{% for t in ctx.tabs() %}<a href="/issues/{{ t.slug }}">{{ t.label }}</a> {% endfor %}
-</nav>
-{% if ctx.chrome.dry_run %}<p role="status"><strong>{{ ctx.tr.t("mode.dry_run") }}</strong> {{ ctx.tr.t("mode.dry_run_banner") }}</p>{% endif %}
+<svg class="sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+<symbol id="i-check-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l3 3 5-6"/></symbol>
+<symbol id="i-alert-triangle" viewBox="0 0 24 24"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18v.5"/></symbol>
+<symbol id="i-alert-octagon" viewBox="0 0 24 24"><path d="M8 2h8l6 6v8l-6 6H8l-6-6V8z"/><path d="M9 9l6 6M15 9l-6 6"/></symbol>
+<symbol id="i-info-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></symbol>
+<symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 6h7l2 2h9v11H3z"/></symbol>
+<symbol id="i-file" viewBox="0 0 24 24"><path d="M6 2h8l5 5v15H6z"/><path d="M14 2v5h5"/></symbol>
+</svg>
+<a class="skip" href="#main">{{ ctx.tr.t("shell.skip") }}</a>
+<header class="top">
+<div class="wrap">
+<a class="brand" href="/">{{ ctx.tr.t("app.name") }}</a>
+{% if ctx.chrome.dry_run %}<span class="badge info" role="status"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><use href="#i-info-circle"/></svg><span>{{ ctx.tr.t("mode.dry_run") }}</span></span>{% endif %}
+</div>
+{% if ctx.chrome.dry_run %}<div class="wrap"><p class="banner">{{ ctx.tr.t("mode.dry_run_banner") }}</p></div>{% endif %}
+</header>
+<nav class="tabbar" aria-label="{{ ctx.tr.t("nav.main") }}">
+<ul>
+<li><a href="/"{% if ctx.on("/", false) %} aria-current="page"{% endif %}>{{ ctx.tr.t("nav.dashboard") }}</a></li>
+<li><details><summary>{{ ctx.tr.t("nav.issues") }}</summary>
+<div class="sheet-panel"><ul>
+{% for t in ctx.tabs() %}<li><a href="/issues/{{ t.slug }}"{% if t.current %} aria-current="page"{% endif %}>{{ t.label }}</a></li>
+{% endfor %}<li><a href="/ignored"{% if ctx.on("/ignored", false) %} aria-current="page"{% endif %}>{{ ctx.tr.t("nav.ignored") }}</a></li>
+</ul></div></details></li>
+<li><a href="/jobs"{% if ctx.on("/jobs", true) %} aria-current="page"{% endif %}>{{ ctx.tr.t("nav.jobs") }}</a></li>
+<li><a href="/history"{% if ctx.on("/history", false) %} aria-current="page"{% endif %}>{{ ctx.tr.t("nav.history") }}</a></li>
+<li><details><summary>{{ ctx.tr.t("nav.more") }}</summary>
+<div class="sheet-panel"><ul>
+<li><a href="/auto"{% if ctx.on("/auto", false) %} aria-current="page"{% endif %}>{{ ctx.tr.t("nav.auto") }}</a></li>
+<li><a href="/stats"{% if ctx.on("/stats", false) %} aria-current="page"{% endif %}>{{ ctx.tr.t("nav.stats") }}</a></li>
+<li><a href="/logs"{% if ctx.on("/logs", false) %} aria-current="page"{% endif %}>{{ ctx.tr.t("nav.logs") }}</a></li>
+</ul>
 <form method="post" action="/locale">
 <input type="hidden" name="csrf_token" value="{{ ctx.chrome.csrf }}">
-<label>{{ ctx.tr.t("locale.label") }} <select name="locale"><option value="en">English</option><option value="fr">Français</option></select></label>
+<div class="field"><label for="locale-select">{{ ctx.tr.t("locale.label") }}</label>
+<select id="locale-select" name="locale"><option value="en"{% if ctx.chrome.lang == "en" %} selected{% endif %}>{{ ctx.tr.t("locale.en") }}</option><option value="fr"{% if ctx.chrome.lang == "fr" %} selected{% endif %}>{{ ctx.tr.t("locale.fr") }}</option></select></div>
 <button type="submit">{{ ctx.tr.t("locale.apply") }}</button>
 </form>
-</header>
-<main id="main">
+<form method="post" action="/logout">
+<input type="hidden" name="csrf_token" value="{{ ctx.chrome.csrf }}">
+<button type="submit">{{ ctx.tr.t("logout.submit") }}</button>
+</form>
+</div></details></li>
+</ul>
+</nav>
+<main id="main" class="wrap">
+{% if let Some(k) = ctx.flash %}<p class="flash" role="status">{{ ctx.tr.t(k) }}</p>{% endif %}
 {% block content %}{% endblock %}
+<div id="live-region" class="vh" role="status" aria-live="polite"></div>
 </main>
 </body>
 </html>
