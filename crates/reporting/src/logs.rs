@@ -237,8 +237,8 @@ impl LogBuffer {
             map.insert(k, v);
         }
         let at_ms = (self.inner.clock)();
-        let entry = LogEntry {
-            seq: self.inner.next_seq.fetch_add(1, Ordering::Relaxed),
+        let mut entry = LogEntry {
+            seq: 0,
             at_ms,
             at: iso(at_ms),
             level,
@@ -251,6 +251,8 @@ impl LogBuffer {
             .ring
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // Assigned under the ring lock so ring order always equals seq order.
+        entry.seq = self.inner.next_seq.fetch_add(1, Ordering::Relaxed);
         if ring.len() >= self.inner.capacity {
             ring.pop_front();
             self.inner.dropped.fetch_add(1, Ordering::Relaxed);
@@ -550,6 +552,33 @@ mod tests {
         let msg = format!("{}topsecretvalue", "a ".repeat(MAX_MESSAGE_CHARS / 2 - 3));
         let e = b.push(LogLevel::Info, "t", &msg, vec![]).unwrap();
         assert!(!e.message.contains("topsecret"));
+    }
+
+    #[test]
+    fn concurrent_pushes_enter_the_ring_in_seq_order() {
+        let b = buf(100_000, LogLevel::Debug);
+        std::thread::scope(|sc| {
+            for t in 0..8 {
+                let b = b.clone();
+                sc.spawn(move || {
+                    for i in 0..2_000 {
+                        b.push(LogLevel::Info, "t", &format!("{t}-{i}"), vec![]);
+                    }
+                });
+            }
+        });
+        let v = b.view(&LogQuery {
+            limit: MAX_VIEW_ENTRIES,
+            ..Default::default()
+        });
+        assert!(v.entries.windows(2).all(|w| w[0].seq < w[1].seq));
+        let ring = b.inner.ring.lock().unwrap();
+        let seqs: Vec<u64> = ring.iter().map(|e| e.seq).collect();
+        assert_eq!(seqs.len(), 16_000);
+        assert!(
+            seqs.windows(2).all(|w| w[0] < w[1]),
+            "ring order == seq order"
+        );
     }
 
     #[test]

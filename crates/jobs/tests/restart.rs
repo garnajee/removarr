@@ -201,3 +201,29 @@ async fn real_sqlite_keeps_the_queue_across_a_crash() {
     rt.shutdown(Duration::from_secs(2)).await;
     db.close().await;
 }
+
+#[tokio::test(start_paused = true)]
+async fn defect3_interrupted_jobs_of_the_previous_run_stay_readable() {
+    let r = rig(manual_only());
+    let id = r.store.insert_raw(JobKind::Scan, JobStatus::Running, 1001);
+    let report = r.rt.start().await.unwrap();
+    settle().await;
+    assert_eq!(report.interrupted, vec![id]);
+    let p = r.rt.progress(id).expect("the old job is still readable");
+    assert_eq!(p.status, JobStatus::Interrupted);
+    assert_eq!(
+        p.outcome,
+        Some(removarr_domain::jobs::JobOutcome::Interrupted)
+    );
+    assert!(p.finished_at.is_some());
+    let listed = r.rt.status().jobs;
+    assert!(
+        listed
+            .iter()
+            .any(|j| j.id == id && j.status == JobStatus::Interrupted),
+        "listed with an Interrupted status"
+    );
+    // Recovery semantics are unchanged: the scan was re-queued once under a new id.
+    assert_eq!(report.requeued.len(), 1);
+    assert_ne!(report.requeued[0], id);
+}

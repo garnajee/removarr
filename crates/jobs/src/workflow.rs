@@ -17,11 +17,12 @@ use removarr_domain::jobs::JobKind;
 use removarr_domain::path::RootId;
 use removarr_domain::plan::PlanMode;
 use removarr_domain::ports::{CancelFlag, ScanControl};
-use removarr_domain::session::{ServiceKind, SessionStatus};
+use removarr_domain::session::{ServiceKind, SessionMetrics, SessionStatus};
 use removarr_workflows::actions::{
     self, ActionPorts, ActionSettings, EventSink, ExecutionReport, Mutators, Reporter,
 };
 use removarr_workflows::evaluate::{VerifyPorts, evaluate_issues, evaluate_media, verify_content};
+use removarr_workflows::issues::QbitObservation;
 use removarr_workflows::observe::{
     ObserveConfig, ObserveError, ObservePorts, RefreshTarget, ScanReport, ServiceCache, refresh,
     run_scan,
@@ -95,7 +96,28 @@ fn port_err(e: &PlanError) -> PortError {
     PortError::new(e.class(), e.to_string())
 }
 
+/// Drops the torrent snapshot (about 35 MiB for 3,000 torrents with their candidate paths) from
+/// the idle cache. It is stored by every scan and qBittorrent refresh (`latest_torrents`), so
+/// nothing is lost; `restore_torrents` brings it back for the jobs that classify with it.
+fn shed_torrents(cache: &mut ServiceCache) {
+    if matches!(cache.qbit, Some(QbitObservation::Available(_))) {
+        cache.qbit = None;
+    }
+}
+
 impl WorkflowHandler {
+    /// Reloads the stored torrent snapshot (one database read, no API call) for a refresh that
+    /// does not re-read qBittorrent itself. If it cannot be loaded the cache stays empty and the
+    /// refresh reads the API as it always does for a missing entry.
+    async fn restore_torrents(&self, cache: &mut ServiceCache, target: RefreshTarget) {
+        if cache.qbit.is_some() || target == RefreshTarget::Qbittorrent {
+            return;
+        }
+        if let Ok(Some(s)) = self.d.observe.snapshots.latest_torrents().await {
+            cache.qbit = Some(QbitObservation::Available(s));
+        }
+    }
+
     #[must_use]
     pub fn new(deps: WorkflowDeps) -> Self {
         Self {
@@ -108,7 +130,12 @@ impl WorkflowHandler {
         ScanControl::default()
     }
 
-    async fn remember(&self, report: &ScanReport) {
+    /// Keeps what later jobs need (session, active issue ids, service cache) and consumes the
+    /// report: the service observations are moved, not cloned, and the classified result (every
+    /// issue with its evidence) is dropped here instead of living until the job returns.
+    async fn remember(&self, mut report: ScanReport) -> (ScanSummary, SessionMetrics) {
+        let summary = self.summary(&report);
+        let metrics = report.session.metrics.clone();
         let mut m = self.memory.lock().await;
         m.session = Some(report.session.id);
         m.issue_ids = report
@@ -116,8 +143,12 @@ impl WorkflowHandler {
             .as_ref()
             .map(|c| c.active().map(|i| i.id.clone()).collect())
             .unwrap_or_default();
-        m.cache = report.services.clone();
-        m.uncertainties = self.summary(report).uncertainties;
+        m.cache = std::mem::take(&mut report.services);
+        shed_torrents(&mut m.cache);
+        m.uncertainties.clone_from(&summary.uncertainties);
+        drop(m);
+        drop(report);
+        (summary, metrics)
     }
 
     fn summary(&self, report: &ScanReport) -> ScanSummary {
@@ -244,12 +275,11 @@ impl JobHandler for WorkflowHandler {
             JobKind::Scan => {
                 ctx.progress.stage("scanning roots and services").await;
                 let report = self.scan(ctx).await?;
-                self.remember(&report).await;
-                let m = &report.session.metrics;
+                let (summary, m) = self.remember(report).await;
                 let mut ok = JobSuccess::default()
                     .with_metric("entries_scanned", m.entries_scanned)
                     .with_metric("scan_errors", m.scan_errors);
-                ok.scan = Some(self.summary(&report));
+                ok.scan = Some(summary);
                 Ok(ok)
             }
             JobKind::RefreshService(service) => {
@@ -262,10 +292,12 @@ impl JobHandler for WorkflowHandler {
                     ServiceKind::Jellyfin => RefreshTarget::Jellyfin,
                 };
                 let mut m = self.memory.lock().await;
-                let classified =
-                    refresh(&self.d.observe, &self.d.observe_cfg, target, &mut m.cache)
-                        .await
-                        .map_err(observe_err)?;
+                self.restore_torrents(&mut m.cache, target).await;
+                let refreshed = refresh(&self.d.observe, &self.d.observe_cfg, target, &mut m.cache)
+                    .await
+                    .map_err(observe_err);
+                shed_torrents(&mut m.cache);
+                let classified = refreshed?;
                 m.issue_ids = classified.active().map(|i| i.id.clone()).collect();
                 Ok(JobSuccess::default().with_metric("issues", m.issue_ids.len() as u64))
             }
@@ -509,8 +541,7 @@ impl CycleEngine for WorkflowHandler {
             }
             _ => {}
         }
-        self.remember(&report).await;
-        let s = self.summary(&report);
+        let (s, _) = self.remember(report).await;
         Ok(RescanSummary {
             session: s.session,
             complete: s.complete,

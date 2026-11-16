@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use removarr_domain::ids::JobId;
-use removarr_domain::jobs::{JobOutcome, JobStatus, Lane};
+use removarr_domain::jobs::{JobOutcome, JobRecord, JobStatus, Lane};
 use removarr_domain::ports::{Clock, JobStore};
 use removarr_domain::time::Timestamp;
 use removarr_workflows::actions::{ActionEvent, EventSink};
@@ -206,6 +206,37 @@ impl Hub {
     pub(crate) fn track(&self, p: JobProgress) {
         let (tx, _) = watch::channel(p.clone());
         lock(&self.jobs).insert(p.id, tx);
+    }
+
+    /// Makes a job that the previous process left running readable as `Interrupted`. It counts
+    /// as a finished job (same eviction); nothing about it can resume.
+    pub(crate) fn track_interrupted(&self, old: &JobRecord) {
+        let at = old.finished_at.unwrap_or_else(|| self.clock.now());
+        let (tx, _) = watch::channel(JobProgress {
+            id: old.id,
+            label: old.dedupe_key.clone(),
+            lane: old.lane,
+            status: JobStatus::Interrupted,
+            stage: old.stage.clone(),
+            done: 0,
+            total: 0,
+            current: None,
+            warnings: vec!["interrupted by a restart".to_string()],
+            attempt: old.attempts,
+            enqueued_at: old.enqueued_at,
+            started_at: old.started_at,
+            finished_at: Some(at),
+            cancel_requested: false,
+            outcome: Some(JobOutcome::Interrupted),
+        });
+        lock(&self.jobs).insert(old.id, tx);
+        let mut fin = lock(&self.finished);
+        fin.push_back(old.id);
+        while fin.len() > FINISHED_KEPT {
+            if let Some(o) = fin.pop_front() {
+                lock(&self.jobs).remove(&o);
+            }
+        }
     }
 
     pub(crate) fn update(&self, id: JobId, f: impl FnOnce(&mut JobProgress)) {

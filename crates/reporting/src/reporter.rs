@@ -166,6 +166,21 @@ pub struct StatsQuery {
 pub struct Reporter {
     pool: SqlitePool,
     clock: Arc<dyn Clock>,
+    cache: Arc<Cache>,
+}
+
+type SpaceRows = (Vec<RootSpaceVm>, (u64, u64, u64));
+
+/// Derived data that is expensive to compute (evidence scan, `fs_entries` aggregation), kept
+/// until SQLite reports that any other connection committed (`PRAGMA data_version` on one
+/// dedicated connection). The version is read before the queries, so a commit racing with a
+/// computation only causes one extra recomputation, never stale data. Any commit (scan,
+/// evaluation, action result, job write) invalidates; ignores are never cached.
+#[derive(Default)]
+struct Cache {
+    probe: tokio::sync::Mutex<Option<sqlx::SqliteConnection>>,
+    cores: tokio::sync::Mutex<Option<(i64, Arc<Vec<IssueCore>>)>>,
+    space: tokio::sync::Mutex<Option<(i64, Arc<SpaceRows>)>>,
 }
 
 impl std::fmt::Debug for Reporter {
@@ -623,12 +638,35 @@ impl Reporter {
             .connect_with(opts)
             .await
             .map_err(store_err)?;
-        Ok(Self { pool, clock })
+        Ok(Self::from_pool(pool, clock))
     }
 
     #[must_use]
     pub fn from_pool(pool: SqlitePool, clock: Arc<dyn Clock>) -> Self {
-        Self { pool, clock }
+        Self {
+            pool,
+            clock,
+            cache: Arc::new(Cache::default()),
+        }
+    }
+
+    /// Database change counter; `None` disables caching (never wrong, only slower).
+    async fn data_version(&self) -> Option<i64> {
+        use sqlx::Connection;
+        let mut probe = self.cache.probe.lock().await;
+        if probe.is_none() {
+            *probe = sqlx::SqliteConnection::connect_with(&self.pool.connect_options())
+                .await
+                .ok();
+        }
+        let conn = probe.as_mut()?;
+        let v = sqlx::query_scalar::<_, i64>("PRAGMA data_version")
+            .fetch_one(&mut *conn)
+            .await;
+        if v.is_err() {
+            *probe = None;
+        }
+        v.ok()
     }
 
     async fn state_value(&self, key: &str) -> Result<Option<(String, i64)>, PortError> {
@@ -835,7 +873,20 @@ impl Reporter {
         Ok(rows.into_iter().collect())
     }
 
-    async fn issue_cores(&self) -> Result<Vec<IssueCore>, PortError> {
+    async fn issue_cores(&self) -> Result<Arc<Vec<IssueCore>>, PortError> {
+        let version = self.data_version().await;
+        let mut slot = self.cache.cores.lock().await;
+        if let (Some(v), Some((cv, hit))) = (version, slot.as_ref())
+            && v == *cv
+        {
+            return Ok(hit.clone());
+        }
+        let fresh = Arc::new(self.load_issue_cores().await?);
+        *slot = version.map(|v| (v, fresh.clone()));
+        Ok(fresh)
+    }
+
+    async fn load_issue_cores(&self) -> Result<Vec<IssueCore>, PortError> {
         let rows = sqlx::query(
             "SELECT id, category, severity, subject, logical_bytes, potential_bytes, physical_ids, \
              (evidence = '[]' OR evidence LIKE '%\"completeness\":\"Unknown\"%' OR evidence LIKE '%\"Incomplete\":%') AS incomplete \
@@ -860,12 +911,41 @@ impl Reporter {
             .collect()
     }
 
+    async fn space_rows(&self) -> Result<Arc<SpaceRows>, PortError> {
+        let version = self.data_version().await;
+        let mut slot = self.cache.space.lock().await;
+        if let (Some(v), Some((cv, hit))) = (version, slot.as_ref())
+            && v == *cv
+        {
+            return Ok(hit.clone());
+        }
+        let fresh = Arc::new(self.load_space_rows().await?);
+        *slot = version.map(|v| (v, fresh.clone()));
+        Ok(fresh)
+    }
+
     async fn space(
         &self,
         observed_at: Option<i64>,
         potential: u64,
         excluded: u64,
     ) -> Result<SpaceVm, PortError> {
+        let agg = self.space_rows().await?;
+        let (roots, (logical, alloc, shared)) = (agg.0.clone(), agg.1);
+        Ok(SpaceVm {
+            logical_bytes: logical,
+            unique_allocated_bytes: alloc,
+            shared_bytes: shared,
+            potential_bytes: potential,
+            potential_overlap_excluded_bytes: excluded,
+            potential_label_key: POTENTIAL_LABEL_KEY,
+            observed_at,
+            observed_at_iso: observed_at.map(iso),
+            roots,
+        })
+    }
+
+    async fn load_space_rows(&self) -> Result<SpaceRows, PortError> {
         let rows = sqlx::query(
             "SELECT root, SUM(sz) AS logical, SUM(a) AS alloc, SUM(CASE WHEN c > 1 THEN a ELSE 0 END) AS shared \
              FROM (SELECT root, dev, ino, SUM(size) AS sz, MAX(allocated) AS a, COUNT(*) AS c \
@@ -896,17 +976,14 @@ impl Reporter {
         .fetch_one(&self.pool)
         .await
         .map_err(store_err)?;
-        Ok(SpaceVm {
-            logical_bytes: nonneg(g(&t, "logical")?),
-            unique_allocated_bytes: nonneg(g(&t, "alloc")?),
-            shared_bytes: nonneg(g(&t, "shared")?),
-            potential_bytes: potential,
-            potential_overlap_excluded_bytes: excluded,
-            potential_label_key: POTENTIAL_LABEL_KEY,
-            observed_at,
-            observed_at_iso: observed_at.map(iso),
+        Ok((
             roots,
-        })
+            (
+                nonneg(g(&t, "logical")?),
+                nonneg(g(&t, "alloc")?),
+                nonneg(g(&t, "shared")?),
+            ),
+        ))
     }
 
     /// Dashboard aggregates: issues by category and severity, urgency, space (four separate

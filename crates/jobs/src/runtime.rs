@@ -735,6 +735,9 @@ impl JobRuntime {
         let mut report = StartReport::default();
         for old in i.store.interrupt_running().await? {
             report.interrupted.push(old.id);
+            // Defect 3: the previous run's job stays readable (`progress`, `status`) as
+            // Interrupted. Read-only view: recovery below is unchanged.
+            i.hub.track_interrupted(&old);
             i.hub.publish(
                 Some(old.id),
                 JobEventKind::Log {

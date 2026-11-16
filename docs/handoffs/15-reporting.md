@@ -119,3 +119,43 @@ feed an accessible table.
   real SQLite file: space quantities and potential dedupe, incomplete/stale sessions, empty db, auto pause reason,
   history, stats and unique gain ids, plan report, export escaping and secret sweep over JSON/CSV/MD/HTML).
 - Parity matrix: T-08 (CSV export) and T-18 (report directory) updated. Nothing committed.
+
+## Wave 16 fixes
+
+Changed files (reporting only): `crates/reporting/src/logs.rs`, `crates/reporting/src/reporter.rs`,
+`crates/reporting/tests/read_model.rs`.
+
+1. Log ring ordering. `LogBuffer::push` now assigns `seq` (`next_seq.fetch_add`) while holding the ring mutex, so
+   ring order is always seq order and `after_seq` polling cannot skip entries. New unit test
+   `concurrent_pushes_enter_the_ring_in_seq_order` (8 threads x 2000 pushes, asserts strictly increasing seq in the
+   ring and in `view`). The e2e test was not touched.
+2. B7 per-request cost. `Reporter` holds a `Cache` with two slots: the derived issue cores (including the
+   `evidence LIKE` incomplete flag) and the `fs_entries` space aggregates (roots + distinct-inode totals). Key =
+   `PRAGMA data_version` read on one dedicated read-only connection (built from the pool's connect options).
+   SQLite bumps it whenever another connection commits (scan, evaluation, attach_evidence, action result, job
+   write), so any commit invalidates; the version is read before the queries, so a racing commit costs one extra
+   recompute and never serves stale data. If the probe fails, caching is skipped (slower, never wrong). Ignores are
+   never cached (small query, partitioned per request), so ignore/restore are immediately visible. Per-request cost
+   after a warm cache no longer depends on evidence size or `fs_entries` rows. Cost remaining: one recompute after
+   each commit (the first request after a scan/evaluation, and after unrelated writes such as job progress).
+   Test: `cached_aggregates_follow_every_commit_ignore_resolution_and_new_files` (repeat read, new fs entry,
+   ignore, restore, issue resolved, file gone).
+3. Selection-summary fragment. Computed by `crates/web/src/handlers/issues.rs::selection_summary` ->
+   `find_issues` -> `Reporter::issues` (so it was paying `issue_cores()` + `counted_potential` over all active
+   issues per request). The cache removes the evidence scan; the remaining per-request work (greedy
+   `counted_potential` O(n log n) over all cores, 50-id SQL) is in reporting and unchanged. No web change needed.
+
+Not routed: no schema column/index change was required. Optional future improvement for owner db-layer (04) /
+issue-engine (11): persist an `incomplete` flag column at issue write time to make the cold (post-commit) recompute
+cheaper.
+
+### Verification status (INCOMPLETE, read this)
+- Before the cache: `cargo test -p removarr-reporting` passed (33 unit, 6 followup, 9 read_model incl. the new tests)
+  and `cargo fmt -p removarr-reporting` was applied.
+- Not completed: the measurement `perf_budgets` (B7 before: dashboard p95 146 ms, list 118 ms, summary 54 ms, from
+  handoff 23) and the workspace gate (`cargo fmt --check`, `clippy --workspace`, `test --workspace`). During this
+  session newly spawned processes (cargo, rustfmt, ugrep) hung at 0% CPU, and an orphaned `cargo test ...
+  perf_reference` (ppid 1) and a stale `target/release/removarr serve` from another run were present, so the
+  runs could not finish. B7 after numbers are therefore NOT measured. Re-run:
+  `cargo build --release -p removarr && cargo test -p removarr-e2e-perf --test perf_budgets -- --ignored --nocapture --test-threads=1`
+  with no other cargo/removarr processes running.

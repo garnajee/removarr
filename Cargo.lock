@@ -1744,6 +1744,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "removarr-e2e-perf"
+version = "0.1.0"
+dependencies = [
+ "argon2",
+ "axum",
+ "regex",
+ "removarr",
+ "removarr-config",
+ "removarr-domain",
+ "removarr-integration-tests",
+ "removarr-reporting",
+ "removarr-testkit",
+ "removarr-web",
+ "reqwest",
+ "rustix",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "removarr-fs"
 version = "0.1.0"
 dependencies = [

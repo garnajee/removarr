@@ -47,12 +47,20 @@ Status values: `todo`, `running`, `done`, `blocked`.
 | 15 | `22-integration-tests` | done | 55 integration tests over production wiring + loopback fakes; parity fixture matches; 2 fail-closed defects found (queue removal proof, grab wiring) |
 | 15 | fix: `13-action-runner` queue_item_proof (.!qB candidates) | done | video files only, complete candidate, .!qB partial = ambiguous refusal |
 | 15 | fix: grab (root cause = test used raw guid; wiring correct) + manual grab user path `/media/{service}/{id}` | done | search shows opaque tokens only; plan form hidden in dry-run or arr_grab off; no page links /media yet (recorded TODO) |
-| 16 | `23-e2e-perf` | running | |
+| 16 | `23-e2e-perf` | done | crates/e2e-perf: 20 web-flow tests, 6 stress, ignored B1-B11 benchmarks, container smoke 29/29. Budget misses: B1 idle RSS 229 MiB (host; 22.7 MiB Linux fs-only), B2 rescan 239 MiB, B7 dashboard 146 ms / issue list 118 ms / selection summary 54 ms. Defects routed below |
+| 16 | fix: `15-reporting` B7 per-request cost + log ring seq order (flaky stress test = real bug: seq taken outside lock) | done | seq taken under ring lock; issue cores + space aggregates cached on `PRAGMA data_version`; B7 now dashboard p95 1.1 ms, issue list 12-17 ms, selection summary 2.6 ms (PASS); stress test 6/6 |
+| 16 | fix: `14-job-runner` B1/B2 memory investigation + persisted interrupted job view | done | interrupted jobs readable after restart; torrent snapshot shed from idle cache, ScanReport consumed early. B1 229 -> 72 MiB (MISS, mostly macOS allocator retention), B2 rescan 239 -> 223 MiB (MISS) |
+| 16 | fix: workflows `observe::run_scan`/`refresh` clone inventories and torrent snapshots 3-4x (rescan peak) | todo | routed by 14 |
+| 16 | fix: `19-web-ui` interrupted job display + sel-bar at 320 px | todo | after 14 |
 | 17 | `24-sec-setup` | todo | |
 | 18 | `25-sec-audit` | todo | |
 | 19 | `26-sec-fix` | todo | |
 | 20 | `27-release-gate` | todo | |
 | continuous | `21-unit-tests` (from wave 3) | running | pass 1 done (domain, 11 proptests, parity-matrix.md); pass 2 done (+14 tests); pass 3 done (+18 tests; found qbit fail-closed gap, fixed by 08); pass 4 done (+13 tests, no bugs); pass 5 done (+4 tests, no bugs, matrix re-checked) |
+
+## Incidents
+
+- 2026-11-16, wave 16 fixes: the Mac stalled (syspolicyd ~200 % CPU scanning freshly built binaries; three concurrent cargo builds from two parallel fix agents plus the orchestrator gate; ~15 hung shells; Colima VM left running by wave 16; an orphaned `removarr serve` benchmark). All stopped, machine rebooted. Rule from now on: one cargo build at a time, no parallel compiling agents, stop Colima after container checks. Suggested to the user (not applied): add the editor to System Settings > Privacy & Security > Developer Tools.
 
 ## Checkpoint reviews
 
@@ -68,4 +76,4 @@ Status values: `todo`, `running`, `done`, `blocked`.
 
 ## Last quality gate
 
-After wave 15 fixes: fmt OK, clippy -D warnings OK, tests OK (1024 passed, 1 ignored = opt-in ffprobe; 1 ignored = opt-in real-ffprobe test). Safety greps OK (deleteFiles literal false only in qbit/control.rs; importMode copy literal). Toolchain: cargo/rustc 1.98.0 (Homebrew, no rustup), Docker 29.7.2, ffprobe available.
+After wave 16 + fixes (reporting, jobs): fmt OK, clippy -D warnings OK, tests OK (1047 passed, 0 failed, 6 ignored = opt-in ffprobe + benchmarks). Safety greps OK (deleteFiles literal false only in qbit/control.rs; single cfg.live_mode() in app/wiring.rs).

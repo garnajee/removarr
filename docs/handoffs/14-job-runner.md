@@ -209,3 +209,53 @@ Wiring owed by 16: `WorkflowDeps.pending` (`PendingAutoPlans`), `WorkflowDeps.hi
 
 Commands: `cargo fmt --all --check` pass; `cargo clippy --workspace --all-targets -- -D warnings` pass; `cargo test --workspace` pass,
 798 passed, 0 failed.
+
+## Wave 16 fixes (resumed run)
+
+`crates/jobs/**` only; nothing committed. Machine rules followed (one foreground cargo at a time).
+
+### Defect 3: interrupted jobs stay readable
+`Hub::track_interrupted` (events.rs), called from `JobRuntime::start` for every record returned by `interrupt_running`.
+The old job becomes a finished `Interrupted` entry (`outcome = Interrupted`, warning "interrupted by a restart", same
+`FINISHED_KEPT` eviction); recovery and the re-queue are unchanged. Test:
+`restart.rs::defect3_interrupted_jobs_of_the_previous_run_stay_readable` (passes).
+Contract for web-ui: `JobRuntime::progress(old_id)` and `status().jobs` now return it, so `GET /jobs/{id}` and
+`/jobs/{id}/progress` (`crates/web/src/handlers/jobs.rs`, read-only check: both go through `s.jobs.progress`) no longer 404
+for the previous run's jobs. Rendering "Interrupted" is `format!("{:?}", status)` today; web-ui may add a localized label
+and a pointer to the re-queued job (`StartReport.requeued`). Jobs older than `FINISHED_KEPT` or from two restarts ago are
+still 404 (memory only, by design).
+
+### B1/B2 memory
+Evidence (no counting allocator: the workspace forbids `unsafe`; ignored test `tests/memory.rs` measures the RSS delta of a
+fresh process, which only grows while data is alive):
+* the qBittorrent snapshot (3,000 torrents, 18,000 files, 6 candidate paths per file) is about 35 MiB live per copy.
+* Before: `run_scan` keeps it alive in `ScanReport.services`, in the cache, and `WorkflowHandler` kept the whole
+  `ScanReport` (classified issues with evidence) until the job returned.
+* Changes (jobs only): (1) `remember` consumes the report (moves services, drops the classified result early);
+  (2) `shed_torrents`: after every scan, rescan and refresh the idle cache no longer holds an `Available` torrent
+  snapshot (it is persisted by `save_torrents` in every scan/qBittorrent refresh); `restore_torrents` reloads it from
+  `SnapshotStore::latest_torrents()` (database read, no API call, no disk) for refreshes that do not re-read qBittorrent
+  themselves; on failure the refresh re-reads the API as for any missing entry. `Unavailable`/`NotConfigured` stay cached.
+* Measured (release, perf_budgets, loopback, synthetic): B1 idle 229 MiB -> **72.1 MiB** (still above 40, MISS);
+  B2 first scan 149.2 MiB (PASS); B2 unchanged rescan 239 -> **222.7 MiB** (MISS).
+
+Root causes still open, in other crates (not edited):
+1. `crates/workflows/src/observe/mod.rs::run_scan` (owner workflows/issue-engine): `inventories.clone()` for the funnel,
+   then two more `.cloned()` filters inside the blocking closure (up to 3-4 copies of every inventory alive together);
+   `qbit.clone()` and `arr_obs.clone()` into `Observation` (a second 35 MiB torrent copy plus ARR) while the originals live;
+   `previous = matches.current()` loaded in full on a rescan. This is the rescan peak (223 MiB vs 149 MiB first scan: a
+   rescan also holds the previous match set and a larger classification). Proposed: move instead of clone (`Observation`
+   built from the owned values, return the services from it), pass `&[RootInventory]` filtered by reference to the funnel
+   (`run_funnel` takes slices of owned structs today; give it iterators or `Arc<RootInventory>`), stream `save_torrents`.
+2. `crates/workflows/src/observe/mod.rs::refresh` clones `cache.qbit`/`cache.arr` into `Observation`; same remedy.
+3. Allocator: the 72 MiB idle remainder (30.7 MiB right after start) is mostly freed-but-resident heap from the scan peak on
+   the macOS system allocator; on Linux/musl handoff 23 measured 22.7 MiB idle. A Linux full-fixture run is still needed
+   before any waiver (owner e2e-perf/devops). Option for app wiring (16): a different global allocator is a decision for
+   the architect.
+
+### Commands
+`cargo fmt --check` pass; `cargo clippy --workspace --all-targets -- -D warnings` pass; `cargo test --workspace` pass (1,047 passed, 0 failed);
+`cargo build --release -p removarr`; `cargo test -p removarr-e2e-perf --test perf_budgets -- --ignored --nocapture
+--test-threads=1` (output in the run scratchpad): B7 dashboard p95 1.10 ms, issue list 50 rows 12.18 ms, page 40 12.36 ms,
+search 14.91 ms, 200 rows 16.82 ms, jobs 0.10 ms, history 0.13 ms, HTMX progress 0.06 ms, selection summary 2.57 ms: all
+PASS (these come from the reporting owner's uncommitted fixes). B1 and the B2 rescan remain MISS as above.

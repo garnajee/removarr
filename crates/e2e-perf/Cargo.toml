@@ -1,0 +1,28 @@
+[package]
+name = "removarr-e2e-perf"
+description = "End-to-end flows over a real listener, abuse controls and resource-budget benchmarks (tests only)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+removarr = { path = "../app" }
+removarr-integration-tests = { path = "../integration-tests" }
+removarr-domain = { workspace = true }
+removarr-config = { workspace = true }
+removarr-web = { workspace = true }
+removarr-reporting = { workspace = true }
+removarr-testkit = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
+axum = { workspace = true }
+reqwest = { workspace = true }
+serde_json = { workspace = true }
+argon2 = { workspace = true }
+regex = { workspace = true }
+rustix = { workspace = true }
+tempfile = { workspace = true }
+sha2 = { workspace = true }

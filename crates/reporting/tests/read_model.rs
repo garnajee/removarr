@@ -626,3 +626,57 @@ async fn exports_neutralize_hostile_content_and_never_contain_secrets() {
             .all(|r| r["potential_label_key"].is_string())
     );
 }
+
+#[tokio::test]
+async fn cached_aggregates_follow_every_commit_ignore_resolution_and_new_files() {
+    let fx = fixture().await;
+    base(&fx).await;
+    let ev = [note(S1, "no_inode_shared_with_media", COMPLETE)];
+    let id = "e".repeat(32);
+    issue(
+        &fx.w,
+        &id,
+        "junk",
+        "info",
+        "p:completed:b/y.mkv",
+        &file_unit("b/y.mkv"),
+        &ev,
+        500,
+        4096,
+        &[(1, 11)],
+    )
+    .await;
+    let count =
+        |d: &removarr_reporting::DashboardVm| d.categories.iter().map(|c| c.count).sum::<u64>();
+    // two reads in a row (second one served from the cache)
+    let d1 = fx.r.dashboard(&inputs()).await.unwrap();
+    let d2 = fx.r.dashboard(&inputs()).await.unwrap();
+    assert_eq!((count(&d1), d1.space.logical_bytes), (1, 2500));
+    assert_eq!((count(&d2), d2.space.logical_bytes), (1, 2500));
+    // a new evaluation or scan commit
+    file_entry(&fx.w, "completed", "c/z.mkv", 1, 12, 700, 1, 4096, S1).await;
+    let d = fx.r.dashboard(&inputs()).await.unwrap();
+    assert_eq!(d.space.logical_bytes, 3200);
+    assert_eq!(d.space.unique_allocated_bytes, 12288);
+    // ignore and restore
+    exec(&fx.w, "INSERT INTO ignores (subject_key, reason, created_at) VALUES ('p:completed:b/y.mkv', 'r', 1)").await;
+    assert_eq!(fx.r.dashboard(&inputs()).await.unwrap().ignored_issues, 1);
+    exec(&fx.w, "UPDATE ignores SET restored_at = 2").await;
+    assert_eq!(fx.r.dashboard(&inputs()).await.unwrap().ignored_issues, 0);
+    // the issue is resolved by a later evaluation, then a file disappears
+    exec(
+        &fx.w,
+        &format!("UPDATE issues SET resolved_at = 5 WHERE id = '{id}'"),
+    )
+    .await;
+    assert_eq!(count(&fx.r.dashboard(&inputs()).await.unwrap()), 0);
+    exec(
+        &fx.w,
+        &format!("UPDATE fs_entries SET gone_session = '{S1}', gone_at = 9 WHERE rel = 'c/z.mkv'"),
+    )
+    .await;
+    assert_eq!(
+        fx.r.dashboard(&inputs()).await.unwrap().space.logical_bytes,
+        2500
+    );
+}
