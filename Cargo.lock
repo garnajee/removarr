@@ -1760,6 +1760,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "removarr-integration-tests"
+version = "0.1.0"
+dependencies = [
+ "argon2",
+ "async-trait",
+ "axum",
+ "http-body-util",
+ "removarr",
+ "removarr-config",
+ "removarr-domain",
+ "removarr-fs",
+ "removarr-jobs",
+ "removarr-reporting",
+ "removarr-storage",
+ "removarr-testkit",
+ "removarr-web",
+ "removarr-workflows",
+ "reqwest",
+ "rustix",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tower",
+]
+
+[[package]]
 name = "removarr-jellyfin"
 version = "0.1.0"
 dependencies = [
