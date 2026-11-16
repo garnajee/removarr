@@ -64,18 +64,22 @@
 <div class="field"><label for="sel-action">{{ ctx.tr.t("issues.action") }}</label>
 <select id="sel-action" name="action" required><option value="" selected disabled>{{ ctx.tr.t("issues.choose_action") }}</option>{% for a in v.actions %}<option value="{{ a.value }}">{{ a.label }}</option>{% endfor %}</select></div>
 <label class="check"><input type="checkbox" name="remove_torrent_tasks" value="1"><span>{{ ctx.tr.t("plan.remove_torrent_tasks") }}</span></label>
-<p class="tag">{{ ctx.tr.t("issues.plan_note") }}</p>
 <div class="row">
 <button type="submit" formaction="/plans/preview">{{ ctx.tr.t("command.preview") }}</button>
 <button type="submit" class="primary">{{ ctx.tr.t("command.create_plan") }}</button>
+</div>
+<details class="sel-more"><summary>{{ ctx.tr.t("issues.more_actions") }}</summary>
+<p class="tag">{{ ctx.tr.t("issues.plan_note") }}</p>
+<div class="row">
 <button type="submit" formaction="/issues/selection-summary" formnovalidate>{{ ctx.tr.t("command.selection_total") }}</button>
 <button type="submit" formaction="/issues/evaluate" formnovalidate>{{ ctx.tr.t("command.evaluate") }}</button>
 <button type="submit" formaction="/issues/verify-content" formnovalidate>{{ ctx.tr.t("command.verify_content") }}</button>
 </div>
-<details><summary>{{ ctx.tr.t("ignore.open") }}</summary>
+<details class="sel-ignore"><summary>{{ ctx.tr.t("ignore.open") }}</summary>
 <p class="muted">{{ ctx.tr.t("ignore.reversible") }}</p>
 <div class="field"><label for="ign-reason">{{ ctx.tr.t("issues.ignore_reason") }}</label><input id="ign-reason" type="text" name="reason" maxlength="500" autocomplete="off"></div>
 <button type="submit" formaction="/issues/ignore" formnovalidate>{{ ctx.tr.t("command.ignore") }}</button>
+</details>
 </details>
 {% endif %}
 </div>

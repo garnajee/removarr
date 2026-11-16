@@ -155,3 +155,19 @@ ignore control is a `<details>` disclosure, not a bottom sheet.
 * `cargo test --workspace`: see the orchestrator summary line below.
 * `cargo build --workspace --release`: see below.
 * Contrast script over the final tokens: 0 failures. Nothing committed; no other network use.
+
+## Wave 16 fixes
+
+* Interrupted jobs: status/outcome label was already localized via `job_status.interrupted`; added a dedicated
+  `state.job_interrupted_text` alert on the job page (not the generic failure text), localized the warning
+  "interrupted by a restart" (`jobs.warning_interrupted`, matched on the exact jobs-crate string in
+  `templates/fragments/job.html`), and a critical pill with a warning glyph in the jobs list (never styled as success).
+* Open item for job-runner: the re-queued job id (`StartReport.requeued`) is not exposed on `JobProgress`/`status()`,
+  so the UI cannot link to it; the text only says a new run may have been queued. No contract invented.
+* Selection bar at narrow widths: secondary actions (selection total, evaluate, verify content, ignore) moved into a
+  closed `<details class="sel-more">`; primary row (preview / create plan) stays on one line; bar capped at 55vh with
+  scroll below 600 px; select font/padding reduced and option text shortened ("Younger than {n} days: hidden").
+  44 px `--tap`, focus-visible and accessible names unchanged. Keys added in both locales
+  (`issues.more_actions`, `jobs.warning_interrupted`, `state.job_interrupted_text`); key sets identical (583).
+* Not visually re-measured in a browser (no browser run); e2e-perf should re-screenshot 320x640.
+* Gate: fmt, clippy -D warnings, `cargo test --workspace` (1047 passed, 0 failed), locale key-set check: all OK.

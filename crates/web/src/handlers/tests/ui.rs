@@ -678,6 +678,9 @@ async fn list_shows_columns_totals_markers_and_filters() {
     for name in ["q", "kind", "sort", "dir", "hide_recent", "per_page"] {
         assert!(form.contains(&format!("name=\"{name}\"")), "{name}");
     }
+    let bar = page(&w, "/issues/junk?hide_recent=0").await;
+    assert!(bar.contains("class=\"sel-more\"") && bar.contains(&en("issues.more_actions")));
+    assert!(bar.contains("id=\"sel-action\"") && bar.contains("for=\"sel-action\""));
     let shown = page(&w, "/issues/junk?hide_recent=0").await;
     assert!(shown.contains("Fresh.nfo") && !shown.contains("recent items are hidden"));
     let files_only = page(&w, "/issues/junk?kind=file&hide_recent=0").await;
@@ -1174,6 +1177,27 @@ async fn job_states_progress_cancellation_and_failure() {
             "{st:?}"
         );
     }
+    // an interrupted job is localized, never looks successful, and its warning is translated
+    j.status = JobStatus::Interrupted;
+    j.warnings = vec!["interrupted by a restart".into()];
+    *w.jobs.scenario.lock().unwrap() = Some((j.clone(), None));
+    for lang in ["en", "fr"] {
+        let (_, _, b) = fetch(&w, uri, lang, false).await;
+        let t = Tr::new(if lang == "en" { Locale::En } else { Locale::Fr });
+        for key in [
+            "job_status.interrupted",
+            "state.job_interrupted_text",
+            "jobs.warning_interrupted",
+        ] {
+            assert!(b.contains(&esc(t.t(key))), "{lang} {key}");
+        }
+        assert!(
+            !b.contains("<li>interrupted by a restart</li>") && !b.contains("badge ok"),
+            "{lang}"
+        );
+    }
+    let l = page(&w, "/jobs").await;
+    assert!(l.contains(&en("job_status.interrupted")) && l.contains("pill-crit"));
     // the progress fragment is always a fragment
     let (_, _, f) = fetch(&w, &format!("{uri}/progress"), "en", false).await;
     assert!(!f.contains("<html"));

@@ -52,8 +52,8 @@ Status values: `todo`, `running`, `done`, `blocked`.
 | 16 | fix: `14-job-runner` B1/B2 memory investigation + persisted interrupted job view | done | interrupted jobs readable after restart; torrent snapshot shed from idle cache, ScanReport consumed early. B1 229 -> 72 MiB (MISS, mostly macOS allocator retention), B2 rescan 239 -> 223 MiB (MISS) |
 | 16 | fix: workflows `observe::run_scan`/`refresh` clone inventories and torrent snapshots 3-4x (rescan peak) | done | clones removed (`11-issue-engine`). B1 68.7 MiB (MISS), B2 first scan 130.9 MiB (PASS), rescan 209.7 MiB (MISS), B4/B7 PASS |
 | 16 | B1/B2 residual misses | deferred to CP3 | orchestrator decision: stop piecemeal chasing (diminishing returns). For `27-release-gate`: ~38 MiB of idle RSS is likely macOS allocator retention (30.7 MiB right after start; Linux/musl fs-only idle 22.7 MiB); remaining rescan peak = full previous match set passed to `matching::run_funnel` (owner media-match) + classifier indexes in `workflows/issues`. Options: (a) Linux/musl full-fixture run to judge B1 on the target platform, (b) stream the previous match set (matching signature change), (c) architect decision on a different global allocator. Release gate decides waiver or BLOCKED. |
-| 16 | fix: `19-web-ui` interrupted job display + sel-bar at 320 px | todo | after 14 |
-| 17 | `24-sec-setup` | todo | |
+| 16 | fix: `19-web-ui` interrupted job display + sel-bar at 320 px | done | localized interrupted alert + warning, critical pill in jobs list; secondary selection actions in a `sel-more` details, bar capped at 55vh; 583 locale keys equal. Open (non-blocking): requeued job id not exposed by jobs (no link); 320 px layout not re-screenshotted in a real browser |
+| 17 | `24-sec-setup` | running | |
 | 18 | `25-sec-audit` | todo | |
 | 19 | `26-sec-fix` | todo | |
 | 20 | `27-release-gate` | todo | |
@@ -77,4 +77,4 @@ Status values: `todo`, `running`, `done`, `blocked`.
 
 ## Last quality gate
 
-After wave 16 + fixes (reporting, jobs): fmt OK, clippy -D warnings OK, tests OK (1047 passed, 0 failed, 6 ignored = opt-in ffprobe + benchmarks). Safety greps OK (deleteFiles literal false only in qbit/control.rs; single cfg.live_mode() in app/wiring.rs).
+After wave 16 + fixes (reporting, jobs, workflows observe, web-ui): fmt OK, clippy -D warnings OK, tests OK (1047 passed, 0 failed, 6 ignored = opt-in ffprobe + benchmarks). Safety greps OK (deleteFiles literal false only in qbit/control.rs; single cfg.live_mode() in app/wiring.rs).

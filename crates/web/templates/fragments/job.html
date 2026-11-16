@@ -7,7 +7,7 @@
 {% else %}{% call c::badge("info", "info-circle", ctx.coded("job_status", v.row.status)) %}{% endif %}
 {% if v.cancel_requested && v.active %} <span class="pill">{{ ctx.tr.t("jobs.cancel_requested") }}</span>{% endif %}</p>
 {% if v.row.status == "Cancelled" %}<p class="state cancelled" role="status">{{ ctx.tr.t("state.cancelled_text") }}</p>{% endif %}
-{% if v.row.status == "Failed" || v.row.status == "Interrupted" %}<p class="state error" role="alert">{{ ctx.tr.t("state.job_failed_text") }}</p>{% endif %}
+{% if v.row.status == "Interrupted" %}<p class="state error" role="alert">{{ ctx.tr.t("state.job_interrupted_text") }}</p>{% else if v.row.status == "Failed" %}<p class="state error" role="alert">{{ ctx.tr.t("state.job_failed_text") }}</p>{% endif %}
 {% if v.total > 0 %}<p><progress value="{{ v.done }}" max="{{ v.total }}" aria-label="{{ ctx.tr.t("jobs.progress") }}">{{ v.done }} / {{ v.total }}</progress> {{ v.done }} / {{ v.total }}</p>
 {% else if v.active %}<p class="muted">{{ ctx.tr.t("state.loading") }}</p>{% endif %}
 <dl class="facts">
@@ -19,7 +19,7 @@
 <dt>{{ ctx.tr.t("jobs.finished_at") }}</dt><dd>{{ v.finished_at }}</dd>
 {% if !v.outcome.is_empty() %}<dt>{{ ctx.tr.t("jobs.outcome") }}</dt><dd>{{ ctx.coded("job_status", v.outcome) }}</dd>{% endif %}
 </dl>
-{% if !v.warnings.is_empty() %}<h2>{{ ctx.tr.t("plan.warnings") }}</h2><ul>{% for w in v.warnings %}<li>{{ w }}</li>{% endfor %}</ul>{% endif %}
+{% if !v.warnings.is_empty() %}<h2>{{ ctx.tr.t("plan.warnings") }}</h2><ul>{% for w in v.warnings %}<li>{% if w == "interrupted by a restart" %}{{ ctx.tr.t("jobs.warning_interrupted") }}{% else %}{{ w }}{% endif %}</li>{% endfor %}</ul>{% endif %}
 {% if v.cancellable %}<form method="post" action="/jobs/{{ v.row.id }}/cancel">{% call c::csrf(ctx.chrome.csrf) %}<button type="submit">{{ ctx.tr.t("jobs.cancel") }}</button> <span class="tag">{{ ctx.tr.t("jobs.cancel_help") }}</span></form>{% endif %}
 <p><a href="/jobs">{{ ctx.tr.t("nav.jobs") }}</a></p>
 </section>
