@@ -53,8 +53,8 @@ Status values: `todo`, `running`, `done`, `blocked`.
 | 16 | fix: workflows `observe::run_scan`/`refresh` clone inventories and torrent snapshots 3-4x (rescan peak) | done | clones removed (`11-issue-engine`). B1 68.7 MiB (MISS), B2 first scan 130.9 MiB (PASS), rescan 209.7 MiB (MISS), B4/B7 PASS |
 | 16 | B1/B2 residual misses | deferred to CP3 | orchestrator decision: stop piecemeal chasing (diminishing returns). For `27-release-gate`: ~38 MiB of idle RSS is likely macOS allocator retention (30.7 MiB right after start; Linux/musl fs-only idle 22.7 MiB); remaining rescan peak = full previous match set passed to `matching::run_funnel` (owner media-match) + classifier indexes in `workflows/issues`. Options: (a) Linux/musl full-fixture run to judge B1 on the target platform, (b) stream the previous match set (matching signature change), (c) architect decision on a different global allocator. Release gate decides waiver or BLOCKED. |
 | 16 | fix: `19-web-ui` interrupted job display + sel-bar at 320 px | done | localized interrupted alert + warning, critical pill in jobs list; secondary selection actions in a `sel-more` details, bar capped at 55vh; 583 locale keys equal. Open (non-blocking): requeued job id not exposed by jobs (no link); 320 px layout not re-screenshotted in a real browser |
-| 17 | `24-sec-setup` | running | |
-| 18 | `25-sec-audit` | todo | |
+| 17 | `24-sec-setup` | done | Cloudflare `security-audit` skill installed at project scope `.claude/skills/security-audit/` from github.com/cloudflare/security-audit-skill @ c1c8a8c1471069fb0e188eeaff69b8e8db6564a8 (MIT), `skills-lock.json`; discovered by a fresh session; no fallback needed |
+| 18 | `25-sec-audit` | running | output dir outside target: `~/security-audit-skill/removarr-v2/run-1`; summary copied to `docs/security/` |
 | 19 | `26-sec-fix` | todo | |
 | 20 | `27-release-gate` | todo | |
 | continuous | `21-unit-tests` (from wave 3) | running | pass 1 done (domain, 11 proptests, parity-matrix.md); pass 2 done (+14 tests); pass 3 done (+18 tests; found qbit fail-closed gap, fixed by 08); pass 4 done (+13 tests, no bugs); pass 5 done (+4 tests, no bugs, matrix re-checked) |
