@@ -42,7 +42,8 @@ use removarr_workflows::observe::{ObserveConfig, ObservePorts};
 use removarr_workflows::plans::{ALL_CAPABILITIES, PlanPorts, PlanSettings, Planner};
 
 use crate::services::{
-    DbReadiness, Executing, PendingAuto, PlannerControl, ReporterModel, RuntimeJobs, StoreHistory,
+    ArrSearch, DbReadiness, Executing, PendingAuto, PlannerControl, ReporterModel, RuntimeJobs,
+    StoreHistory,
 };
 use crate::system::{SystemClock, UuidV7};
 
@@ -367,10 +368,11 @@ pub async fn build(
         plans: Arc::new(PlannerControl {
             planner: Planner::new(plan_ports(), plan_settings),
             issues: Arc::new(repos.issues.clone()),
-            arr,
+            arr: arr.clone(),
             clock: clock.clone(),
             http_concurrency,
         }),
+        media: Arc::new(ArrSearch { arr: arr.clone() }),
         ignores: Arc::new(repos.ignores.clone()),
         readiness: Arc::new(DbReadiness(repos.state.clone())),
         logs,
@@ -381,6 +383,7 @@ pub async fn build(
             auto_mode: cfg.mode.auto_mode,
             scan_interval_minutes: cfg.scan.interval_minutes,
             hide_recent_days: cfg.thresholds.hide_recent_days,
+            arr_grab: capabilities.contains(&Capability::ArrGrab),
             configured_services: services.clone(),
         }),
     };

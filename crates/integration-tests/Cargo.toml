@@ -13,6 +13,7 @@ workspace = true
 removarr = { path = "../app" }
 removarr-domain = { workspace = true }
 removarr-config = { workspace = true }
+removarr-arr = { workspace = true }
 removarr-storage = { workspace = true }
 removarr-fs = { workspace = true }
 removarr-jobs = { workspace = true }

@@ -23,6 +23,6 @@ pub mod state;
 
 pub use router::build;
 pub use state::{
-    Access, AppState, Denied, ExcludedItem, FailClosedGuard, Guard, JobControl, PlanControl,
-    Principal, ReadModel, Readiness, UseCaseError, WebSettings,
+    Access, AppState, Denied, ExcludedItem, FailClosedGuard, Guard, JobControl, MediaSearch,
+    PlanControl, Principal, ReadModel, Readiness, UseCaseError, WebSettings,
 };

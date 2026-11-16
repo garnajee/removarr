@@ -1768,6 +1768,7 @@ dependencies = [
  "axum",
  "http-body-util",
  "removarr",
+ "removarr-arr",
  "removarr-config",
  "removarr-domain",
  "removarr-fs",

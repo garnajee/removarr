@@ -132,6 +132,18 @@ impl JobControl for FakeJobs {
     }
 }
 
+struct FakeSearch;
+
+#[async_trait]
+impl removarr_web::MediaSearch for FakeSearch {
+    async fn search(
+        &self,
+        _media: &removarr_domain::arr::ArrMediaRef,
+    ) -> Result<Vec<removarr_domain::arr::ReleaseSearchResult>, UseCaseError> {
+        Ok(Vec::new())
+    }
+}
+
 struct FakePlans(Arc<Mutations>);
 
 fn refused() -> UseCaseError {
@@ -244,6 +256,7 @@ impl World {
             read: Arc::new(FakeRead),
             jobs: Arc::new(FakeJobs(mutations.clone())),
             plans: Arc::new(FakePlans(mutations.clone())),
+            media: Arc::new(FakeSearch),
             ignores: Arc::new(FakeIgnores(mutations.clone())),
             readiness: Arc::new(FakeReady),
             logs: LogBuffer::new(100, LogLevel::Info),
@@ -254,6 +267,7 @@ impl World {
                 auto_mode: false,
                 scan_interval_minutes: 1440,
                 hide_recent_days: 2,
+                arr_grab: false,
                 configured_services: vec![],
             }),
         };

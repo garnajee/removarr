@@ -5,6 +5,7 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use removarr_domain::arr::{ArrMediaRef, ReleaseSearchResult, sort_search_results};
 use removarr_domain::error::PortError;
 use removarr_domain::ids::{JobId, PlanId, SessionId};
 use removarr_domain::jobs::JobKind;
@@ -22,7 +23,7 @@ use removarr_reporting::{
 };
 use removarr_storage::{JournalRepo, PlanRepo, StateRepo};
 use removarr_web::error::{job_failure, plan_failure, port_failure};
-use removarr_web::{JobControl, PlanControl, ReadModel, Readiness, UseCaseError};
+use removarr_web::{JobControl, MediaSearch, PlanControl, ReadModel, Readiness, UseCaseError};
 use removarr_workflows::actions::ExecutingPlans;
 use removarr_workflows::issues::ArrObservation;
 use removarr_workflows::observe::read_arr;
@@ -191,6 +192,45 @@ impl PlanControl for PlannerControl {
             .await
             .map(|_| ())
             .map_err(|e| plan_failure(&e))
+    }
+}
+
+// ---- release search -----------------------------------------------------------------------------
+
+/// Largest number of search results handed to the UI.
+const MAX_SEARCH_RESULTS: usize = 100;
+
+/// `MediaSearch` through the ARR readers (the same ones the planner searches with, so the
+/// release cache is shared with the commander). A search is a read: no command, no grab.
+pub struct ArrSearch {
+    pub arr: Vec<Arc<dyn ArrRead>>,
+}
+
+impl std::fmt::Debug for ArrSearch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ArrSearch")
+            .field("arr", &self.arr.len())
+            .finish()
+    }
+}
+
+#[async_trait]
+impl MediaSearch for ArrSearch {
+    async fn search(&self, media: &ArrMediaRef) -> Result<Vec<ReleaseSearchResult>, UseCaseError> {
+        let Some(reader) = self.arr.iter().find(|a| a.service() == media.service) else {
+            return Err(UseCaseError::new(
+                removarr_domain::error::ErrorClass::NotFound,
+                "error.not_found",
+                "service not configured",
+            ));
+        };
+        let mut found = reader
+            .search_releases(media)
+            .await
+            .map_err(|e| port_failure(&e))?;
+        sort_search_results(&mut found, 0);
+        found.truncate(MAX_SEARCH_RESULTS);
+        Ok(found)
     }
 }
 

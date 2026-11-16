@@ -20,7 +20,7 @@ runtimes so a crash is real: `shutdown_background` kills the application tasks m
 |---|---|
 | `parity_fixture.rs` (task 0) | Full 7.5 inventory from the stored SQLite inventories (21/16/2/8, 636288/491520 bytes, 20/8 inodes, shared inodes A/F1/K, no scan error, symlink FX-24 not a video), the 13 hardlink defects with their outcomes, the 3 duplicates, orphans, junk (3, not the NFOs or samples), media-only (5), symlinks (3), permission (FX-33), protection categories, T_Q unmapped, T_P missing, incomplete (stalled + orphan), no `outside/` file name in any database file, tree and request log unchanged by scanning |
 | `pipelines_fs.rs` (task 3) | Consolidation (direction, inode, no temp file, journal order, outcome, rescan), file shared by two torrents (only the active one resumed), recheck timeout (30 s, left stopped, `PartiallyExecuted`), junk deletion with empty-parent removal, task removal (`deleteFiles=false`), partial torrent left stopped, stalled cleanup order (stop, remove task, delete data), fail-closed without an external prefix |
-| `pipelines_arr.rs` (task 3) | Unrecoverable old file needs the acknowledgement then hardlinked import (`importMode: "copy"`), recycle-bin case, other-link case, "move" detected (`FailedNeedsReview`, torrent not resumed), hardlinks disabled (`ExecutedUnverified`), ARR profile change invalidates before any import, two plans for one media import once, queue removal (ignored, defect 1; fail-closed behavior pinned), grab (ignored, gap 2; search read-only pinned) |
+| `pipelines_arr.rs` (task 3) | Unrecoverable old file needs the acknowledgement then hardlinked import (`importMode: "copy"`), recycle-bin case, other-link case, "move" detected (`FailedNeedsReview`, torrent not resumed), hardlinks disabled (`ExecutedUnverified`), ARR profile change invalidates before any import, two plans for one media import once, queue removal (removeFromClient=false, blocklist=false), grab (search read-only, opaque release token, exactly one grab) |
 | `services.rs` | Refresh jobs only read, Jellyfin rescan needs plan + approval and sends one refresh, Radarr rescan is one command without `importMode`, rescans cannot even be planned in a dry run |
 | `dry_run.rs` (task 4) | Scan, four plan kinds, approval, live execute refused, simulate over the real router/runtime: tree identical, zero mutations on qBittorrent/Radarr/Sonarr/Jellyfin by request log, journal all `Simulated`, status unchanged; simulation still revalidates the real tree |
 | `crash.rs` (task 5) | Crash with the stop in flight, with the recheck in flight (after replacement), with the start in flight, and during task removal after the file deletion; restart over the same SQLite: plan `Interrupted`, unresolved intents resolved (`Skipped`), no unresolved intent, replacement never rolled back, torrent resumed, no `deleteFiles=true`, idempotent second restart |
@@ -35,15 +35,8 @@ minute): about 30 to 60 s each; run in parallel. The recheck timeout test is 30 
 
 ## Defects and gaps found (source not touched)
 
-1. **action-runner (13), `crates/workflows/src/actions/arrcmd.rs::queue_item_proof`**: it requires every `QbitFile::candidates` path of every wanted file to
-   share an inode with ARR's file. The candidates include the `<name>.!qB` variant, which does not exist for a completed file, so a proven stale queue
-   entry (the issue engine accepts it, the planner plans it) is always refused with `QueueItemHidesError: ...mkv.!qB does not share an inode`. Safe, but queue
-   removal can never succeed. Reproduce: `cargo test -p removarr-integration-tests --test pipelines_arr -- --ignored a_proven_stale_queue_entry`.
-   The pinned safe behavior is `today_the_queue_removal_is_refused_by_the_runner_without_any_mutation`. Fix: stat the first existing candidate (as `issues/arrqueue.rs` does).
-2. **backend-api (16) / job-runner (14)**: a grab cannot be planned in the production wiring. `PlannerControl::arr_observations` passes no observation for
-   `PlanRequest::Release` and no component keeps search results (`EvaluateMedia` reports counts only), so every searched release gives `ReleaseNotInSearch`
-   (documented as not built in 16's deviation 4; there is no route either). Reproduce: `... --test pipelines_arr -- --ignored a_search_never_grabs`. Fail closed;
-   the runner side is covered by `actions_tier4.rs`.
+1. **RESOLVED (action-runner (13), see "Fix after wave 15 (queue item proof)" in `docs/handoffs/13-action-runner.md`)**: `actions/arrcmd.rs::queue_item_proof` required every `QbitFile::candidates` path of every wanted file to share an inode with ARR's file. That included the never-existing `<name>.!qB` variant and non-video sidecars such as the `.nfo`, so a proven stale queue entry (accepted by the issue engine and the planner) was always refused with `QueueItemHidesError`. Fixed in the runner; `pipelines_arr.rs::a_proven_stale_queue_entry_is_removed_keeping_media_torrent_and_blocklist_untouched` now runs un-ignored. The test that pinned the old refusal was deleted.
+2. **RESOLVED, not a defect (backend-api (16) confirmed)**: the grab test used the raw fake-ARR guid (`movie-guid-approved`) in the `ReleaseRef` after the search. The real reader only exposes the opaque `rel-<hash>` token (INV-31), so the plan failed closed with `ReleaseNotInSearch`. The production wiring is correct: the planner runs a fresh `search_releases` for `PlanRequest::Release`, and the reader and commander share the release cache. The test now plans with `removarr_arr::release_token(2, "movie-guid-approved")` (the raw guid stays as the "unsearched release is refused" assertion), is no longer ignored, and passes with exactly one grab of that release (`pipelines_arr.rs::a_search_never_grabs_and_an_approved_grab_sends_exactly_that_release`). `removarr-arr` was added to this crate's dependencies. The earlier "gap" wording above in the scenario table no longer applies.
 3. **testkit (22 owns it, left unchanged)**: `fake_qbit::parity_preset` uses 1000-byte file sizes and names that do not match the tree for T_F, T_C and T_K
    (`...GRPE01.mkv`, `...-sample.mkv`), so it classifies Foxtrot/Charlie/Kilo files as unheld. The harness uses its own exact `parity_torrents`. The testkit
    preset could be replaced by it.
@@ -74,6 +67,6 @@ minute): about 30 to 60 s each; run in parallel. The recheck timeout test is 30 
 
 * `cargo fmt --all --check`: pass.
 * `cargo clippy --workspace --all-targets -- -D warnings`: pass.
-* `cargo test --workspace`: 1016 passed, 0 failed, 3 ignored (the opt-in real `ffprobe` test and the two defect tests above).
+* `cargo test --workspace`: 1016 passed, 0 failed, 3 ignored (the opt-in real `ffprobe` test and the queue-removal defect test, if still marked).
 * `cargo test -p removarr-integration-tests`: 55 passed, 2 ignored, about 65 s (dominated by the automatic cycle and the recheck timeout).
 * Nothing committed.

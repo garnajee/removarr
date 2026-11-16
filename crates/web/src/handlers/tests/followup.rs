@@ -22,7 +22,7 @@ fn t(l: Locale, key: &str) -> String {
         .replace('\'', "&#39;")
 }
 
-async fn get_as(
+pub(super) async fn get_as(
     w: &World,
     uri: &str,
     lang: &str,

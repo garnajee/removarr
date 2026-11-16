@@ -11,6 +11,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use axum::extract::Request;
+use removarr_domain::arr::{ArrMediaRef, ReleaseSearchResult};
 use removarr_domain::error::{ErrorClass, PortError};
 use removarr_domain::ids::{JobId, PlanId, SessionId};
 use removarr_domain::jobs::JobKind;
@@ -103,6 +104,16 @@ pub trait PlanControl: Send + Sync {
     async fn check_executable(&self, id: PlanId, simulate: bool) -> Result<(), UseCaseError>;
 }
 
+/// Interactive release search for one media (read only: it never grabs, queues or rescans).
+///
+/// Results carry the opaque release token only (INV-31); the raw indexer guid stays inside the
+/// ARR reader's memory. A grab is a separate plan (`PlanRequest::Release`) that the planner
+/// builds from its own fresh search.
+#[async_trait]
+pub trait MediaSearch: Send + Sync {
+    async fn search(&self, media: &ArrMediaRef) -> Result<Vec<ReleaseSearchResult>, UseCaseError>;
+}
+
 /// Readiness probe: one cheap query on the database (config SSD). Never touches a root.
 #[async_trait]
 pub trait Readiness: Send + Sync {
@@ -184,6 +195,9 @@ pub struct WebSettings {
     pub scan_interval_minutes: u32,
     /// `thresholds.hide_recent_days` (default of the "hide recent items" filter).
     pub hide_recent_days: u32,
+    /// `capabilities.arr_grab` (off by default): only gates whether the grab form is offered;
+    /// the planner and the runner enforce the capability themselves.
+    pub arr_grab: bool,
     /// Services with a configured URL; refresh and rescan routes refuse the others.
     pub configured_services: Vec<ServiceKind>,
 }
@@ -194,6 +208,7 @@ pub struct AppState {
     pub read: Arc<dyn ReadModel>,
     pub jobs: Arc<dyn JobControl>,
     pub plans: Arc<dyn PlanControl>,
+    pub media: Arc<dyn MediaSearch>,
     pub ignores: Arc<dyn IgnoreStore>,
     pub readiness: Arc<dyn Readiness>,
     pub logs: LogBuffer,

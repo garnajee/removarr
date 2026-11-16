@@ -110,7 +110,7 @@ fn panic_response(_: Box<dyn std::any::Any + Send + 'static>) -> Response {
 
 /// The application router.
 pub fn build(state: AppState) -> Router {
-    use handlers::{dashboard, issues, jobs, login, ops, plans, reports};
+    use handlers::{dashboard, issues, jobs, login, media, ops, plans, reports};
 
     let login_routes = state
         .guard
@@ -130,6 +130,7 @@ pub fn build(state: AppState) -> Router {
         .route("/plans", get(plans::list))
         .route("/plans/{id}", get(plans::show))
         .route("/plans/{id}/confirm", get(plans::confirm))
+        .route("/media/{service}/{id}", get(media::page))
         .route("/jobs", get(jobs::list))
         .route("/jobs/{id}", get(jobs::show))
         .route("/jobs/{id}/progress", get(jobs::progress))
@@ -155,6 +156,8 @@ pub fn build(state: AppState) -> Router {
         .route("/plans/{id}/execute", post(plans::execute))
         .route("/plans/{id}/simulate", post(plans::simulate))
         .route("/plans/{id}/discard", post(plans::discard))
+        .route("/media/{service}/{id}/search", post(media::search))
+        .route("/media/{service}/{id}/grab-plan", post(media::plan))
         .route("/jobs/{id}/cancel", post(jobs::cancel))
         .route("/recovery/retry", post(ops::retry_recovery))
         .route("/auto/resume", post(ops::resume_auto))

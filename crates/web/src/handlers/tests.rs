@@ -458,6 +458,24 @@ fn preview(status: Option<PlanStatus>) -> PlanPreview {
     }
 }
 
+/// Fake interactive search: fixed results (opaque tokens only) and a call counter.
+#[derive(Default)]
+struct FakeSearch {
+    results: Mutex<Vec<removarr_domain::arr::ReleaseSearchResult>>,
+    calls: Mutex<Vec<removarr_domain::arr::ArrMediaRef>>,
+}
+
+#[async_trait]
+impl crate::state::MediaSearch for FakeSearch {
+    async fn search(
+        &self,
+        media: &removarr_domain::arr::ArrMediaRef,
+    ) -> Result<Vec<removarr_domain::arr::ReleaseSearchResult>, UseCaseError> {
+        self.calls.lock().unwrap().push(media.clone());
+        Ok(self.results.lock().unwrap().clone())
+    }
+}
+
 #[derive(Default)]
 struct FakePlans {
     /// Replaces the stored plan served by `get` (UI scenarios).
@@ -634,6 +652,7 @@ struct World {
     read: Arc<FakeRead>,
     jobs: Arc<FakeJobs>,
     plans: Arc<FakePlans>,
+    search: Arc<FakeSearch>,
     ignores: Arc<FakeIgnores>,
     ready: Arc<FakeReady>,
     logs: LogBuffer,
@@ -646,6 +665,11 @@ impl World {
     }
 
     fn with(guard: Arc<dyn Guard>, ready_fails: bool, dry_run: bool) -> Self {
+        Self::build(guard, ready_fails, dry_run, false)
+    }
+
+    fn build(guard: Arc<dyn Guard>, ready_fails: bool, dry_run: bool, arr_grab: bool) -> Self {
+        let search = Arc::new(FakeSearch::default());
         let read = Arc::new(FakeRead::default());
         let jobs = Arc::new(FakeJobs::default());
         let plans = Arc::new(FakePlans::default());
@@ -659,6 +683,7 @@ impl World {
             read: read.clone(),
             jobs: jobs.clone(),
             plans: plans.clone(),
+            media: search.clone(),
             ignores: ignores.clone(),
             readiness: ready.clone(),
             logs: logs.clone(),
@@ -669,6 +694,7 @@ impl World {
                 auto_mode: false,
                 scan_interval_minutes: 1440,
                 hide_recent_days: 2,
+                arr_grab,
                 configured_services: vec![ServiceKind::Qbittorrent, ServiceKind::Sonarr],
             }),
         };
@@ -676,6 +702,7 @@ impl World {
             read,
             jobs,
             plans,
+            search,
             ignores,
             ready,
             logs,
@@ -715,6 +742,7 @@ impl World {
 }
 
 mod followup;
+mod grab;
 mod ui;
 
 const GET_ROUTES: &[&str] = &[
@@ -723,6 +751,8 @@ const GET_ROUTES: &[&str] = &[
     "/issues/junk?q=alpha&sort=name&dir=asc&kind=file&hide_recent=1&page=1&per_page=10",
     "/issues/junk/0123456789abcdef0123456789abcdef",
     "/ignored",
+    "/media/radarr/7",
+    "/media/sonarr/12?episode_id=345",
     "/plans/00000000-0000-0000-0000-00000000002a",
     "/plans/00000000-0000-0000-0000-00000000002a/confirm",
     "/jobs",
@@ -778,6 +808,11 @@ const POST_ROUTES: &[(&str, &str)] = &[
     ("/plans/00000000-0000-0000-0000-00000000002a/execute", ""),
     ("/plans/00000000-0000-0000-0000-00000000002a/simulate", ""),
     ("/plans/00000000-0000-0000-0000-00000000002a/discard", ""),
+    ("/media/radarr/7/search", ""),
+    (
+        "/media/radarr/7/grab-plan",
+        "release=rel-0123456789abcdef0123456789abcdef&indexer_id=2",
+    ),
     ("/jobs/00000000-0000-0000-0000-000000000007/cancel", ""),
     ("/recovery/retry", ""),
     ("/auto/resume", ""),

@@ -342,6 +342,21 @@ impl FakeQbit {
         }
     }
 
+    /// Replaces the candidate paths of every file of torrent `h` (queue-proof tests).
+    pub fn set_candidates(&self, h: char, rels: &[&str]) {
+        let mut t = self.torrents.lock().unwrap();
+        let e = t.get_mut(&hash(h)).unwrap();
+        for f in &mut e.files {
+            f.candidates = rels
+                .iter()
+                .map(|rel| MappedPath::Mapped {
+                    raw: format!("/data/{rel}"),
+                    path: rp(&RootId::completed(), rel),
+                })
+                .collect();
+        }
+    }
+
     pub fn set_state(&self, h: char, state: &str) {
         let mut t = self.torrents.lock().unwrap();
         t.get_mut(&hash(h)).unwrap().info.state = TorrentState::parse(state);

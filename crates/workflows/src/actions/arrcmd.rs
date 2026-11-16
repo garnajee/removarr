@@ -110,14 +110,21 @@ impl Ctx<'_> {
             Ok(f) => f,
             Err(e) => return Some(format!("the torrent's files cannot be read: {}", e.detail)),
         };
-        let candidates: Vec<RootedPath> = files
+        // Per wanted video file: its candidates inside a completed root (DR-23 order).
+        let per_file: Vec<Vec<RootedPath>> = files
             .iter()
             .filter(|f| f.is_wanted())
-            .flat_map(|f| f.candidates.iter())
-            .filter_map(|c| c.as_rooted().cloned())
-            .filter(|p| p.root.kind() == RootKind::Completed)
+            // Like the issue engine: only videos are import sources (sidecars never are).
+            .filter(|f| f.name.rsplit('/').next().is_some_and(super::auto::is_video))
+            .map(|f| {
+                f.candidates
+                    .iter()
+                    .filter_map(|c| c.as_rooted().cloned())
+                    .filter(|p| p.root.kind() == RootKind::Completed)
+                    .collect()
+            })
             .collect();
-        if candidates.is_empty() {
+        if per_file.is_empty() {
             return Some("no wanted completed file proves the import".into());
         }
         let current = match self.arr_current_files(service, media).await {
@@ -140,14 +147,44 @@ impl Ctx<'_> {
             return Some("ARR has no current file for the media".into());
         }
         let mut live = LiveReads::default();
-        for c in &candidates {
-            match self.stat_path(c).await {
-                Ok(Some(s)) if s.kind == EntryKind::File && phys.contains(&s.phys()) => {}
-                _ => {
-                    return Some(format!(
-                        "{c} does not share an inode with ARR's current file"
-                    ));
+        for cands in &per_file {
+            // The resolved path is the candidate that exists as a complete file; a `.!qB`
+            // partial never counts, and several existing candidates must agree.
+            let mut resolved: Option<(&RootedPath, _)> = None;
+            let mut partial = None;
+            for c in cands {
+                let st = match self.stat_path(c).await {
+                    Ok(st) => st,
+                    Err(e) => return Some(format!("{c} cannot be read: {}", e.detail)),
+                };
+                let Some(st) = st else { continue };
+                if c.rel.to_string().ends_with(".!qB") {
+                    partial = Some(c);
+                    continue;
                 }
+                if st.kind != EntryKind::File {
+                    return Some(format!("{c} is not a regular file"));
+                }
+                match &resolved {
+                    Some((_, phys0)) if *phys0 != st.phys() => {
+                        return Some(format!("{c} disagrees with another on-disk candidate"));
+                    }
+                    Some(_) => {}
+                    None => resolved = Some((c, st.phys())),
+                }
+            }
+            if let Some(p) = partial {
+                return Some(format!(
+                    "{p} is a partial download: the file is not complete"
+                ));
+            }
+            let Some((c, phys_c)) = resolved else {
+                return Some("a wanted file has no complete copy on disk".into());
+            };
+            if !phys.contains(&phys_c) {
+                return Some(format!(
+                    "{c} does not share an inode with ARR's current file"
+                ));
             }
             match self.inventory(&mut live, &c.root).await {
                 Ok(Some(inv)) if inv.finished && !inv.has_issue_under(&c.rel) => {}

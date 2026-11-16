@@ -594,6 +594,64 @@ async fn t4_12_grab_is_manual_through_a_fresh_search_and_verified_by_the_queue()
     assert_eq!(lab.arr.calls("grab"), 1);
 }
 
+/// The proof stats the resolved complete file, not every candidate (qBittorrent lists the
+/// `.!qB` variant and alternative paths for every file).
+#[tokio::test]
+async fn f_queue_proof_resolves_the_complete_candidate_and_fails_closed() {
+    // (candidates, partial file to create, expect removal)
+    let cases: Vec<(Vec<&str>, Option<&str>, bool)> = vec![
+        // complete file plus its absent .!qB variant: accepted
+        (vec![NEW_SOURCE, "New/new.mkv.!qB"], None, true),
+        // alternative candidate that does not exist: accepted
+        (
+            vec!["Gone/new.mkv", NEW_SOURCE, "New/new.mkv.!qB"],
+            None,
+            true,
+        ),
+        // only the partial exists
+        (vec!["New/new.mkv.!qB"], Some("New/new.mkv.!qB"), false),
+        // nothing exists
+        (vec!["Gone/new.mkv", "Gone/new.mkv.!qB"], None, false),
+        // a partial next to the complete file: ambiguous
+        (
+            vec![NEW_SOURCE, "New/new.mkv.!qB"],
+            Some("New/new.mkv.!qB"),
+            false,
+        ),
+        // two existing candidates that are different files
+        (
+            vec![NEW_SOURCE, "New/other.mkv"],
+            Some("New/other.mkv"),
+            false,
+        ),
+    ];
+    for (n, (cands, create, ok)) in cases.into_iter().enumerate() {
+        let lab = fixture().await;
+        lab.t4_proven_queue().await;
+        if let Some(rel) = create {
+            fs::write(lab.completed_path(rel), vec![9u8; 4096]).unwrap();
+        }
+        lab.qbit.set_candidates('e', &cands);
+        let plan = lab.seal(vec![lab.queue_action(0, 7)], user(), vec![]);
+        let (report, _) = run(&lab, plan, false, vec![]).await;
+        if ok {
+            assert_eq!(
+                report.actions[0].outcome,
+                ActionOutcome::Verified,
+                "case {n}: {report:?}"
+            );
+            assert_eq!(lab.arr.calls("remove_queue"), 1, "case {n}");
+        } else {
+            assert_eq!(
+                blocker_codes(&report.actions[0].outcome),
+                vec![BlockerCode::QueueItemHidesError],
+                "case {n}"
+            );
+            assert_eq!(lab.arr.calls("remove_queue"), 0, "case {n}");
+        }
+    }
+}
+
 #[tokio::test]
 async fn t4_16_queue_removal_only_for_a_proven_stale_item_and_monitoring_journals_the_previous_value()
  {

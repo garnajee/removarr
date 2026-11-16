@@ -6,6 +6,7 @@ pub mod dashboard;
 pub mod issues;
 pub mod jobs;
 pub mod login;
+pub mod media;
 pub mod ops;
 pub mod plans;
 pub mod reports;

@@ -381,7 +381,6 @@ fn queue_opts() -> Options {
 /// plans) is always refused at execution. Expected: the entry is removed with
 /// `removeFromClient=false&blocklist=false`.
 #[tokio::test]
-#[ignore = "defect: runner queue_item_proof stats the .!qB candidate of a completed file (owner 13); see handoff 22"]
 async fn a_proven_stale_queue_entry_is_removed_keeping_media_torrent_and_blocklist_untouched() {
     let s = zulu::stack(None, true, ImportEffect::Copy, queue_opts()).await;
     let plan = queue_plan(&s).await;
@@ -413,33 +412,7 @@ async fn a_proven_stale_queue_entry_is_removed_keeping_media_torrent_and_blockli
     );
 }
 
-/// Current behavior of the same flow: safe (fail closed). Nothing is sent to ARR, the plan is
-/// invalidated with the blocker, and no file or torrent changes.
 #[tokio::test]
-async fn today_the_queue_removal_is_refused_by_the_runner_without_any_mutation() {
-    let s = zulu::stack(None, true, ImportEffect::Copy, queue_opts()).await;
-    let plan = queue_plan(&s).await;
-    let before = world(&s.fx);
-    s.execute(plan.id, false).await;
-    assert_eq!(world(&s.fx), before);
-    assert!(s.qbit_mutations().is_empty());
-    let radarr = s.radarr.as_ref().unwrap();
-    assert!(radarr.recorded().iter().all(|r| r.method == "GET"));
-    assert_eq!(radarr.data().queue.len(), 1);
-    let out = s.action_outcomes(plan.id).await;
-    assert!(
-        matches!(out[0], Some(ActionOutcome::NotExecuted { .. })),
-        "{out:?}"
-    );
-    assert_eq!(s.plan_status(plan.id).await, PlanStatus::Failed);
-}
-
-/// GAP (owners: 16 backend-api `PlannerControl::arr_observations` returns no observation for
-/// `PlanRequest::Release`, 14 job-runner keeps no search results): in the production wiring a
-/// searched release can never be planned (`ReleaseNotInSearch`), so the grab flow cannot run end
-/// to end. The runner side is covered by `actions_tier4.rs` with a port-level fake.
-#[tokio::test]
-#[ignore = "defect: production wiring cannot plan a grab, no search observation reaches the planner (owners 16 and 14); see handoff 22"]
 async fn a_search_never_grabs_and_an_approved_grab_sends_exactly_that_release() {
     use removarr_domain::arr::{ArrMediaRef, ArrService, ReleaseRef};
     let s = zulu::stack(
@@ -486,6 +459,14 @@ async fn a_search_never_grabs_and_an_approved_grab_sends_exactly_that_release() 
     );
     assert!(radarr.grabs().is_empty());
 
+    // The reader only exposes the opaque token (INV-31), never the raw ARR guid.
+    let req = PlanRequest::Release {
+        media: media.clone(),
+        release: ReleaseRef {
+            guid: removarr_arr::release_token(2, "movie-guid-approved"),
+            indexer_id: 2,
+        },
+    };
     let plan = s.create_plan(&req).await;
     s.approve(&plan).await;
     assert!(

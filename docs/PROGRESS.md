@@ -45,9 +45,9 @@ Status values: `todo`, `running`, `done`, `blocked`.
 | 14 | `16-backend-api` follow-up (web-ui backend gaps 1-5, 8) | done | 961 tests; localized errors + confirmation re-render, /plans, stats selector, SQL issue queries (no 1000-row cap), detail torrents/annexes/consequences, safe locale return; settings/explorer/media pages = accepted scope cut |
 | 14 | `20-devops` README follow-up (hash-password, $$ in compose, cookie_secure, trusted proxies) | done | compose config validated against fresh .env.example copy |
 | 15 | `22-integration-tests` | done | 55 integration tests over production wiring + loopback fakes; parity fixture matches; 2 fail-closed defects found (queue removal proof, grab wiring) |
-| 15 | fix: `13-action-runner` queue_item_proof (.!qB candidates) | running | |
-| 15 | fix: `16-backend-api`/`14-job-runner` grab wiring (retain search results) | running | |
-| 16 | `23-e2e-perf` | todo | |
+| 15 | fix: `13-action-runner` queue_item_proof (.!qB candidates) | done | video files only, complete candidate, .!qB partial = ambiguous refusal |
+| 15 | fix: grab (root cause = test used raw guid; wiring correct) + manual grab user path `/media/{service}/{id}` | done | search shows opaque tokens only; plan form hidden in dry-run or arr_grab off; no page links /media yet (recorded TODO) |
+| 16 | `23-e2e-perf` | running | |
 | 17 | `24-sec-setup` | todo | |
 | 18 | `25-sec-audit` | todo | |
 | 19 | `26-sec-fix` | todo | |
@@ -68,4 +68,4 @@ Status values: `todo`, `running`, `done`, `blocked`.
 
 ## Last quality gate
 
-After wave 15: fmt OK, clippy -D warnings OK, tests OK (1016 passed, 3 ignored = ffprobe + 2 defect tests; 1 ignored = opt-in real-ffprobe test). Safety greps OK (deleteFiles literal false only in qbit/control.rs; importMode copy literal). Toolchain: cargo/rustc 1.98.0 (Homebrew, no rustup), Docker 29.7.2, ffprobe available.
+After wave 15 fixes: fmt OK, clippy -D warnings OK, tests OK (1024 passed, 1 ignored = opt-in ffprobe; 1 ignored = opt-in real-ffprobe test). Safety greps OK (deleteFiles literal false only in qbit/control.rs; importMode copy literal). Toolchain: cargo/rustc 1.98.0 (Homebrew, no rustup), Docker 29.7.2, ffprobe available.

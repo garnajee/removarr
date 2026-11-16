@@ -501,3 +501,14 @@ Rewritten tests: `actions_consolidate.rs::tier_five_is_enabled_and_an_automatic_
 Doc comments updated: `actions/mod.rs` header, `actions/auto.rs` header, `execute_with_gate`.
 Wiring owed by 16/14: `ActionSettings.auto_mode_active`, `capabilities`, `auto_min_age_hours`,
 `ActionPorts.ignores` (all fail closed when missing).
+
+## Fix after wave 15 (queue item proof)
+
+Defect (handoff 22, defect 1): `queue_item_proof` required every `QbitFile::candidates` path (including `<name>.!qB` and alternative save/download paths) to share an inode with ARR's file, so a proven stale queue entry was always refused with `QueueItemHidesError`.
+
+Fix in `crates/workflows/src/actions/arrcmd.rs` (INV-39 re-proof unchanged otherwise, still fail closed):
+- Only wanted video files are import sources (same rule as the issue engine; `actions/auto.rs::is_video` made `pub(crate)`). Sidecars such as the `.nfo` no longer need to share an inode.
+- For each such file the proof stats its candidates inside a completed root and resolves the one that exists as a complete regular file; its (dev, ino) must be among ARR's fresh current files, and no scan or permission finding may lie at it.
+- Refused: a stat fault, no existing candidate, a `.!qB` partial that exists (even next to a complete file: ambiguous), several existing candidates with different (dev, ino), an existing non-regular entry, no wanted video, and every previous refusal (no media or download id, unreadable torrent or ARR files).
+- Tests: `actions_tier4.rs::f_queue_proof_resolves_the_complete_candidate_and_fails_closed` (accepted with absent `.!qB`, accepted with a missing alternative candidate, only partial, nothing on disk, partial plus complete, disagreeing candidates); helper `Lab::qbit.set_candidates`. Integration: `pipelines_arr -- a_proven_stale_queue_entry` un-ignored and passing.
+- Open: the integration test `today_the_queue_removal_is_refused_by_the_runner_without_any_mutation` pinned the defect and now fails by design; the integration-tests owner must delete it (I was limited to the `#[ignore]` attribute of the fixed test).

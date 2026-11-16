@@ -2,6 +2,7 @@
 //! validated here, so a bad value always produces the same 422 shape (field name and a static
 //! problem), never a parser message. One-item and bulk selections share [`issue_ids`].
 
+use removarr_domain::arr::{ArrMediaRef, ArrService, ReleaseRef};
 use removarr_domain::ids::{IssueId, JobId, PlanId, RawUuid, SessionId, SubjectKey};
 use removarr_domain::issue::IssueCategory;
 use removarr_domain::path::RootedPath;
@@ -465,6 +466,83 @@ impl PlanForm {
                 "remove_torrent_tasks",
             )?,
             include_specials: flag(self.include_specials.as_deref(), "include_specials")?,
+        })
+    }
+}
+
+/// One ARR id (media, episode, indexer): decimal digits, at most 9, never zero for media.
+fn arr_id(raw: &str, field: &'static str, allow_zero: bool) -> V<i64> {
+    let ok = !raw.is_empty()
+        && raw.len() <= 9
+        && raw.bytes().all(|b| b.is_ascii_digit())
+        && (allow_zero || raw.bytes().any(|b| b != b'0'));
+    match raw.parse::<i64>() {
+        Ok(v) if ok => Ok(v),
+        _ => Err(WebError::invalid(field, "not a valid id")),
+    }
+}
+
+/// `sonarr` or `radarr` (a path segment).
+pub fn arr_service(raw: &str) -> V<ArrService> {
+    match raw {
+        "sonarr" => Ok(ArrService::Sonarr),
+        "radarr" => Ok(ArrService::Radarr),
+        _ => Err(WebError::invalid("service", "unknown service")),
+    }
+}
+
+/// The media of a search or grab request: path ids plus an optional single Sonarr episode.
+pub fn arr_media(service: &str, media_id: &str, episode_id: Option<&str>) -> V<ArrMediaRef> {
+    let service = arr_service(service)?;
+    let media_id = arr_id(media_id, "media_id", false)?;
+    let episode_ids = match episode_id.map(str::trim).filter(|s| !s.is_empty()) {
+        None => Vec::new(),
+        Some(_) if service == ArrService::Radarr => {
+            return Err(WebError::invalid("episode_id", "not available for movies"));
+        }
+        Some(e) => vec![arr_id(e, "episode_id", false)?],
+    };
+    Ok(ArrMediaRef {
+        service,
+        media_id,
+        episode_ids,
+    })
+}
+
+/// `POST /media/{service}/{id}/search`.
+#[derive(Debug, Default, Deserialize)]
+pub struct MediaSearchForm {
+    pub episode_id: Option<String>,
+}
+
+/// `POST /media/{service}/{id}/grab-plan`: the opaque token of a release of a fresh search.
+#[derive(Debug, Default, Deserialize)]
+pub struct GrabPlanForm {
+    pub episode_id: Option<String>,
+    pub release: Option<String>,
+    pub indexer_id: Option<String>,
+}
+
+impl GrabPlanForm {
+    pub fn validate(&self) -> V<ReleaseRef> {
+        let token = self
+            .release
+            .as_deref()
+            .ok_or_else(|| WebError::invalid("release", "required"))?;
+        let body = token.strip_prefix("rel-").unwrap_or("");
+        if !hex_of_len(body, 32) {
+            return Err(WebError::invalid("release", "not a valid release token"));
+        }
+        let indexer_id = arr_id(
+            self.indexer_id
+                .as_deref()
+                .ok_or_else(|| WebError::invalid("indexer_id", "required"))?,
+            "indexer_id",
+            true,
+        )?;
+        Ok(ReleaseRef {
+            guid: token.to_string(),
+            indexer_id,
         })
     }
 }

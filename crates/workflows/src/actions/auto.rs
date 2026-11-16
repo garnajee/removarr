@@ -181,7 +181,7 @@ const SIDECAR_EXTENSIONS: [&str; 14] = [
     ".gif", ".tbn", ".txt",
 ];
 
-fn is_video(name: &str) -> bool {
+pub(crate) fn is_video(name: &str) -> bool {
     crate::issues::extension(name).is_some_and(|e| VIDEO_EXTENSIONS.contains(&e.as_str()))
 }
 

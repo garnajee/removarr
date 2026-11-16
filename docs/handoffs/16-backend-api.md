@@ -275,3 +275,37 @@ applies `IssueQuery` like the SQL model. `/plans` and a `/stats` query joined th
 * `cargo test --workspace`: 961 passed, 0 failed.
 * `cargo build --workspace --release`: pass.
 * Nothing committed.
+
+## Fix after wave 15 (grab user path)
+
+Handoff 22 defect 2 ("a grab cannot be planned in the production wiring") had a different root cause than reported: the
+test `a_search_never_grabs_and_an_approved_grab_sends_exactly_that_release` builds its `ReleaseRef` with the raw fake guid,
+while the real `ArrReader` only ever returns the opaque `rel-<hash>` token (INV-31). The wiring was correct:
+`Planner::add_arr` already runs its own fresh `search_releases` for every `PlanRequest::Release`, and the planner readers
+are clones of the commander's reader (shared release cache). `PlannerControl::arr_observations` needs no observation for
+`Release`, and no search result store was added (nothing to retain, no raw guid stored anywhere). The test fix belongs
+to the integration-tests owner.
+
+What was missing was the user path: no route could request a grab. Delivered (crates `web` and `app` only):
+
+* `GET /media/{service}/{id}[?episode_id=]` (service `sonarr|radarr`): search entry page, read only, does not search.
+* `POST /media/{service}/{id}/search` (command, CSRF): interactive search through the new `MediaSearch` interface
+  (`state::MediaSearch`, implemented by `app::services::ArrSearch` over the ARR readers, sorted, capped at 100). Renders
+  title, opaque token, indexer, size, seeders, age, quality, custom formats and CF score, ARR verdict and rejections.
+  Never a raw guid or URL. A search creates no plan, job or command.
+* `POST /media/{service}/{id}/grab-plan` (command, CSRF): form fields `release` (`rel-` + 32 hex), `indexer_id`, optional
+  `episode_id` (Sonarr only). Builds a draft `PlanRequest::Release` through `PlanControl::create` and redirects to
+  `/plans/{id}/confirm`; the normal approve then execute flow follows (the planner re-searches and gates it, the runner
+  re-searches again before the single grab). Nothing is grabbed by this route.
+* The "Plan this release" form is not rendered when the process is in dry run or `arr_grab` is off; a translated note says
+  why (`media.grab_off_dry_run`, `media.grab_off_capability`). Policy stays in the planner gate and the runner; the
+  `WebSettings.arr_grab` flag (new field, set from the capability set in wiring) only controls what is offered.
+* New: `AppState.media`, `WebSettings.arr_grab`, `forms::{arr_media, GrabPlanForm, MediaSearchForm}`, 19 `media.*` keys in
+  both locales (identical key sets).
+* Tests (`handlers/tests/grab.rs`): search renders tokens only and mutates nothing; the entry page never searches; the
+  form is offered only for a grabbable release when enabled and live, hidden with the explanation in both locales
+  otherwise; a plan from a search reaches the confirmation page and queues nothing; validation (token, ids, episode on a
+  movie); guard boundary. `GET_ROUTES` and `POST_ROUTES` of the existing route tests include the new routes.
+
+Open TODO: no page links to `/media/...` yet (issue detail and an explorer page should link to it for ARR-identified
+media); the route is reachable by URL.
