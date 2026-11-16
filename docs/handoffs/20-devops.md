@@ -60,3 +60,6 @@ no root `Cargo.toml` edited. Nothing committed, pushed or tagged.
 * `docker-compose config` with the `.env.example` as `.env` and `UID=1000 GID=1000`: valid; user `1000:1000`, host_ip 127.0.0.1 published 8012, read_only, DRY_RUN "true", AUTO_MODE "false".
 * Workflow YAML parsed with ruby YAML: both files valid. Not run on GitHub.
 * Test container, volumes and the local image were removed. No push, no registry tag, no live service contacted (only base images and crates pulled).
+
+## Auth deployment docs (follow-up)
+README "Authentication settings" (inside the deployment section) now documents `removarr hash-password` via `docker run --rm -i ghcr.io/garnajee/removarr-v2 removarr hash-password` (stdin), `REMOVARR_PASSWORD_HASH` (single-quoted in `.env`, `$$` if written in docker-compose.yml), `REMOVARR_SESSION_KEY` (>= 64 chars), `REMOVARR_COOKIE_SECURE=false` (plain-HTTP LAN only, with warning), `REMOVARR_TRUSTED_PROXIES` (Host / X-Forwarded-Host requirement). Names checked against `crates/config/src/load.rs`; `.env.example` already had all four, unchanged. The `hash-password` subcommand exists in `crates/app/src/cli.rs`; not run against a rebuilt image here. `docker-compose config` re-validated (rc 0).

@@ -82,6 +82,26 @@ never assumed. See `.env.example` and `examples/removarr.toml`.
   `user:` value and make sure the mounted directories are owned by that mapped user.
 * Files owned by another user cannot be fixed by the application; `REMOVARR_EXPECTED_OWNER` sets the expected owner.
 
+### Authentication settings
+
+Sign-in uses one user (`REMOVARR_USERNAME`, default `admin`), an Argon2id password hash and a session secret. All three
+secrets live in `.env` only, never in the TOML file.
+
+1. Create the hash. The password is read from stdin, never from an argument:
+   ```sh
+   docker run --rm -i ghcr.io/garnajee/removarr-v2 removarr hash-password     # local binary: removarr hash-password
+   ```
+   Paste the printed `$argon2id$...` string as `REMOVARR_PASSWORD_HASH` in `.env`. Put it in single quotes there, so the
+   `$` characters stay literal: `REMOVARR_PASSWORD_HASH='$argon2id$v=19$...'`.
+   If you write the hash directly in `docker-compose.yml` instead (not recommended), every `$` must be doubled as `$$`.
+2. Set `REMOVARR_SESSION_KEY` to at least 64 random characters: `openssl rand -hex 64`. Changing it signs everyone out.
+3. `REMOVARR_COOKIE_SECURE` defaults to `true` (the session cookie is sent over HTTPS only). Set it to `false` **only** for
+   plain-HTTP access on a trusted LAN: on plain HTTP the session cookie travels unencrypted and can be stolen by anyone on the
+   network. Prefer a TLS reverse proxy and keep it `true`.
+4. Behind a reverse proxy, set `REMOVARR_TRUSTED_PROXIES` to the proxy address(es) or networks (comma-separated, for example
+   `172.18.0.0/16`) so the real client address is used for login rate limiting. The proxy must preserve the `Host` header or
+   send `X-Forwarded-Host`, otherwise same-origin checks refuse form submissions. Leave it empty if there is no proxy.
+
 ### Healthcheck
 
 `removarr healthcheck` sends one local HTTP request to `/healthz`. It loads no configuration and touches neither the media

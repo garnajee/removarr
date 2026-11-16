@@ -42,7 +42,7 @@ Status values: `todo`, `running`, `done`, `blocked`.
 | 13 | `18-ux-design` | done | docs/ux-spec.md + docs/ux/wireflows.md, ~330 new translation keys, open questions for 16/19 |
 | 13 | `20-devops` | done | musl static image + ffprobe, non-root, hardlink under single mount verified, compose 127.0.0.1, CI + release (v*.*.* only, multi-arch, SBOM, Trivy), actions pinned by SHA, image ghcr.io/garnajee/removarr-v2 |
 | 14 | `19-web-ui` | running | |
-| 14 | `20-devops` README follow-up (hash-password, $$ in compose, cookie_secure, trusted proxies) | running | |
+| 14 | `20-devops` README follow-up (hash-password, $$ in compose, cookie_secure, trusted proxies) | done | compose config validated against fresh .env.example copy |
 | 15 | `22-integration-tests` | todo | |
 | 16 | `23-e2e-perf` | todo | |
 | 17 | `24-sec-setup` | todo | |
