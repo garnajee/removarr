@@ -150,7 +150,7 @@ fn hostile_row(id: &str, name: &str, ignored: bool) -> IssueRowVm {
     r
 }
 
-fn action(kind: ActionKind, rel: &str, irreversible: bool) -> ActionPreview {
+pub(super) fn action(kind: ActionKind, rel: &str, irreversible: bool) -> ActionPreview {
     use removarr_domain::gain::GainEstimate;
     use removarr_domain::path::RootedPath;
     use removarr_domain::plan::ActionTarget;
@@ -176,7 +176,7 @@ fn action(kind: ActionKind, rel: &str, irreversible: bool) -> ActionPreview {
     }
 }
 
-fn plan(status: Option<PlanStatus>, mode: PlanMode) -> PlanPreview {
+pub(super) fn plan(status: Option<PlanStatus>, mode: PlanMode) -> PlanPreview {
     let mut p = preview(status);
     p.mode = mode;
     p.dry_run = mode == PlanMode::DryRun;
@@ -652,7 +652,6 @@ async fn list_shows_columns_totals_markers_and_filters() {
         recent.age_basis = NOW - DAY / 2;
         o.rows = Some(vec![folder, recent]);
         o.finished = Some(Some("2023-11-14T22:13:20.000Z".into()));
-        o.total_count = Some(1500);
     }
     let body = page(&w, "/issues/junk").await;
     // folder vs file marker, age, size, torrent count, blockers count
@@ -663,12 +662,11 @@ async fn list_shows_columns_totals_markers_and_filters() {
     // hide-recent is on by default (2 days): the fresh item is hidden and counted
     assert!(!body.contains("Fresh.nfo"));
     assert!(body.contains("1 recent items are hidden"));
-    // list totals and truncation are stated
+    // list totals are the exact totals of the filtered set
     assert!(
         body.contains("1 on this page | 1 in this list (5.0 MiB)"),
         "{body}"
     );
-    assert!(body.contains(&en("issues.truncated")));
     // filters: search, kind, sort, dir, hide-recent, per_page are all in one GET form
     let form = body
         .split("<form method=\"get\"")

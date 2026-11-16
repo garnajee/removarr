@@ -13,7 +13,7 @@ use removarr_reporting::{
 
 use super::{Ctx, bytes, render, signed_bytes};
 use crate::error::WebError;
-use crate::forms::{self, LogsQueryRaw, PageQueryRaw};
+use crate::forms::{self, ChartMode, LogsQueryRaw, PageQueryRaw, StatsQueryRaw};
 use crate::state::AppState;
 
 #[derive(Debug, Clone)]
@@ -115,6 +115,9 @@ pub struct StatsView {
     pub attributable: String,
     pub added: String,
     pub net: String,
+    /// Selected chart value (`cumulative` or `per_day`) and window (`all`, `7d`...).
+    pub mode: &'static str,
+    pub range: &'static str,
 }
 
 #[derive(Debug, Template)]
@@ -142,9 +145,22 @@ fn kind_class(k: removarr_reporting::SeriesKind) -> &'static str {
     }
 }
 
-/// `GET /stats`: series data (potential, expected, attributable, added, observed).
-pub async fn stats(ctx: Ctx, State(s): State<AppState>) -> Result<Response, WebError> {
-    let vm = s.read.stats(&StatsQuery::default()).await?;
+/// `GET /stats`: series data (potential, expected, attributable, added, observed); `view`
+/// picks the plotted value (running total or each day's own bytes), `range` the window.
+pub async fn stats(
+    ctx: Ctx,
+    State(s): State<AppState>,
+    query: Result<Query<StatsQueryRaw>, QueryRejection>,
+) -> Result<Response, WebError> {
+    let Query(raw) = query.map_err(|_| WebError::invalid("query", "malformed query"))?;
+    let (mode, range) = raw.validate()?;
+    let vm = s
+        .read
+        .stats(&StatsQuery {
+            range,
+            ..StatsQuery::default()
+        })
+        .await?;
     let series = vm
         .series
         .iter()
@@ -165,7 +181,12 @@ pub async fn stats(ctx: Ctx, State(s): State<AppState>) -> Result<Response, WebE
                 .collect(),
         })
         .collect();
-    let geo = removarr_reporting::svg::chart_geometry(&vm.series, 640, 320);
+    let geo = removarr_reporting::svg::chart_geometry_for(
+        &vm.series,
+        640,
+        320,
+        mode == ChartMode::PerDay,
+    );
     let chart = ChartView {
         width: geo.width,
         height: geo.height,
@@ -210,6 +231,8 @@ pub async fn stats(ctx: Ctx, State(s): State<AppState>) -> Result<Response, WebE
         attributable: bytes(vm.totals.attributable_bytes),
         added: bytes(vm.totals.added_bytes),
         net: signed_bytes(vm.totals.net_bytes),
+        mode: mode.as_str(),
+        range: forms::range_value(range),
         series,
         vm,
     };

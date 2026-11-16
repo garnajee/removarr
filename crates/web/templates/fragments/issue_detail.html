@@ -24,6 +24,26 @@
 </dl>
 <h2>{{ ctx.tr.t("issues.paths") }}</h2>
 <ul>{% for p in v.row.paths %}<li><code class="path" translate="no">{{ p }}</code></li>{% endfor %}</ul>
+{% if !v.annex_tree.is_empty() %}<h2>{{ ctx.tr.t("detail.annexes") }}</h2>
+<ul class="tree">{% for n in v.annex_tree %}{% for _ in 0..n.close_before %}</ul></li>{% endfor %}<li>{% if n.dir %}<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="16" height="16"><use href="#i-folder"/></svg> <code class="path" translate="no">{{ n.name }}</code><ul>{% else %}<code class="path" translate="no">{{ n.name }}</code></li>{% endif %}{% endfor %}{% for _ in 0..v.annex_close_end %}</ul></li>{% endfor %}</ul>{% endif %}
+{% if !v.row.torrents.is_empty() %}<h2>{{ ctx.tr.t("detail.torrents") }}</h2>
+<div class="tablewrap"><table class="stack">
+<caption>{{ ctx.tr.t("detail.torrents") }}</caption>
+<thead><tr><th scope="col">{{ ctx.tr.t("detail.torrent_name") }}</th><th scope="col">{{ ctx.tr.t("detail.torrent_state") }}</th><th scope="col">{{ ctx.tr.t("detail.torrent_hash") }}</th></tr></thead>
+<tbody>{% for t in v.row.torrents %}<tr><td data-label="{{ ctx.tr.t("detail.torrent_name") }}" translate="no">{{ t.name }}</td><td data-label="{{ ctx.tr.t("detail.torrent_state") }}"><code translate="no">{{ t.state }}</code></td><td data-label="{{ ctx.tr.t("detail.torrent_hash") }}"><code translate="no">{{ t.hash }}</code></td></tr>{% endfor %}</tbody></table></div>{% endif %}
+{% if !v.planned.is_empty() %}<h2>{{ ctx.tr.t("detail.planned") }}</h2>
+<p class="muted">{{ ctx.tr.t("detail.planned_note") }}</p>
+<div class="tablewrap"><table class="stack">
+<caption>{{ ctx.tr.t("detail.planned") }}</caption>
+<thead><tr><th scope="col">{{ ctx.tr.t("history.action") }}</th><th scope="col">{{ ctx.tr.t("plan.status") }}</th><th scope="col">{{ ctx.tr.t("plans.mode") }}</th><th scope="col">{{ ctx.tr.t("detail.planned_state") }}</th><th scope="col">{{ ctx.tr.t("plans.planned") }}</th><th scope="col">{{ ctx.tr.t("issues.col.torrents") }}</th></tr></thead>
+<tbody>{% for p in v.planned %}<tr>
+<td data-label="{{ ctx.tr.t("history.action") }}"><a href="/plans/{{ p.plan_id }}">{{ ctx.coded("kind", p.kind) }}</a></td>
+<td data-label="{{ ctx.tr.t("plan.status") }}">{{ ctx.coded("plan_status", p.plan_status) }}</td>
+<td data-label="{{ ctx.tr.t("plans.mode") }}">{% if p.dry_run %}{{ ctx.tr.t("mode.dry_run") }}{% else %}{{ ctx.tr.t("mode.live") }}{% endif %}</td>
+<td data-label="{{ ctx.tr.t("detail.planned_state") }}">{{ ctx.coded("outcome", p.state) }}</td>
+<td data-label="{{ ctx.tr.t("plans.planned") }}">{{ p.attributable }}{% if p.added != "0 B" %} <span class="tag">+{{ p.added }} {{ ctx.tr.t("plans.added") }}</span>{% endif %}</td>
+<td data-label="{{ ctx.tr.t("issues.col.torrents") }}">{{ p.torrents }}</td>
+</tr>{% endfor %}</tbody></table></div>{% endif %}
 {% if !v.row.inodes.is_empty() %}<h2>{{ ctx.tr.t("issues.inodes") }}</h2>
 <ul>{% for i in v.row.inodes %}<li><code translate="no">{{ i }}</code></li>{% endfor %}</ul>{% endif %}
 <h2>{{ ctx.tr.t("issues.evidence") }}</h2>

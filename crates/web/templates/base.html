@@ -38,12 +38,14 @@
 <li><a href="/history"{% if ctx.on("/history", false) %} aria-current="page"{% endif %}>{{ ctx.tr.t("nav.history") }}</a></li>
 <li><details><summary>{{ ctx.tr.t("nav.more") }}</summary>
 <div class="sheet-panel"><ul>
+<li><a href="/plans"{% if ctx.on("/plans", true) %} aria-current="page"{% endif %}>{{ ctx.tr.t("nav.plans") }}</a></li>
 <li><a href="/auto"{% if ctx.on("/auto", false) %} aria-current="page"{% endif %}>{{ ctx.tr.t("nav.auto") }}</a></li>
 <li><a href="/stats"{% if ctx.on("/stats", false) %} aria-current="page"{% endif %}>{{ ctx.tr.t("nav.stats") }}</a></li>
 <li><a href="/logs"{% if ctx.on("/logs", false) %} aria-current="page"{% endif %}>{{ ctx.tr.t("nav.logs") }}</a></li>
 </ul>
 <form method="post" action="/locale">
 <input type="hidden" name="csrf_token" value="{{ ctx.chrome.csrf }}">
+<input type="hidden" name="return_to" value="{{ ctx.path }}">
 <div class="field"><label for="locale-select">{{ ctx.tr.t("locale.label") }}</label>
 <select id="locale-select" name="locale"><option value="en"{% if ctx.chrome.lang == "en" %} selected{% endif %}>{{ ctx.tr.t("locale.en") }}</option><option value="fr"{% if ctx.chrome.lang == "fr" %} selected{% endif %}>{{ ctx.tr.t("locale.fr") }}</option></select></div>
 <button type="submit">{{ ctx.tr.t("locale.apply") }}</button>

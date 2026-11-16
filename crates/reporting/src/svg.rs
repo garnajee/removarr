@@ -75,6 +75,19 @@ fn round1(v: f64) -> f64 {
 /// Computes the geometry of the cumulative values of `series` in a `width` x `height` box.
 #[must_use]
 pub fn chart_geometry(series: &[SeriesVm], width: u32, height: u32) -> ChartGeometry {
+    chart_geometry_for(series, width, height, false)
+}
+
+/// Like [`chart_geometry`]; with `per_day` the plotted value is each day's own bytes instead of
+/// the running total.
+#[must_use]
+pub fn chart_geometry_for(
+    series: &[SeriesVm],
+    width: u32,
+    height: u32,
+    per_day: bool,
+) -> ChartGeometry {
+    let val = |p: &crate::model::SeriesPointVm| if per_day { p.bytes } else { p.cumulative };
     let (w, h) = (f64::from(width.max(200)), f64::from(height.max(120)));
     let (left, right, top, bottom) = (MARGIN_LEFT, w - MARGIN_RIGHT, MARGIN_TOP, h - MARGIN_BOTTOM);
     let all: Vec<&crate::model::SeriesPointVm> =
@@ -82,10 +95,10 @@ pub fn chart_geometry(series: &[SeriesVm], width: u32, height: u32) -> ChartGeom
     let empty = all.is_empty();
     let x_min = all.iter().map(|p| p.at).min().unwrap_or(0);
     let x_max = all.iter().map(|p| p.at).max().unwrap_or(0);
-    let y_min = all.iter().map(|p| p.cumulative).min().unwrap_or(0).min(0);
+    let y_min = all.iter().map(|p| val(p)).min().unwrap_or(0).min(0);
     let y_max = all
         .iter()
-        .map(|p| p.cumulative)
+        .map(|p| val(p))
         .max()
         .unwrap_or(0)
         .max(0)
@@ -107,9 +120,9 @@ pub fn chart_geometry(series: &[SeriesVm], width: u32, height: u32) -> ChartGeom
                 .iter()
                 .map(|p| PointGeometry {
                     x: round1(xs(p.at)),
-                    y: round1(ys(p.cumulative)),
+                    y: round1(ys(val(p))),
                     at_iso: p.at_iso.clone(),
-                    value: p.cumulative,
+                    value: val(p),
                 })
                 .collect();
             let path_d = points

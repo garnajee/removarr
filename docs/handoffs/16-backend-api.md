@@ -193,3 +193,85 @@ pub enum Denied { Unauthenticated, Forbidden, RateLimited { retry_after_secs: u6
 * Gates: `cargo tree -p removarr-web -e normal --depth 1` shows no storage/fs/connector crate; `LiveMode::` appears only in
   `crates/config` and tests; `cargo tree -p removarr -e normal,features | grep tier5` prints nothing.
 * No network beyond crates.io; nothing committed.
+
+## Follow-up after wave 14
+
+Scope: items 1 to 5 and 8 of `docs/handoffs/19-web-ui.md` "Backend follow-ups needed". Edited: `crates/web/src/**`
+(`error.rs`, `forms.rs`, `router.rs`, `state.rs`, handlers `issues/plans/reports/ops/mod`), `crates/reporting/src/**`
+(`reporter.rs`, `model.rs`, `svg.rs`, `lib.rs`), `crates/app/src/services.rs` (one delegating method), templates
+(`base`, `error`, `plans` page and fragment, `issue_detail`, `issues`, `plan_confirm`, `stats`) and both locales (63 new keys each, 1 key
+removed from each, same key sets). No migration, no write path, no new dependency.
+
+### Per-item status
+
+1. **Done, localized errors and confirmation re-render.** `WebError` still renders English in `IntoResponse` and stores itself in the
+   response extensions; the new `error::localize` layer (outermost of the route layers, inside `security_headers`) re-renders any
+   `WebError` in the request language (cookie, then `Accept-Language`), whichever layer produced it (handler, guard refusal, 414,
+   panic catcher). The error page now has `lang`, a navigation bar (dashboard, jobs, history, plans, statistics) and translated
+   details: the static `invalid(field, problem)` texts map to `problem.*` keys (`PROBLEMS` table, tested against both locales) and
+   blocker codes in excluded-item details go through `blocker.*`; field names and subject keys stay machine words. 429 keeps
+   `Retry-After`; the stale `Content-Length` is dropped. `POST /plans/{id}/approve`: a refusal with status 422 or 409 (bad input, hash or
+   count mismatch, missing acknowledgement, state change) re-renders the confirmation page with an `id="confirm-error"` summary (`role="alert"`),
+   the same status (200 for HTMX, which does not swap error statuses), a fresh CSRF field and the ticked samples and unrecoverable
+   files still ticked; the typed counts are deliberately not kept. Other failures (5xx, 401/403, unknown plan) stay plain error pages.
+   `ErrorSummary` (`error::WebError::summary(&Tr)`) is the shared, translated shape.
+2. **Done, plan listing.** `Reporter::plans(&PlanListQuery) -> PlanListVm` (newest first; id, status, mode `dry_run|live`, origin,
+   created, action count, done and failed counts, planned and recorded attributable and added bytes), `ReadModel::plans`, `GET /plans`
+   (`page`, `per_page` validated like history; read-only) and a "Plans" entry in the More panel of the navigation. The "auto" label
+   is the `auto_policy` origin shown next to the mode.
+3. **Done, statistics selector.** `StatsQuery.range` (`StatsRange`: all, 7, 30, 90, 365 days; the later of `since` and the window
+   applies) and `GET /stats?view=cumulative|per_day&range=all|7d|30d|90d|365d` (422 otherwise). `view` is a presentation choice:
+   `svg::chart_geometry_for(.., per_day)` plots each day's bytes instead of the running total (the existing `chart_geometry` is
+   unchanged). The selector is a plain GET form. The gain totals above the chart stay all-time (the page says so when a window is
+   selected); the series and tables follow the window.
+4. **Done, SQL issue queries.** `IssueQuery` gained `ids`, `ignored`, `unit_kind`, `search`, `sort` (`Severity` default, `Name`,
+   `Size`, `Age`), `descending`, `min_age_days` and `include_detail`. Selection, ordering and totals (`total_count`, `total_logical_bytes`,
+   `total_potential_bytes`) are computed over every match in SQL (`select_issues`); the page is a slice of that ordered list, so the
+   1000-row read and the truncation notice are gone (`issues.truncated` key and template block removed). The detail page, the selection
+   summary and ignore/restore resolve any id (chunks of 500). "Hidden recent" is the exact difference with a second query (limit 1)
+   without the age filter. Search is a case-insensitive (ASCII) substring match on subject, name, primary path and, for folders, member
+   and annex paths, never on JSON keys; `%` and `_` are plain characters (`instr`, no `LIKE`).
+5. **Done, detail data.** With `include_detail`: `IssueRowVm.torrents` (hash, name, state from the `torrents` snapshot, 50 max),
+   `annexes` (folder units, 200 max, `root:relative`) rendered as a nested list tree, and `planned` (`PlannedActionVm`: plan id and
+   status, mode, action index, kind, action state, expected logical, attributable and added bytes, torrent count) for actions of stored
+   plans (not discarded, expired or invalidated; 5000 newest actions scanned, 20 kept) whose target path is the issue's unit path.
+   List rows never run these queries. The page links each planned action to its plan; nothing there changes anything.
+8. **Done, locale return.** The More-panel form posts a hidden `return_to` (the current path); `LocaleForm::return_path` accepts only a
+   same-origin relative path (one leading `/`, no `//`, no backslash, ASCII, no control or whitespace, at most 512 bytes) and falls
+   back to `/` otherwise (no error, no open redirect). Query strings are not carried (the form only knows the path).
+
+### Accepted deviations (out of scope here)
+
+* Item 6: `torrents_left_stopped` stays 0 (no source); a few explanation codes with byte parameters keep their English text.
+* Item 7: no acknowledgement field for `POST /auto/resume` (single button).
+* Item 9: `/settings`, `/explorer` and `/media/*` are not built; MASTER section 6 does not require them. `/plans` is now built.
+* Item 10: log auto-refresh not implemented (optional).
+* Search is ASCII case-insensitive (SQLite `lower`); non-ASCII letters match with their exact case only.
+* `include_detail` plan lookup is path equality on the unit path; an action that touches the item only through a parent or an annex
+  is not listed.
+* The language switch returns to the page path, not to its query string.
+
+### Contract changes for other agents
+
+* `ReadModel` gained `plans(&PlanListQuery)`; `IssueRowVm` gained `torrents`, `annexes`, `planned`; `IssueQuery.id` does not exist
+  (`ids: Vec<String>`); `StatsQuery.range` is new. `Reporter::issues` with a default `IssueQuery` behaves as before.
+* Routes: `GET /plans` (page access, query `page`, `per_page`), `GET /stats?view&range`, `POST /locale` accepts `return_to`.
+* Templates: `ConfirmPage`/`ConfirmFragment` take `f: &ConfirmState`; `pages/error.html` takes `lang`, `app`, `nav_label`, `nav`.
+
+### Tests added
+
+`crates/reporting/tests/followup.rs` (6: SQL sort, filters/search/kind/age/ignored with exact totals, issue beyond row 1000 and paging
+over 1100 rows, detail data, plan listing, stats range) and `crates/web/src/handlers/tests/followup.rs` (10: localized error pages in
+fr and en with navigation, translated blocker details without paths, confirmation re-render with ticks kept, plain errors for
+5xx and unknown plans, successful approval unchanged, plan listing and navigation, statistics selector reaching the read model and
+the chart, filters sent to the read model, 1500-row list and detail beyond 1000 and bulk ids, detail data and escaping, locale return
+path including open-redirect refusals), plus unit tests (`annex_tree`, `return_path`, problem translations). The web fake read model now
+applies `IssueQuery` like the SQL model. `/plans` and a `/stats` query joined the GET-never-mutates and both-locale route lists.
+
+### Commands run and results (host target, macOS)
+
+* `cargo fmt --all --check`: pass.
+* `cargo clippy --workspace --all-targets -- -D warnings`: pass.
+* `cargo test --workspace`: 961 passed, 0 failed.
+* `cargo build --workspace --release`: pass.
+* Nothing committed.

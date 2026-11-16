@@ -31,6 +31,7 @@ use crate::timefmt::iso;
 const DAY_MS: i64 = 86_400_000;
 const MAX_LIST: u64 = 1000;
 const MAX_PATHS_PER_ROW: usize = 20;
+const MAX_ANNEXES: usize = 200;
 const MAX_SERIES_ROWS: i64 = 200_000;
 const MAX_POINTS: usize = 730;
 const MAX_TEXT: usize = 400;
@@ -51,10 +52,64 @@ pub struct DashboardInputs {
     pub live_services: Option<Vec<ServiceStatus>>,
 }
 
+/// What kind of unit an issue applies to (filter).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IssueUnitKind {
+    File,
+    Folder,
+    Torrent,
+    Pair,
+}
+
+impl IssueUnitKind {
+    fn json_key(self) -> &'static str {
+        match self {
+            IssueUnitKind::File => "File",
+            IssueUnitKind::Folder => "Folder",
+            IssueUnitKind::Torrent => "Torrent",
+            IssueUnitKind::Pair => "Pair",
+        }
+    }
+}
+
+/// Sort key of an issue list. `Severity` is the report order (severity, potential, id).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum IssueSort {
+    #[default]
+    Severity,
+    Name,
+    Size,
+    Age,
+}
+
+/// Filters, sort and page are applied in SQL; totals cover every match, not only the page.
 #[derive(Debug, Clone, Default)]
 pub struct IssueQuery {
     pub category: Option<IssueCategory>,
     pub min_severity: Option<Severity>,
+    pub offset: u64,
+    /// Clamped to 1..=1000; 0 means the default 100.
+    pub limit: u64,
+    /// Only these issue ids (the detail page and bulk commands resolve any id, whatever its
+    /// rank). Empty means no id filter; keep it to a few hundred ids per query.
+    pub ids: Vec<String>,
+    /// `Some(false)` current issues only, `Some(true)` ignored ones only, `None` both.
+    pub ignored: Option<bool>,
+    pub unit_kind: Option<IssueUnitKind>,
+    /// Case-insensitive (ASCII) substring of the subject, name or rooted paths.
+    pub search: Option<String>,
+    pub sort: IssueSort,
+    /// Reverse the natural direction of `sort` (`Age`: oldest first).
+    pub descending: bool,
+    /// Only issues whose age basis is at least this many days old.
+    pub min_age_days: Option<u32>,
+    /// Also fill the torrent list, the annexes and the planned consequences of each row.
+    pub include_detail: bool,
+}
+
+/// Plan listing page (newest first).
+#[derive(Debug, Clone, Default)]
+pub struct PlanListQuery {
     pub offset: u64,
     /// Clamped to 1..=1000; 0 means the default 100.
     pub limit: u64,
@@ -73,10 +128,36 @@ pub struct HistoryQuery {
     pub include_dry_run: bool,
 }
 
+/// Look-back window of the statistics, counted back from now.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum StatsRange {
+    #[default]
+    All,
+    Days7,
+    Days30,
+    Days90,
+    Days365,
+}
+
+impl StatsRange {
+    #[must_use]
+    pub fn days(self) -> Option<i64> {
+        match self {
+            StatsRange::All => None,
+            StatsRange::Days7 => Some(7),
+            StatsRange::Days30 => Some(30),
+            StatsRange::Days90 => Some(90),
+            StatsRange::Days365 => Some(365),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct StatsQuery {
     /// Only events at or after this instant (UTC ms).
     pub since: Option<i64>,
+    /// Look-back window; the later of `since` and the window start applies.
+    pub range: StatsRange,
     /// Daily points kept per series, newest; clamped to 730. 0 means 366.
     pub max_points: usize,
 }
@@ -922,8 +1003,188 @@ impl Reporter {
         })
     }
 
+    /// SQL selection of the issues matching `q`: ids and sizes in the requested order.
+    async fn select_issues(
+        &self,
+        q: &IssueQuery,
+        now: i64,
+    ) -> Result<Vec<(String, u64)>, PortError> {
+        enum Bind {
+            Text(String),
+            Int(i64),
+        }
+        let enum_text = |v: Value| match v {
+            Value::String(s) => s,
+            _ => String::new(),
+        };
+        let path = "COALESCE(json_extract(unit,'$.File.rel'), json_extract(unit,'$.Folder.dir.rel'), json_extract(unit,'$.Pair.a.rel'), '')";
+        let root = "COALESCE(json_extract(unit,'$.File.root'), json_extract(unit,'$.Folder.dir.root'), json_extract(unit,'$.Pair.a.root'), '')";
+        let name = format!(
+            "CASE WHEN json_type(unit,'$.Torrent') IS NOT NULL THEN 'torrent ' || json_extract(unit,'$.Torrent') \
+             ELSE COALESCE(NULLIF(replace({path}, rtrim({path}, replace({path}, '/', '')), ''), ''), {root}) END"
+        );
+        let mut sql =
+            String::from("SELECT id, logical_bytes FROM issues WHERE resolved_at IS NULL");
+        let mut binds: Vec<Bind> = Vec::new();
+        if let Some(c) = q.category {
+            sql.push_str(" AND category = ?");
+            binds.push(Bind::Text(enum_text(
+                serde_json::to_value(c).map_err(|_| corrupt("category"))?,
+            )));
+        }
+        if let Some(min) = q.min_severity {
+            let allowed: Vec<String> = [Severity::Info, Severity::Warning, Severity::Critical]
+                .into_iter()
+                .filter(|s| *s >= min)
+                .map(|s| serde_json::to_value(s).map(enum_text))
+                .collect::<Result<_, _>>()
+                .map_err(|_| corrupt("severity"))?;
+            sql.push_str(" AND severity IN (");
+            sql.push_str(&vec!["?"; allowed.len()].join(","));
+            sql.push(')');
+            binds.extend(allowed.into_iter().map(Bind::Text));
+        }
+        if !q.ids.is_empty() {
+            sql.push_str(" AND id IN (");
+            sql.push_str(&vec!["?"; q.ids.len()].join(","));
+            sql.push(')');
+            binds.extend(q.ids.iter().cloned().map(Bind::Text));
+        }
+        match q.ignored {
+            Some(true) => sql.push_str(
+                " AND subject IN (SELECT subject_key FROM ignores WHERE restored_at IS NULL)",
+            ),
+            Some(false) => sql.push_str(
+                " AND subject NOT IN (SELECT subject_key FROM ignores WHERE restored_at IS NULL)",
+            ),
+            None => {}
+        }
+        if let Some(k) = q.unit_kind {
+            sql.push_str(&format!(
+                " AND json_type(unit,'$.{}') IS NOT NULL",
+                k.json_key()
+            ));
+        }
+        if let Some(days) = q.min_age_days {
+            sql.push_str(" AND age_basis <= ?");
+            binds.push(Bind::Int(now.saturating_sub(i64::from(days) * DAY_MS)));
+        }
+        if let Some(needle) = q.search.as_deref().filter(|n| !n.is_empty()) {
+            let needle = needle.to_ascii_lowercase();
+            sql.push_str(&format!(
+                " AND (instr(lower(subject), ?) > 0 OR instr(lower({name}), ?) > 0 \
+                 OR instr(lower({path}), ?) > 0 \
+                 OR instr(lower(COALESCE(json_extract(unit,'$.Pair.b.rel'), '')), ?) > 0 \
+                 OR EXISTS (SELECT 1 FROM json_each(unit,'$.Folder.members') m WHERE instr(lower(json_extract(m.value,'$.rel')), ?) > 0) \
+                 OR EXISTS (SELECT 1 FROM json_each(unit,'$.Folder.annexes') m WHERE instr(lower(json_extract(m.value,'$.rel')), ?) > 0))"
+            ));
+            for _ in 0..6 {
+                binds.push(Bind::Text(needle.clone()));
+            }
+        }
+        let dir = if q.descending { "DESC" } else { "ASC" };
+        match q.sort {
+            IssueSort::Severity => {
+                sql.push_str(
+                    " ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END, potential_bytes DESC, id",
+                );
+            }
+            IssueSort::Name => sql.push_str(&format!(" ORDER BY lower({name}) {dir}, id")),
+            IssueSort::Size => sql.push_str(&format!(" ORDER BY logical_bytes {dir}, id")),
+            // Older means a smaller age basis: ascending age shows the newest first.
+            IssueSort::Age => sql.push_str(&format!(
+                " ORDER BY age_basis {}, id",
+                if q.descending { "ASC" } else { "DESC" }
+            )),
+        }
+        let mut query = sqlx::query(&sql);
+        for b in binds {
+            query = match b {
+                Bind::Text(t) => query.bind(t),
+                Bind::Int(i) => query.bind(i),
+            };
+        }
+        let rows = query.fetch_all(&self.pool).await.map_err(store_err)?;
+        rows.iter()
+            .map(|r| Ok((g::<String>(r, "id")?, u(g(r, "logical_bytes")?))))
+            .collect()
+    }
+
+    /// Torrents (hash, name, state) of an issue, from the current snapshot.
+    async fn torrents_of(&self, hashes_json: &str) -> Result<Vec<TorrentVm>, PortError> {
+        let rows = sqlx::query(
+            "SELECT hash, name, state FROM torrents WHERE hash IN (SELECT value FROM json_each(?)) ORDER BY hash LIMIT 50",
+        )
+        .bind(hashes_json)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(store_err)?;
+        rows.iter()
+            .map(|r| {
+                Ok(TorrentVm {
+                    hash: g(r, "hash")?,
+                    name: clean(&g::<String>(r, "name")?),
+                    state: clean(&g::<String>(r, "state")?),
+                })
+            })
+            .collect()
+    }
+
+    /// Actions of stored plans whose target is one of `paths` (rooted paths of the issue unit):
+    /// what each plan would do, or did, to it. Discarded, expired and invalidated plans are left out.
+    async fn planned_for(&self, paths: &[String]) -> Result<Vec<PlannedActionVm>, PortError> {
+        if paths.is_empty() {
+            return Ok(Vec::new());
+        }
+        let rows = sqlx::query(
+            "SELECT p.id AS plan_id, p.status, p.mode, pa.idx, pa.kind, pa.state, \
+             json_extract(p.body, '$.actions[' || pa.idx || '].target') AS target, \
+             json_extract(p.body, '$.actions[' || pa.idx || '].expected_gain') AS expected, \
+             COALESCE(json_array_length(p.body, '$.actions[' || pa.idx || '].torrent_hashes'), 0) AS torrents \
+             FROM plan_actions pa JOIN plans p ON p.id = pa.plan_id \
+             WHERE p.status NOT IN ('discarded','expired','invalidated') \
+             ORDER BY p.created_at DESC, pa.idx LIMIT 5000",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(store_err)?;
+        let mut out = Vec::new();
+        for r in &rows {
+            let Some(target) = g::<Option<String>>(r, "target")? else {
+                continue;
+            };
+            let target: Value = json(&target, "action target")?;
+            let mut touched = Vec::new();
+            describe_target(&target, &mut touched);
+            if !touched.iter().any(|t| paths.contains(t)) {
+                continue;
+            }
+            let expected: removarr_domain::gain::GainEstimate = g::<Option<String>>(r, "expected")?
+                .map(|s| json(&s, "expected gain"))
+                .transpose()?
+                .unwrap_or_default();
+            out.push(PlannedActionVm {
+                plan_id: g(r, "plan_id")?,
+                plan_status: g(r, "status")?,
+                mode: g(r, "mode")?,
+                index: u32::try_from(g::<i64>(r, "idx")?).unwrap_or(0),
+                kind: clean(&kind_label(&g::<String>(r, "kind")?)),
+                state: g(r, "state")?,
+                expected_logical: expected.logical,
+                expected_attributable: expected.attributable,
+                expected_added: expected.added,
+                torrents: usize::try_from(g::<i64>(r, "torrents")?).unwrap_or(0),
+            });
+            if out.len() >= 20 {
+                break;
+            }
+        }
+        Ok(out)
+    }
+
     /// One bounded page of current issues with evidence, completeness and inode proof.
     pub async fn issues(&self, q: &IssueQuery) -> Result<IssueListVm, PortError> {
+        let now = self.clock.now().as_millis();
         let ignored = self.ignored_subjects().await?;
         let cores = self.issue_cores().await?;
         let active: Vec<&IssueCore> = cores
@@ -931,36 +1192,21 @@ impl Reporter {
             .filter(|c| !ignored.contains(&c.subject))
             .collect();
         let (counted, _) = counted_potential(&active);
-        let sev_rank = |s: Severity| match s {
-            Severity::Critical => 0,
-            Severity::Warning => 1,
-            Severity::Info => 2,
-        };
-        let mut selected: Vec<&IssueCore> = cores
-            .iter()
-            .filter(|c| q.category.is_none_or(|k| c.category == k))
-            .filter(|c| q.min_severity.is_none_or(|s| c.severity >= s))
-            .collect();
-        selected.sort_by(|a, b| {
-            sev_rank(a.severity)
-                .cmp(&sev_rank(b.severity))
-                .then(b.potential.cmp(&a.potential))
-                .then_with(|| a.id.cmp(&b.id))
-        });
+        let by_id: HashMap<&str, &IssueCore> = cores.iter().map(|c| (c.id.as_str(), c)).collect();
+        let matches = self.select_issues(q, now).await?;
         let limit = if q.limit == 0 {
             100
         } else {
             q.limit.min(MAX_LIST)
         };
-        let total_count = selected.len() as u64;
-        let total_logical = selected
-            .iter()
-            .fold(0u64, |a, c| a.saturating_add(c.logical));
-        let total_potential = selected.iter().fold(0u64, |a, c| {
-            a.saturating_add(counted.get(&c.id).copied().unwrap_or(0))
+        let total_count = matches.len() as u64;
+        let total_logical = matches.iter().fold(0u64, |a, (_, b)| a.saturating_add(*b));
+        let total_potential = matches.iter().fold(0u64, |a, (id, _)| {
+            a.saturating_add(counted.get(id).copied().unwrap_or(0))
         });
-        let page: Vec<&IssueCore> = selected
-            .into_iter()
+        let page: Vec<&IssueCore> = matches
+            .iter()
+            .filter_map(|(id, _)| by_id.get(id.as_str()).copied())
             .skip(usize::try_from(q.offset).unwrap_or(usize::MAX))
             .take(usize::try_from(limit).unwrap_or(100))
             .collect();
@@ -979,8 +1225,37 @@ impl Reporter {
             let unit: Unit = json(&g::<String>(&r, "unit")?, "unit")?;
             let evidence: Vec<Evidence> = json(&g::<String>(&r, "evidence")?, "evidence")?;
             let blockers: Vec<Blocker> = json(&g::<String>(&r, "blockers")?, "blockers")?;
-            let hashes: Vec<Value> = json(&g::<String>(&r, "torrent_hashes")?, "torrent hashes")?;
+            let hashes_raw: String = g(&r, "torrent_hashes")?;
+            let hashes: Vec<Value> = json(&hashes_raw, "torrent hashes")?;
             let (unit_kind, name, paths) = unit_view(&unit);
+            let (torrents, annexes, planned) = if q.include_detail {
+                let (annexes, primary): (Vec<String>, Vec<String>) = match &unit {
+                    Unit::Folder { dir, annexes, .. } => (
+                        annexes
+                            .iter()
+                            .take(MAX_ANNEXES)
+                            .map(|p| clean(&rooted(p.root.as_str(), p.rel.as_str())))
+                            .collect(),
+                        vec![rooted(dir.root.as_str(), dir.rel.as_str())],
+                    ),
+                    Unit::File(p) => (vec![], vec![rooted(p.root.as_str(), p.rel.as_str())]),
+                    Unit::Pair { a, b } => (
+                        vec![],
+                        vec![
+                            rooted(a.root.as_str(), a.rel.as_str()),
+                            rooted(b.root.as_str(), b.rel.as_str()),
+                        ],
+                    ),
+                    Unit::Torrent(h) => (vec![], vec![format!("torrent:{}", h.as_str())]),
+                };
+                (
+                    self.torrents_of(&hashes_raw).await?,
+                    annexes,
+                    self.planned_for(&primary).await?,
+                )
+            } else {
+                (Vec::new(), Vec::new(), Vec::new())
+            };
             let first_seen: i64 = g(&r, "first_seen_at")?;
             let combined = removarr_domain::evidence::combined_completeness(&evidence);
             rows.push(IssueRowVm {
@@ -997,6 +1272,9 @@ impl Reporter {
                 potential_counted_bytes: counted.get(&c.id).copied().unwrap_or(0),
                 potential_label_key: POTENTIAL_LABEL_KEY,
                 torrent_count: hashes.len(),
+                torrents,
+                annexes,
+                planned,
                 blockers: blocker_codes(&blockers),
                 completeness: completeness_vm(&combined),
                 evidence: evidence
@@ -1237,6 +1515,14 @@ impl Reporter {
         } else {
             q.max_points.min(MAX_POINTS)
         };
+        let since = match q.range.days() {
+            Some(d) => Some(
+                q.since
+                    .map_or(now - d * DAY_MS, |s| s.max(now - d * DAY_MS)),
+            ),
+            None => q.since,
+        };
+        let q = &StatsQuery { since, ..q.clone() };
         let (gains, gains_truncated) = self.gain_rows(None).await?;
         let (totals, attributable_events, added_events) = aggregate_gains(&gains, q.since);
 
@@ -1308,6 +1594,60 @@ impl Reporter {
             observed: observed[observed_tail..].to_vec(),
             caveats: vec![btrfs_caveat()],
             truncated,
+        })
+    }
+
+    /// Stored plans, newest first: status, mode, action counts and gains. Read-only.
+    pub async fn plans(&self, q: &PlanListQuery) -> Result<PlanListVm, PortError> {
+        let limit = if q.limit == 0 {
+            100
+        } else {
+            q.limit.min(MAX_LIST)
+        };
+        let rows = sqlx::query(
+            "SELECT p.id, p.status, p.mode, p.origin, p.created_at, \
+             COALESCE(json_array_length(p.body, '$.actions'), 0) AS n, \
+             (SELECT COUNT(*) FROM plan_actions a WHERE a.plan_id = p.id AND a.state IN ('verified','executed_unverified')) AS done, \
+             (SELECT COUNT(*) FROM plan_actions a WHERE a.plan_id = p.id AND a.state IN ('failed','failed_needs_review','compensated')) AS failed, \
+             COALESCE(json_extract(p.body, '$.gains.attributable'), 0) AS planned_a, \
+             COALESCE(json_extract(p.body, '$.gains.added'), 0) AS planned_d, \
+             COALESCE((SELECT SUM(bytes) FROM gains x WHERE x.plan_id = p.id AND x.kind != 'added_cost'), 0) AS rec_a, \
+             COALESCE((SELECT SUM(bytes) FROM gains x WHERE x.plan_id = p.id AND x.kind = 'added_cost'), 0) AS rec_d \
+             FROM plans p ORDER BY p.created_at DESC, p.id LIMIT ? OFFSET ?",
+        )
+        .bind(i64::try_from(limit + 1).unwrap_or(i64::MAX))
+        .bind(i64::try_from(q.offset).unwrap_or(i64::MAX))
+        .fetch_all(&self.pool)
+        .await
+        .map_err(store_err)?;
+        let has_more = rows.len() as u64 > limit;
+        let rows = rows
+            .iter()
+            .take(usize::try_from(limit).unwrap_or(100))
+            .map(|r| {
+                let created: i64 = g(r, "created_at")?;
+                Ok(PlanRowVm {
+                    id: g(r, "id")?,
+                    status: g(r, "status")?,
+                    mode: g(r, "mode")?,
+                    origin: g(r, "origin")?,
+                    created_at: created,
+                    created_at_iso: iso(created),
+                    actions: nonneg(g(r, "n")?),
+                    actions_done: nonneg(g(r, "done")?),
+                    actions_failed: nonneg(g(r, "failed")?),
+                    planned_attributable: nonneg(g(r, "planned_a")?),
+                    planned_added: nonneg(g(r, "planned_d")?),
+                    recorded_attributable: nonneg(g(r, "rec_a")?),
+                    recorded_added: nonneg(g(r, "rec_d")?),
+                })
+            })
+            .collect::<Result<Vec<_>, PortError>>()?;
+        Ok(PlanListVm {
+            rows,
+            offset: q.offset,
+            limit,
+            has_more,
         })
     }
 

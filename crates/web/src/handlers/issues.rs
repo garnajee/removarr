@@ -1,8 +1,8 @@
 //! Issue tabs, details, the ignore list and the read-only selection summary.
 //!
-//! The read model returns the current issues of a category (bounded at
-//! [`READ_LIMIT`]); search, kind filter, "hide recent", sorting and paging are presentation over
-//! that set and happen here. Nothing is preselected: every checkbox starts unchecked.
+//! Search, kind filter, "hide recent", sorting and paging are done in SQL by the read model
+//! ([`IssueQuery`]); this module only validates the request and shapes the page. Nothing is
+//! preselected: every checkbox starts unchecked.
 
 use std::collections::BTreeSet;
 
@@ -15,7 +15,7 @@ use axum_extra::extract::FormRejection;
 use removarr_domain::ids::{IssueId, SubjectKey};
 use removarr_domain::issue::{IssueCategory, Severity};
 use removarr_domain::jobs::JobKind;
-use removarr_reporting::{IssueListVm, IssueQuery, IssueRowVm};
+use removarr_reporting::{IssueListVm, IssueQuery, IssueRowVm, IssueSort, IssueUnitKind};
 use removarr_workflows::plans::IssueAction;
 
 use super::{
@@ -27,8 +27,8 @@ use crate::forms::{
 };
 use crate::state::AppState;
 
-/// Rows read from the read model per request (its own maximum).
-pub const READ_LIMIT: u64 = 1000;
+/// Ids resolved per read-model query (bulk commands send up to `MAX_SELECTION`).
+const ID_CHUNK: usize = 500;
 const DAY_MS: i64 = 86_400_000;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -76,8 +76,6 @@ pub struct ListView {
     pub kind: &'static str,
     pub hide_recent: bool,
     pub hide_recent_days: u32,
-    /// The read model holds more issues than one request reads.
-    pub truncated: bool,
     pub snapshot_at: Option<String>,
     pub actions: Vec<ActionOption>,
     pub prev_url: Option<String>,
@@ -125,6 +123,87 @@ pub struct DetailView {
     /// Estimate of what could be reclaimed (a potential gain, never a promise).
     pub potential: String,
     pub potential_counted: String,
+    /// Annex files of a folder unit, as an indented tree relative to the folder.
+    pub annex_tree: Vec<AnnexNode>,
+    /// Nested lists still open after the last tree node.
+    pub annex_close_end: usize,
+    /// What stored plans would do (or did) to this item, one row per planned action.
+    pub planned: Vec<PlannedRow>,
+}
+
+/// One line of the annex tree: a directory or a file at `depth` below the folder.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AnnexNode {
+    pub depth: usize,
+    pub name: String,
+    pub dir: bool,
+    /// Nested lists to close before this node (the template emits `</ul></li>` that many times).
+    pub close_before: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct PlannedRow {
+    pub plan_id: String,
+    pub plan_status: String,
+    pub dry_run: bool,
+    pub kind: String,
+    pub state: String,
+    pub attributable: String,
+    pub added: String,
+    pub torrents: usize,
+}
+
+/// Indented tree of `root:rel` annex paths below `dir` (`root:rel` of the folder). Directories
+/// come before the files they hold; paths outside `dir` keep their full relative path.
+pub(crate) fn annex_tree(dir: &str, annexes: &[String]) -> Vec<AnnexNode> {
+    let prefix = format!("{dir}/");
+    let mut rels: Vec<Vec<&str>> = annexes
+        .iter()
+        .map(|a| {
+            let rel = a
+                .strip_prefix(&prefix)
+                .unwrap_or(a.split_once(':').map_or(a, |x| x.1));
+            rel.split('/').filter(|c| !c.is_empty()).collect()
+        })
+        .collect();
+    rels.sort();
+    rels.dedup();
+    let mut out: Vec<AnnexNode> = Vec::new();
+    let mut shown: Vec<&str> = Vec::new();
+    for parts in &rels {
+        let Some((file, dirs)) = parts.split_last() else {
+            continue;
+        };
+        let common = shown.iter().zip(dirs).take_while(|(a, b)| a == b).count();
+        shown.truncate(common);
+        for (i, d) in dirs.iter().enumerate().skip(common) {
+            out.push(AnnexNode {
+                depth: i,
+                name: (*d).to_string(),
+                dir: true,
+                close_before: 0,
+            });
+            shown.push(d);
+        }
+        out.push(AnnexNode {
+            depth: dirs.len(),
+            name: (*file).to_string(),
+            dir: false,
+            close_before: 0,
+        });
+    }
+    // Nesting: a directory opens a list; a node shallower than the open depth closes lists.
+    let mut open = 0usize;
+    for n in &mut out {
+        n.close_before = open.saturating_sub(n.depth);
+        open = n.depth + usize::from(n.dir);
+    }
+    out
+}
+
+/// Lists still open after the last node of [`annex_tree`].
+pub(crate) fn annex_open(tree: &[AnnexNode]) -> usize {
+    tree.last().map_or(0, |n| n.depth + usize::from(n.dir))
 }
 
 #[derive(Debug, Template)]
@@ -220,52 +299,6 @@ fn row_view(r: &IssueRowVm, now_ms: i64) -> RowView {
     }
 }
 
-/// Filters, sorts and pages rows (presentation only). Returns the page, the filtered count,
-/// the filtered total size and the page count.
-pub(crate) fn select(
-    rows: &[IssueRowVm],
-    q: &ListQuery,
-    ignored_mode: bool,
-    now_ms: i64,
-    hide_recent_days: u32,
-) -> (Vec<RowView>, usize, u64, u32) {
-    let needle = q.q.as_ref().map(|s| s.to_lowercase());
-    let mut v: Vec<RowView> = rows
-        .iter()
-        .filter(|r| r.ignored == ignored_mode)
-        .filter(|r| match q.kind {
-            KindFilter::All => true,
-            KindFilter::Folder => r.unit_kind == "folder",
-            KindFilter::File => r.unit_kind == "file",
-        })
-        .filter(|r| {
-            needle.as_ref().is_none_or(|n| {
-                r.name.to_lowercase().contains(n)
-                    || r.subject.to_lowercase().contains(n)
-                    || r.paths.iter().any(|p| p.to_lowercase().contains(n))
-            })
-        })
-        .map(|r| row_view(r, now_ms))
-        .filter(|r| !q.hide_recent || r.age_days >= i64::from(hide_recent_days))
-        .collect();
-    v.sort_by(|a, b| {
-        let o = match q.sort {
-            SortKey::Name => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
-            SortKey::Size => a.size_bytes.cmp(&b.size_bytes),
-            SortKey::Age => a.age_days.cmp(&b.age_days),
-        };
-        let o = if q.desc { o.reverse() } else { o };
-        o.then_with(|| a.id.cmp(&b.id))
-    });
-    let total = v.len();
-    let total_bytes = v.iter().fold(0u64, |s, r| s.saturating_add(r.size_bytes));
-    let per = q.per_page.max(1) as usize;
-    let pages = u32::try_from(total.div_ceil(per).max(1)).unwrap_or(u32::MAX);
-    let start = (q.page.saturating_sub(1) as usize).saturating_mul(per);
-    let page = v.into_iter().skip(start).take(per).collect();
-    (page, total, total_bytes, pages)
-}
-
 fn page_url(base: &str, q: &ListQuery, page: u32, select_all: bool) -> String {
     let mut url = format!(
         "{base}?page={page}&per_page={}&sort={}&dir={}&kind={}&hide_recent={}",
@@ -301,15 +334,54 @@ fn kind_str(k: KindFilter) -> &'static str {
     }
 }
 
-async fn read_all(s: &AppState, category: Option<IssueCategory>) -> Result<IssueListVm, WebError> {
-    Ok(s.read
-        .issues(&IssueQuery {
-            category,
-            min_severity: None,
-            offset: 0,
-            limit: READ_LIMIT,
-        })
-        .await?)
+fn read_sort(s: SortKey) -> IssueSort {
+    match s {
+        SortKey::Name => IssueSort::Name,
+        SortKey::Size => IssueSort::Size,
+        SortKey::Age => IssueSort::Age,
+    }
+}
+
+/// The read-model query of one list page: every filter, the sort and the page window.
+fn list_query(
+    category: Option<IssueCategory>,
+    q: &ListQuery,
+    min_age_days: Option<u32>,
+    limit: u64,
+) -> IssueQuery {
+    IssueQuery {
+        category,
+        offset: u64::from(q.page.saturating_sub(1)) * u64::from(q.per_page),
+        limit,
+        ignored: Some(category.is_none()),
+        unit_kind: match q.kind {
+            KindFilter::All => None,
+            KindFilter::Folder => Some(IssueUnitKind::Folder),
+            KindFilter::File => Some(IssueUnitKind::File),
+        },
+        search: q.q.clone(),
+        sort: read_sort(q.sort),
+        descending: q.desc,
+        min_age_days,
+        ..IssueQuery::default()
+    }
+}
+
+/// The issues with these ids (current or ignored), whatever their rank; unknown ids are absent.
+async fn find_issues(s: &AppState, ids: &[IssueId]) -> Result<Vec<IssueRowVm>, WebError> {
+    let mut found = Vec::with_capacity(ids.len());
+    for chunk in ids.chunks(ID_CHUNK) {
+        let listing = s
+            .read
+            .issues(&IssueQuery {
+                ids: chunk.iter().map(|i| i.0.clone()).collect(),
+                limit: ID_CHUNK as u64,
+                ..IssueQuery::default()
+            })
+            .await?;
+        found.extend(listing.rows);
+    }
+    Ok(found)
 }
 
 /// Display-only flag of the list routes: tick every row of the current page (server round
@@ -333,6 +405,7 @@ fn build_list(
     ctx: &Ctx,
     s: &AppState,
     listing: &IssueListVm,
+    hidden: usize,
     q: &ListQuery,
     category: Option<IssueCategory>,
     select_all: bool,
@@ -340,7 +413,11 @@ fn build_list(
     let ignored_mode = category.is_none();
     let now = s.clock.now().as_millis();
     let days = s.settings.hide_recent_days;
-    let (mut rows, total, total_bytes, pages) = select(&listing.rows, q, ignored_mode, now, days);
+    let mut rows: Vec<RowView> = listing.rows.iter().map(|r| row_view(r, now)).collect();
+    let total = usize::try_from(listing.total_count).unwrap_or(usize::MAX);
+    let total_bytes = listing.total_logical_bytes;
+    let pages =
+        u32::try_from(total.div_ceil(q.per_page.max(1) as usize).max(1)).unwrap_or(u32::MAX);
     let base = match category {
         Some(c) => format!("/issues/{}", c.as_str()),
         None => "/ignored".to_string(),
@@ -355,14 +432,6 @@ fn build_list(
             r.checked = true;
         }
     }
-    let hidden = if q.hide_recent {
-        let mut all = q.clone();
-        all.hide_recent = false;
-        select(&listing.rows, &all, ignored_mode, now, days).1 - total
-    } else {
-        0
-    };
-    let truncated = listing.total_count > listing.rows.len() as u64;
     let filters_active = q.q.is_some() || q.kind != KindFilter::All || hidden > 0;
     let empty_key = if on_page > 0 {
         None
@@ -398,7 +467,6 @@ fn build_list(
         kind: kind_str(q.kind),
         hide_recent: q.hide_recent,
         hide_recent_days: days,
-        truncated,
         snapshot_at: listing.session_finished_at_iso.clone(),
         actions: category.map(|c| actions_for(ctx, c)).unwrap_or_default(),
         prev_url: (q.page > 1).then(|| page_url(&base, q, q.page - 1, false)),
@@ -441,8 +509,20 @@ async fn list_response(
     q: &ListQuery,
     select_all: bool,
 ) -> Result<Response, WebError> {
-    let listing = read_all(s, category).await?;
-    let view = build_list(ctx, s, &listing, q, category, select_all);
+    let days = s.settings.hide_recent_days;
+    let min_age = (q.hide_recent && days > 0).then_some(days);
+    let listing = s
+        .read
+        .issues(&list_query(category, q, min_age, u64::from(q.per_page)))
+        .await?;
+    // "Hidden as recent" is the exact difference with the same query without the age filter.
+    let hidden = if min_age.is_some() {
+        let all = s.read.issues(&list_query(category, q, None, 1)).await?;
+        usize::try_from(all.total_count.saturating_sub(listing.total_count)).unwrap_or(0)
+    } else {
+        0
+    };
+    let view = build_list(ctx, s, &listing, hidden, q, category, select_all);
     Ok(render(
         ctx,
         &IssuesPage { ctx, v: &view },
@@ -494,12 +574,24 @@ pub async fn detail(
     let Path((raw_cat, raw_id)) = path.map_err(|_| WebError::not_found())?;
     let category = forms::category(&raw_cat).map_err(|_| WebError::not_found())?;
     let id = forms::issue_id(&raw_id).map_err(|_| WebError::not_found())?;
-    let listing = read_all(&s, Some(category)).await?;
-    let row = listing
+    let row = s
+        .read
+        .issues(&IssueQuery {
+            category: Some(category),
+            ids: vec![id.0.clone()],
+            limit: 1,
+            include_detail: true,
+            ..IssueQuery::default()
+        })
+        .await?
         .rows
         .into_iter()
-        .find(|r| r.id == id.0)
+        .next()
         .ok_or_else(WebError::not_found)?;
+    let annex_nodes = row
+        .paths
+        .first()
+        .map_or_else(Vec::new, |dir| annex_tree(dir, &row.annexes));
     let view = DetailView {
         view: row_view(&row, s.clock.now().as_millis()),
         category_label: ctx.tr.t(category_key(category)),
@@ -508,6 +600,22 @@ pub async fn detail(
         first_seen: row.first_seen_at_iso.clone(),
         potential: bytes(row.potential_bytes),
         potential_counted: bytes(row.potential_counted_bytes),
+        annex_tree: annex_nodes.clone(),
+        annex_close_end: annex_open(&annex_nodes),
+        planned: row
+            .planned
+            .iter()
+            .map(|p| PlannedRow {
+                plan_id: p.plan_id.clone(),
+                plan_status: p.plan_status.clone(),
+                dry_run: p.mode == "dry_run",
+                kind: p.kind.clone(),
+                state: p.state.clone(),
+                attributable: bytes(p.expected_attributable),
+                added: bytes(p.expected_added),
+                torrents: p.torrents,
+            })
+            .collect(),
         row,
     };
     Ok(render(
@@ -533,12 +641,8 @@ pub async fn selection_summary(
     let ids: BTreeSet<IssueId> = forms::issue_ids(&parse_form(f)?.issue_ids)?
         .into_iter()
         .collect();
-    let listing = read_all(&s, None).await?;
-    let found: Vec<&IssueRowVm> = listing
-        .rows
-        .iter()
-        .filter(|r| ids.contains(&IssueId(r.id.clone())))
-        .collect();
+    let wanted: Vec<IssueId> = ids.iter().cloned().collect();
+    let found = find_issues(&s, &wanted).await?;
     let size = bytes(
         found
             .iter()
@@ -581,12 +685,11 @@ async fn resolve_subjects(s: &AppState, f: &IgnoreForm) -> Result<Vec<SubjectKey
         return forms::subjects(&f.subjects);
     }
     let ids: BTreeSet<IssueId> = forms::issue_ids(&f.issue_ids)?.into_iter().collect();
-    let listing = read_all(s, None).await?;
-    let subjects: Vec<String> = listing
-        .rows
-        .iter()
-        .filter(|r| ids.contains(&IssueId(r.id.clone())))
-        .map(|r| r.subject.clone())
+    let wanted: Vec<IssueId> = ids.iter().cloned().collect();
+    let subjects: Vec<String> = find_issues(s, &wanted)
+        .await?
+        .into_iter()
+        .map(|r| r.subject)
         .collect();
     if subjects.len() != ids.len() {
         return Err(WebError::from_class(
@@ -658,93 +761,42 @@ pub async fn verify_content(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use removarr_domain::issue::Outcome;
-    use removarr_reporting::CompletenessVm;
 
-    pub(crate) fn row(
-        id: &str,
-        name: &str,
-        kind: &'static str,
-        bytes: u64,
-        age_days: i64,
-        ignored: bool,
-    ) -> IssueRowVm {
-        IssueRowVm {
-            id: id.into(),
-            category: IssueCategory::Junk,
-            severity: Severity::Warning,
-            outcome: Outcome::KeepManual,
-            subject: format!("p:completed:{name}"),
-            name: name.into(),
-            unit_kind: kind,
-            paths: vec![format!("completed:{name}")],
-            logical_bytes: bytes,
-            potential_bytes: bytes,
-            potential_counted_bytes: bytes,
-            potential_label_key: "space.potential_not_guaranteed",
-            torrent_count: 0,
-            blockers: vec![],
-            completeness: CompletenessVm {
-                state: "complete",
-                missing: vec![],
-            },
-            evidence: vec![],
-            inodes: vec![],
-            first_seen_at: 0,
-            first_seen_at_iso: String::new(),
-            age_basis: 100 * DAY_MS - age_days * DAY_MS,
-            ignored,
-        }
-    }
-
-    fn q() -> ListQuery {
-        ListQueryRaw::default().validate(false).unwrap()
+    fn paths(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| (*s).to_string()).collect()
     }
 
     #[test]
-    fn filters_sort_and_page_without_preselection() {
-        let rows = vec![
-            row("a", "Alpha.nfo", "file", 10, 1, false),
-            row("b", "beta", "folder", 30, 9, false),
-            row("c", "Gamma.txt", "file", 20, 5, false),
-            row("d", "Delta", "file", 99, 50, true),
-        ];
-        let now = 100 * DAY_MS;
-        let (page, total, size, pages) = select(&rows, &q(), false, now, 2);
-        assert_eq!((total, size, pages), (3, 60, 1));
-        assert_eq!(
-            page.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
-            ["b", "c", "a"]
+    fn annexes_form_an_indented_tree_below_the_folder() {
+        let t = annex_tree(
+            "completed:Show",
+            &paths(&[
+                "completed:Show/Subs/en/a.srt",
+                "completed:Show/info.nfo",
+                "completed:Show/Subs/fr/b.srt",
+                "completed:Show/Subs/en/a.srt",
+            ]),
         );
-
-        let mut by_name = q();
-        by_name.sort = SortKey::Name;
-        by_name.desc = false;
-        let (page, ..) = select(&rows, &by_name, false, now, 2);
-        assert_eq!(page[0].name, "Alpha.nfo");
-
-        let mut recent = q();
-        recent.hide_recent = true;
-        let (page, total, ..) = select(&rows, &recent, false, now, 2);
-        assert_eq!(total, 2);
-        assert!(page.iter().all(|r| r.age_days >= 2));
-
-        let mut search = q();
-        search.q = Some("GAMMA".into());
-        assert_eq!(select(&rows, &search, false, now, 2).1, 1);
-
-        let mut folders = q();
-        folders.kind = KindFilter::Folder;
-        assert_eq!(select(&rows, &folders, false, now, 2).1, 1);
-
-        let mut paged = q();
-        paged.per_page = 2;
-        paged.page = 2;
-        let (page, total, _, pages) = select(&rows, &paged, false, now, 2);
-        assert_eq!((page.len(), total, pages), (1, 3, 2));
-
-        let (page, ..) = select(&rows, &q(), true, now, 2);
-        assert_eq!(page.len(), 1);
-        assert_eq!(page[0].id, "d");
+        let flat: Vec<(usize, &str, bool, usize)> = t
+            .iter()
+            .map(|n| (n.depth, n.name.as_str(), n.dir, n.close_before))
+            .collect();
+        assert_eq!(
+            flat,
+            [
+                (0, "Subs", true, 0),
+                (1, "en", true, 0),
+                (2, "a.srt", false, 0),
+                (1, "fr", true, 1),
+                (2, "b.srt", false, 0),
+                (0, "info.nfo", false, 2),
+            ]
+        );
+        assert_eq!(annex_open(&t), 0);
+        assert!(annex_tree("completed:Show", &[]).is_empty());
+        // a path outside the folder keeps its relative path, never the root prefix twice
+        let t = annex_tree("completed:Show", &paths(&["completed:Other/x.nfo"]));
+        assert_eq!(t.len(), 2);
+        assert_eq!(t[0].name, "Other");
     }
 }

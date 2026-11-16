@@ -27,8 +27,9 @@ use removarr_domain::time::Timestamp;
 use removarr_jobs::{CancelResult, Enqueued, JobProgress, RecoveryStatus, RuntimeStatus};
 use removarr_reporting::{
     AutoVm, CompletenessVm, DashboardInputs, DashboardVm, GainTotalsVm, HistoryQuery, HistoryVm,
-    IssueListVm, IssueQuery, IssueRowVm, LogBuffer, LogLevel, PlanReportVm, ReportBundle, SpaceVm,
-    StatsQuery, StatsVm, Urgency, UrgencyVm,
+    IssueListVm, IssueQuery, IssueRowVm, IssueSort, IssueUnitKind, LogBuffer, LogLevel,
+    PlanListQuery, PlanListVm, PlanReportVm, ReportBundle, SpaceVm, StatsQuery, StatsVm, Urgency,
+    UrgencyVm,
 };
 use removarr_workflows::plans::{IssueAction, PlanPreview, PlanRequest};
 use tower::ServiceExt;
@@ -75,6 +76,9 @@ fn row(id: &str, name: &str, category: IssueCategory, ignored: bool) -> IssueRow
         potential_counted_bytes: 1000,
         potential_label_key: "space.potential_not_guaranteed",
         torrent_count: 1,
+        torrents: vec![],
+        annexes: vec![],
+        planned: vec![],
         blockers: vec![],
         completeness: CompletenessVm {
             state: "complete",
@@ -157,14 +161,17 @@ struct Overrides {
     rows: Option<Vec<IssueRowVm>>,
     /// `Some(None)` = no finished scan behind the issue list.
     finished: Option<Option<String>>,
-    total_count: Option<u64>,
     history: Option<HistoryVm>,
     stats: Option<StatsVm>,
     report: Option<PlanReportVm>,
+    plans: Option<PlanListVm>,
 }
 
 #[derive(Default)]
 struct FakeRead {
+    /// Every issue and stats query received (the web layer must not filter by itself).
+    issue_queries: Mutex<Vec<IssueQuery>>,
+    stats_queries: Mutex<Vec<StatsQuery>>,
     calls: AtomicUsize,
     fail_with: Mutex<Option<PortError>>,
     over: Mutex<Overrides>,
@@ -192,8 +199,10 @@ impl ReadModel for FakeRead {
             .clone()
             .unwrap_or_else(dashboard_vm))
     }
+    /// Applies the query the way the SQL read model does (filters, sort, page, exact totals).
     async fn issues(&self, q: &IssueQuery) -> Result<IssueListVm, PortError> {
         self.hit()?;
+        self.issue_queries.lock().unwrap().push(q.clone());
         let all = vec![
             row(ID_A, "Alpha.nfo", IssueCategory::Junk, false),
             row(ID_B, "Beta.txt", IssueCategory::Junk, false),
@@ -206,22 +215,64 @@ impl ReadModel for FakeRead {
         ];
         let o = self.over.lock().unwrap();
         let all = o.rows.clone().unwrap_or(all);
-        let rows: Vec<_> = all
+        let needle = q.search.as_ref().map(|n| n.to_ascii_lowercase());
+        let mut rows: Vec<_> = all
             .into_iter()
             .filter(|r| q.category.is_none_or(|c| c == r.category))
+            .filter(|r| q.ids.is_empty() || q.ids.contains(&r.id))
+            .filter(|r| q.ignored.is_none_or(|i| i == r.ignored))
+            .filter(|r| {
+                q.unit_kind.is_none_or(|k| {
+                    r.unit_kind
+                        == match k {
+                            IssueUnitKind::File => "file",
+                            IssueUnitKind::Folder => "folder",
+                            IssueUnitKind::Torrent => "torrent",
+                            IssueUnitKind::Pair => "pair",
+                        }
+                })
+            })
+            .filter(|r| {
+                needle.as_ref().is_none_or(|n| {
+                    r.name.to_ascii_lowercase().contains(n)
+                        || r.subject.to_ascii_lowercase().contains(n)
+                        || r.paths.iter().any(|p| p.to_ascii_lowercase().contains(n))
+                })
+            })
+            .filter(|r| {
+                q.min_age_days
+                    .is_none_or(|d| r.age_basis <= NOW - i64::from(d) * DAY)
+            })
+            .collect();
+        rows.sort_by(|a, b| {
+            let o = match q.sort {
+                IssueSort::Severity => std::cmp::Ordering::Equal,
+                IssueSort::Name => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+                IssueSort::Size => a.logical_bytes.cmp(&b.logical_bytes),
+                IssueSort::Age => b.age_basis.cmp(&a.age_basis),
+            };
+            (if q.descending { o.reverse() } else { o }).then_with(|| a.id.cmp(&b.id))
+        });
+        let total = rows.len() as u64;
+        let total_logical = rows.iter().map(|r| r.logical_bytes).sum();
+        let limit = if q.limit == 0 { 100 } else { q.limit };
+        let page: Vec<_> = rows
+            .into_iter()
+            .skip(usize::try_from(q.offset).unwrap())
+            .take(usize::try_from(limit).unwrap())
             .collect();
         let finished = o.finished.clone().unwrap_or(None);
         Ok(IssueListVm {
-            total_count: o.total_count.unwrap_or(rows.len() as u64),
-            total_logical_bytes: 0,
+            total_count: total,
+            total_logical_bytes: total_logical,
             total_potential_bytes: 0,
-            offset: 0,
-            limit: q.limit,
+            offset: q.offset,
+            limit,
             issues_session: None,
             session_finished_at: None,
             session_finished_at_iso: finished,
             explanations: vec![],
-            rows,
+            rows: page,
         })
     }
     async fn history(&self, q: &HistoryQuery) -> Result<HistoryVm, PortError> {
@@ -237,8 +288,24 @@ impl ReadModel for FakeRead {
             unfinished_intents: 0,
         })
     }
-    async fn stats(&self, _q: &StatsQuery) -> Result<StatsVm, PortError> {
+    async fn plans(&self, q: &PlanListQuery) -> Result<PlanListVm, PortError> {
         self.hit()?;
+        Ok(self
+            .over
+            .lock()
+            .unwrap()
+            .plans
+            .clone()
+            .unwrap_or(PlanListVm {
+                rows: vec![],
+                offset: q.offset,
+                limit: q.limit,
+                has_more: false,
+            }))
+    }
+    async fn stats(&self, q: &StatsQuery) -> Result<StatsVm, PortError> {
+        self.hit()?;
+        self.stats_queries.lock().unwrap().push(q.clone());
         Ok(self
             .over
             .lock()
@@ -647,6 +714,7 @@ impl World {
     }
 }
 
+mod followup;
 mod ui;
 
 const GET_ROUTES: &[&str] = &[
@@ -662,7 +730,9 @@ const GET_ROUTES: &[&str] = &[
     "/jobs/00000000-0000-0000-0000-000000000007/progress",
     "/auto",
     "/history",
+    "/plans",
     "/stats",
+    "/stats?view=per_day&range=30d",
     "/logs?level=warn&q=scan",
     "/export/latest/json",
     "/export/latest/csv",

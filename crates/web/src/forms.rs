@@ -7,7 +7,7 @@ use removarr_domain::issue::IssueCategory;
 use removarr_domain::path::RootedPath;
 use removarr_domain::plan::PlanHash;
 use removarr_domain::session::ServiceKind;
-use removarr_reporting::LogLevel;
+use removarr_reporting::{LogLevel, StatsRange};
 use removarr_workflows::plans::IssueAction;
 use serde::Deserialize;
 
@@ -330,6 +330,61 @@ impl PageQueryRaw {
     }
 }
 
+/// What the statistics chart plots.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChartMode {
+    Cumulative,
+    PerDay,
+}
+
+impl ChartMode {
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ChartMode::Cumulative => "cumulative",
+            ChartMode::PerDay => "per_day",
+        }
+    }
+}
+
+/// Query of `GET /stats`: `view=cumulative|per_day`, `range=all|7d|30d|90d|365d`.
+#[derive(Debug, Default, Deserialize)]
+pub struct StatsQueryRaw {
+    pub view: Option<String>,
+    pub range: Option<String>,
+}
+
+impl StatsQueryRaw {
+    pub fn validate(&self) -> V<(ChartMode, StatsRange)> {
+        let mode = match self.view.as_deref().map(str::trim) {
+            None | Some("" | "cumulative") => ChartMode::Cumulative,
+            Some("per_day") => ChartMode::PerDay,
+            Some(_) => return Err(WebError::invalid("view", "use cumulative or per_day")),
+        };
+        let range = match self.range.as_deref().map(str::trim) {
+            None | Some("" | "all") => StatsRange::All,
+            Some("7d") => StatsRange::Days7,
+            Some("30d") => StatsRange::Days30,
+            Some("90d") => StatsRange::Days90,
+            Some("365d") => StatsRange::Days365,
+            Some(_) => return Err(WebError::invalid("range", "use all, 7d, 30d, 90d or 365d")),
+        };
+        Ok((mode, range))
+    }
+}
+
+/// Value of the `range` query parameter of a [`StatsRange`].
+#[must_use]
+pub fn range_value(r: StatsRange) -> &'static str {
+    match r {
+        StatsRange::All => "all",
+        StatsRange::Days7 => "7d",
+        StatsRange::Days30 => "30d",
+        StatsRange::Days90 => "90d",
+        StatsRange::Days365 => "365d",
+    }
+}
+
 #[derive(Debug, Default, Deserialize)]
 pub struct LogsQueryRaw {
     pub level: Option<String>,
@@ -463,6 +518,30 @@ pub struct IgnoreForm {
 #[derive(Debug, Default, Deserialize)]
 pub struct LocaleForm {
     pub locale: Option<String>,
+    /// Page the user was on (same-origin relative path); anything else is ignored.
+    pub return_to: Option<String>,
+}
+
+/// Longest accepted return path (path and query).
+pub const MAX_RETURN_BYTES: usize = 512;
+
+impl LocaleForm {
+    /// Where to go after the change: the submitted path when it is a same-origin relative path
+    /// (one leading `/`, no scheme, no host, no control character, no backslash), else `/`.
+    #[must_use]
+    pub fn return_path(&self) -> String {
+        let Some(p) = self.return_to.as_deref() else {
+            return "/".to_string();
+        };
+        let ok = p.len() <= MAX_RETURN_BYTES
+            && p.starts_with('/')
+            && !p.starts_with("//")
+            && !p.contains('\\')
+            && !p
+                .chars()
+                .any(|c| c.is_control() || c.is_whitespace() || !c.is_ascii());
+        if ok { p.to_string() } else { "/".to_string() }
+    }
 }
 
 #[cfg(test)]
@@ -553,6 +632,38 @@ mod tests {
         f.acknowledged_samples = vec![];
         f.plan_hash = Some("short".into());
         assert!(f.validate().is_err());
+    }
+
+    #[test]
+    fn locale_return_path_is_a_same_origin_relative_path() {
+        let ret = |v: &str| {
+            LocaleForm {
+                locale: None,
+                return_to: Some(v.to_string()),
+            }
+            .return_path()
+        };
+        assert_eq!(
+            ret("/issues/junk?page=2&q=a%20b"),
+            "/issues/junk?page=2&q=a%20b"
+        );
+        assert_eq!(ret("/"), "/");
+        for bad in [
+            "//evil.example/x",
+            "https://evil.example/",
+            "http:evil.example",
+            "/\\evil.example",
+            "\\\\evil.example",
+            "evil.example",
+            "",
+            "/a\nSet-Cookie: x=y",
+            "/a b",
+            "/é",
+        ] {
+            assert_eq!(ret(bad), "/", "{bad:?}");
+        }
+        assert_eq!(ret(&format!("/{}", "a".repeat(MAX_RETURN_BYTES))), "/");
+        assert_eq!(LocaleForm::default().return_path(), "/");
     }
 
     #[test]

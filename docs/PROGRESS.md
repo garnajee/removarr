@@ -42,9 +42,9 @@ Status values: `todo`, `running`, `done`, `blocked`.
 | 13 | `18-ux-design` | done | docs/ux-spec.md + docs/ux/wireflows.md, ~330 new translation keys, open questions for 16/19 |
 | 13 | `20-devops` | done | musl static image + ffprobe, non-root, hardlink under single mount verified, compose 127.0.0.1, CI + release (v*.*.* only, multi-arch, SBOM, Trivy), actions pinned by SHA, image ghcr.io/garnajee/removarr-v2 |
 | 14 | `19-web-ui` | done | 943 tests; no custom JS, pinned HTMX 2.0.4 with SHA-256/SRI, 499 keys en=fr, CSRF on forms; resumed after session end |
-| 14 | `16-backend-api` follow-up (web-ui backend gaps 1-5, 8) | running | settings/explorer/media pages accepted as scope cut (not required by MASTER §6) |
+| 14 | `16-backend-api` follow-up (web-ui backend gaps 1-5, 8) | done | 961 tests; localized errors + confirmation re-render, /plans, stats selector, SQL issue queries (no 1000-row cap), detail torrents/annexes/consequences, safe locale return; settings/explorer/media pages = accepted scope cut |
 | 14 | `20-devops` README follow-up (hash-password, $$ in compose, cookie_secure, trusted proxies) | done | compose config validated against fresh .env.example copy |
-| 15 | `22-integration-tests` | todo | |
+| 15 | `22-integration-tests` | running | |
 | 16 | `23-e2e-perf` | todo | |
 | 17 | `24-sec-setup` | todo | |
 | 18 | `25-sec-audit` | todo | |
@@ -66,4 +66,4 @@ Status values: `todo`, `running`, `done`, `blocked`.
 
 ## Last quality gate
 
-After wave 14: fmt OK, clippy -D warnings OK, release build OK, tests OK (943 passed, 1 ignored = opt-in real-ffprobe test). Safety greps OK (deleteFiles literal false only in qbit/control.rs; importMode copy literal). Toolchain: cargo/rustc 1.98.0 (Homebrew, no rustup), Docker 29.7.2, ffprobe available.
+After wave 14 follow-up: fmt OK, clippy -D warnings OK, tests OK (961 passed, 1 ignored = opt-in real-ffprobe test). Safety greps OK (deleteFiles literal false only in qbit/control.rs; importMode copy literal). Toolchain: cargo/rustc 1.98.0 (Homebrew, no rustup), Docker 29.7.2, ffprobe available.

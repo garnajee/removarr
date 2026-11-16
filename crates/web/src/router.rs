@@ -127,6 +127,7 @@ pub fn build(state: AppState) -> Router {
         .route("/issues/{category}", get(issues::list))
         .route("/issues/{category}/{issue_id}", get(issues::detail))
         .route("/ignored", get(issues::ignored))
+        .route("/plans", get(plans::list))
         .route("/plans/{id}", get(plans::show))
         .route("/plans/{id}/confirm", get(plans::confirm))
         .route("/jobs", get(jobs::list))
@@ -172,6 +173,7 @@ pub fn build(state: AppState) -> Router {
             REQUEST_TIMEOUT,
         ))
         .layer(CatchPanicLayer::custom(panic_response))
+        .layer(middleware::from_fn(crate::error::localize))
         .with_state(state);
     crate::auth::security_headers(app)
 }

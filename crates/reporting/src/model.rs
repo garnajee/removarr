@@ -234,6 +234,12 @@ pub struct IssueRowVm {
     pub potential_counted_bytes: u64,
     pub potential_label_key: &'static str,
     pub torrent_count: usize,
+    /// Detail only (`IssueQuery::include_detail`): the torrents of the unit, bounded.
+    pub torrents: Vec<TorrentVm>,
+    /// Detail only: annex files of a folder unit as `root:relative/path`, bounded.
+    pub annexes: Vec<String>,
+    /// Detail only: what stored plans would do (or did) to this unit.
+    pub planned: Vec<PlannedActionVm>,
     pub blockers: Vec<String>,
     pub completeness: CompletenessVm,
     pub evidence: Vec<EvidenceVm>,
@@ -243,6 +249,30 @@ pub struct IssueRowVm {
     pub first_seen_at_iso: String,
     pub age_basis: i64,
     pub ignored: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct TorrentVm {
+    pub hash: String,
+    pub name: String,
+    pub state: String,
+}
+
+/// One action of a stored plan that targets an issue unit.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PlannedActionVm {
+    pub plan_id: String,
+    pub plan_status: String,
+    /// `dry_run` or `live`.
+    pub mode: String,
+    pub index: u32,
+    pub kind: String,
+    pub state: String,
+    pub expected_logical: u64,
+    pub expected_attributable: u64,
+    pub expected_added: u64,
+    /// Torrents the action would remove or touch.
+    pub torrents: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -268,6 +298,36 @@ pub struct OutcomeVm {
     pub success: bool,
     pub needs_attention: bool,
     pub detail: Option<String>,
+}
+
+/// One stored plan in the plan listing.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PlanRowVm {
+    pub id: String,
+    pub status: String,
+    /// `dry_run` or `live`.
+    pub mode: String,
+    /// `user` or `auto_policy`.
+    pub origin: String,
+    pub created_at: i64,
+    pub created_at_iso: String,
+    pub actions: u64,
+    /// Actions verified or executed.
+    pub actions_done: u64,
+    /// Actions failed, compensated or needing review.
+    pub actions_failed: u64,
+    pub planned_attributable: u64,
+    pub planned_added: u64,
+    pub recorded_attributable: u64,
+    pub recorded_added: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PlanListVm {
+    pub rows: Vec<PlanRowVm>,
+    pub offset: u64,
+    pub limit: u64,
+    pub has_more: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

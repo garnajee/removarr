@@ -28,7 +28,7 @@ use removarr_domain::time::Timestamp;
 use removarr_jobs::{CancelResult, Enqueued, JobProgress, RecoveryStatus, RuntimeStatus};
 use removarr_reporting::{
     DashboardInputs, DashboardVm, HistoryQuery, HistoryVm, IssueListVm, IssueQuery, LogBuffer,
-    LogLevel, PlanReportVm, ReportBundle, StatsQuery, StatsVm,
+    LogLevel, PlanListQuery, PlanListVm, PlanReportVm, ReportBundle, StatsQuery, StatsVm,
 };
 use removarr_testkit::clock::FakeClock;
 use removarr_web::auth::{Auth, AuthSettings};
@@ -68,6 +68,9 @@ impl ReadModel for FakeRead {
         Err(unavailable())
     }
     async fn plan_report(&self, _: PlanId) -> Result<PlanReportVm, PortError> {
+        Err(unavailable())
+    }
+    async fn plans(&self, _: &PlanListQuery) -> Result<PlanListVm, PortError> {
         Err(unavailable())
     }
     async fn report(

@@ -1,0 +1,24 @@
+{% import "components.html" as c %}
+<section id="plans" aria-labelledby="plans-title">
+<h1 id="plans-title" tabindex="-1">{{ ctx.tr.t("nav.plans") }}</h1>
+{% if v.rows.is_empty() %}<p class="state">{{ ctx.tr.t("empty.plans") }}</p>{% else %}
+<div class="tablewrap"><table class="stack">
+<caption>{{ ctx.tr.t("plans.caption") }}</caption>
+<thead><tr><th scope="col">{{ ctx.tr.t("plan.created_at") }}</th><th scope="col">{{ ctx.tr.t("plan.status") }}</th><th scope="col">{{ ctx.tr.t("plans.mode") }}</th><th scope="col">{{ ctx.tr.t("plans.actions") }}</th><th scope="col">{{ ctx.tr.t("plans.planned") }}</th><th scope="col">{{ ctx.tr.t("plans.recorded") }}</th></tr></thead>
+<tbody>
+{% for r in v.rows %}<tr>
+<td data-label="{{ ctx.tr.t("plan.created_at") }}"><a href="/plans/{{ r.id }}"><time datetime="{{ r.created_at }}">{{ r.created_at }}</time></a></td>
+<td data-label="{{ ctx.tr.t("plan.status") }}">{{ ctx.coded("plan_status", r.status) }}</td>
+<td data-label="{{ ctx.tr.t("plans.mode") }}">{% if r.dry_run %}{{ ctx.tr.t("mode.dry_run") }}{% else %}{{ ctx.tr.t("mode.live") }}{% endif %}{% if r.auto %} <span class="tag">{{ ctx.tr.t("plans.auto") }}</span>{% endif %}</td>
+<td data-label="{{ ctx.tr.t("plans.actions") }}">{{ ctx.nm("plans.actions_count", r.actions, r.done) }}{% if r.failed > 0 %} - {{ ctx.tn("plans.failed", r.failed) }}{% endif %}</td>
+<td data-label="{{ ctx.tr.t("plans.planned") }}">{{ r.planned }}{% if r.planned_added != "0 B" %} <span class="tag">+{{ r.planned_added }} {{ ctx.tr.t("plans.added") }}</span>{% endif %}</td>
+<td data-label="{{ ctx.tr.t("plans.recorded") }}">{{ r.recorded }}{% if r.recorded_added != "0 B" %} <span class="tag">+{{ r.recorded_added }} {{ ctx.tr.t("plans.added") }}</span>{% endif %}</td>
+</tr>{% endfor %}
+</tbody></table></div>
+{% endif %}
+<nav class="pager" aria-label="{{ ctx.tr.t("issues.pages") }}">
+{% if let Some(u) = v.prev_url %}<a class="btn" href="{{ u }}" rel="prev">{{ ctx.tr.t("issues.prev") }}</a>{% endif %}
+<span>{{ ctx.tn("history.page", v.page) }}</span>
+{% if let Some(u) = v.next_url %}<a class="btn" href="{{ u }}" rel="next">{{ ctx.tr.t("issues.next") }}</a>{% endif %}
+</nav>
+</section>

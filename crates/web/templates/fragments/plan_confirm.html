@@ -2,6 +2,7 @@
 <section id="confirm" class="confirm" aria-labelledby="confirm-title" aria-describedby="confirm-summary">
 <h1 id="confirm-title" tabindex="-1">{{ ctx.tr.t("confirm.title") }}</h1>
 <p>{% if v.mode_dry_run %}{% call c::badge("info", "info-circle", ctx.tr.t("mode.dry_run")) %}{% else %}{% call c::badge("warn", "alert-triangle", ctx.tr.t("mode.live")) %}{% endif %}</p>
+{% if let Some(e) = f.error %}<div id="confirm-error" class="panel-danger" role="alert" tabindex="-1"><h2>{{ ctx.tr.t("confirm.error_title") }}</h2><p>{{ e.message }}</p>{% if !e.details.is_empty() %}<ul>{% for d in e.details %}<li>{{ d }}</li>{% endfor %}</ul>{% endif %}<p class="tag">{{ ctx.tr.t("error.reference") }}: <code>{{ e.correlation }}</code></p></div>{% endif %}
 {% if v.can_approve %}
 <p id="confirm-summary"><span class="bignum">{{ v.actions.len() }}</span> {{ ctx.tr.t("confirm.targets") }}</p>
 <h2>{{ ctx.tr.t("confirm.target") }}</h2>
@@ -21,8 +22,8 @@
 {% call c::csrf(ctx.chrome.csrf) %}
 <input type="hidden" name="plan_hash" value="{{ v.hash }}">
 {% if v.required_torrent_removals > 0 %}<h2>{{ ctx.tr.t("confirm.torrent_removals_title") }}</h2><p>{{ ctx.tr.t("confirm.torrent_removals") }}</p><ul>{% for h in v.torrent_removals %}<li><code translate="no">{{ h }}</code></li>{% endfor %}</ul>{% endif %}
-{% if !v.samples.is_empty() %}<fieldset><legend>{{ ctx.tr.t("confirm.samples") }}</legend>{% for p in v.samples %}<label class="check"><input type="checkbox" name="acknowledged_samples" value="{{ p }}"><code class="path" translate="no">{{ p }}</code></label>{% endfor %}</fieldset>{% endif %}
-{% if !v.unrecoverable.is_empty() %}<fieldset><legend>{{ ctx.tr.t("confirm.unrecoverable") }}</legend>{% for p in v.unrecoverable %}<label class="check"><input type="checkbox" name="acknowledged_unrecoverable" value="{{ p }}"><code class="path" translate="no">{{ p }}</code></label>{% endfor %}</fieldset>{% endif %}
+{% if !v.samples.is_empty() %}<fieldset><legend>{{ ctx.tr.t("confirm.samples") }}</legend>{% for p in v.samples %}<label class="check"><input type="checkbox" name="acknowledged_samples" value="{{ p }}"{% if f.samples.contains(p.as_str()) %} checked{% endif %}><code class="path" translate="no">{{ p }}</code></label>{% endfor %}</fieldset>{% endif %}
+{% if !v.unrecoverable.is_empty() %}<fieldset><legend>{{ ctx.tr.t("confirm.unrecoverable") }}</legend>{% for p in v.unrecoverable %}<label class="check"><input type="checkbox" name="acknowledged_unrecoverable" value="{{ p }}"{% if f.unrecoverable.contains(p.as_str()) %} checked{% endif %}><code class="path" translate="no">{{ p }}</code></label>{% endfor %}</fieldset>{% endif %}
 {% if v.required_count > 0 %}<div class="field"><label for="c-count">{{ ctx.tr.t("confirm.type_count") }}</label><input id="c-count" type="text" name="confirmed_count" inputmode="numeric" pattern="[0-9]*" autocomplete="off" required></div>{% endif %}
 {% if v.required_torrent_removals > 0 %}<div class="field"><label for="c-torrents">{{ ctx.tr.t("confirm.type_torrent_count") }}</label><input id="c-torrents" type="text" name="confirmed_torrent_removals" inputmode="numeric" pattern="[0-9]*" autocomplete="off" required></div>{% endif %}
 <p class="row"><a class="btn" href="/plans/{{ v.id }}">{{ ctx.tr.t("confirm.back") }}</a>

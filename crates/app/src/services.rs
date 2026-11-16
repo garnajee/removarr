@@ -17,8 +17,8 @@ use removarr_jobs::{
     PendingAutoPlans, RuntimeStatus,
 };
 use removarr_reporting::{
-    DashboardInputs, DashboardVm, HistoryQuery, HistoryVm, IssueListVm, IssueQuery, PlanReportVm,
-    ReportBundle, Reporter, StatsQuery, StatsVm,
+    DashboardInputs, DashboardVm, HistoryQuery, HistoryVm, IssueListVm, IssueQuery, PlanListQuery,
+    PlanListVm, PlanReportVm, ReportBundle, Reporter, StatsQuery, StatsVm,
 };
 use removarr_storage::{JournalRepo, PlanRepo, StateRepo};
 use removarr_web::error::{job_failure, plan_failure, port_failure};
@@ -50,6 +50,9 @@ impl ReadModel for ReporterModel {
     }
     async fn plan_report(&self, plan: PlanId) -> Result<PlanReportVm, PortError> {
         self.0.plan_report(plan).await
+    }
+    async fn plans(&self, q: &PlanListQuery) -> Result<PlanListVm, PortError> {
+        self.0.plans(q).await
     }
     async fn report(
         &self,

@@ -152,7 +152,7 @@ pub async fn locale(
         .as_deref()
         .and_then(Locale::parse)
         .ok_or_else(|| WebError::invalid("locale", "use en or fr"))?;
-    let mut r = see_other(&ctx, "/");
+    let mut r = see_other(&ctx, &f.return_path());
     let cookie = format!(
         "{LOCALE_COOKIE}={}; Path=/; Max-Age=31536000; SameSite=Strict",
         l.as_str()

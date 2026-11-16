@@ -2,6 +2,21 @@
 <section id="stats" aria-labelledby="stats-title">
 <h1 id="stats-title" tabindex="-1">{{ ctx.tr.t("nav.stats") }}</h1>
 <p class="muted">{{ ctx.tr.t("stats.intro") }}</p>
+<form method="get" role="search" aria-label="{{ ctx.tr.t("stats.options") }}">
+<div class="row">
+<div class="field"><label for="s-view">{{ ctx.tr.t("stats.view") }}</label><select id="s-view" name="view">
+<option value="cumulative"{% if v.mode == "cumulative" %} selected{% endif %}>{{ ctx.tr.t("stats.view.cumulative") }}</option>
+<option value="per_day"{% if v.mode == "per_day" %} selected{% endif %}>{{ ctx.tr.t("stats.view.per_day") }}</option></select></div>
+<div class="field"><label for="s-range">{{ ctx.tr.t("stats.range") }}</label><select id="s-range" name="range">
+<option value="all"{% if v.range == "all" %} selected{% endif %}>{{ ctx.tr.t("stats.range.all") }}</option>
+<option value="7d"{% if v.range == "7d" %} selected{% endif %}>{{ ctx.tr.t("stats.range.7d") }}</option>
+<option value="30d"{% if v.range == "30d" %} selected{% endif %}>{{ ctx.tr.t("stats.range.30d") }}</option>
+<option value="90d"{% if v.range == "90d" %} selected{% endif %}>{{ ctx.tr.t("stats.range.90d") }}</option>
+<option value="365d"{% if v.range == "365d" %} selected{% endif %}>{{ ctx.tr.t("stats.range.365d") }}</option></select></div>
+<button type="submit">{{ ctx.tr.t("stats.apply") }}</button>
+</div>
+</form>
+{% if v.range != "all" %}<p class="muted">{{ ctx.tr.t("stats.totals_all_time") }}</p>{% endif %}
 <dl class="facts">
 <dt>{{ ctx.tr.t("series.attributable") }}</dt><dd>{{ v.attributable }}</dd>
 <dt>{{ ctx.tr.t("series.added_cost") }}</dt><dd>{{ v.added }}</dd>
@@ -26,7 +41,7 @@
 {% else %}<circle class="mark" cx="{{ p.0 }}" cy="{{ p.1 }}" r="4"/>{% endif %}{% endfor %}
 </g>{% endfor %}
 </svg>
-<figcaption>{{ ctx.tr.t("stats.chart_caption") }}</figcaption>
+<figcaption>{% if v.mode == "per_day" %}{{ ctx.tr.t("stats.chart_caption_per_day") }}{% else %}{{ ctx.tr.t("stats.chart_caption") }}{% endif %}</figcaption>
 </figure>
 <ul class="legend">{% for l in v.chart.lines %}<li><strong>{{ l.label }}</strong> <span class="tag">({{ ctx.coded("marker", l.marker) }})</span></li>{% endfor %}</ul>
 {% endif %}

@@ -213,7 +213,7 @@ pub(crate) fn see_other_flash(ctx: &Ctx, to: &str, code: &'static str) -> Respon
 }
 
 /// `CamelCase` or `Variant:detail` to the `snake_case` part before the colon.
-fn snake(raw: &str) -> String {
+pub(crate) fn snake(raw: &str) -> String {
     let head = raw.split([':', '(', ' ']).next().unwrap_or(raw);
     let mut out = String::with_capacity(head.len() + 4);
     let mut prev_lower = false;

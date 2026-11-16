@@ -6,7 +6,10 @@
 //! (sanitized) under that id and never rendered: no path, no URL, no secret.
 
 use askama::Template;
+use axum::body::Body;
+use axum::extract::Request;
 use axum::http::{HeaderValue, StatusCode, header};
+use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use removarr_domain::error::{DomainError, ErrorClass, PortError};
 use removarr_jobs::JobError;
@@ -205,9 +208,117 @@ pub fn port_failure(e: &PortError) -> UseCaseError {
     UseCaseError::new(e.class.clone(), class_status(&e.class).1, e.detail.clone())
 }
 
+/// Static problem texts written by [`WebError::invalid`] and their translation keys.
+const PROBLEMS: &[(&str, &str)] = &[
+    ("malformed query", "problem.malformed_query"),
+    ("malformed form", "problem.malformed_form"),
+    ("not a valid id", "problem.invalid_id"),
+    ("not a valid issue id", "problem.invalid_id"),
+    ("invalid id", "problem.invalid_id"),
+    ("not a number", "problem.not_a_number"),
+    ("invalid path", "problem.invalid_path"),
+    ("too many items", "problem.too_many"),
+    ("too many items selected", "problem.too_many"),
+    ("too long", "problem.too_long"),
+    ("out of range", "problem.out_of_range"),
+    ("not a boolean", "problem.not_a_boolean"),
+    ("invalid subject", "problem.invalid_subject"),
+    ("select at least one item", "problem.select_one"),
+    ("use name, size or age", "problem.use_sort"),
+    ("use asc or desc", "problem.use_dir"),
+    ("use all, folder or file", "problem.use_kind"),
+    ("use 0 or 1", "problem.use_flag"),
+    ("use en or fr", "problem.use_locale"),
+    ("use cumulative or per_day", "problem.use_view"),
+    ("use all, 7d, 30d, 90d or 365d", "problem.use_range"),
+    ("use debug, info, warn or error", "problem.use_level"),
+    ("unknown service", "problem.unknown_service"),
+    ("unknown category", "problem.unknown_category"),
+    ("unknown action", "problem.unknown_action"),
+    ("required", "problem.required"),
+    ("not a valid plan hash", "problem.invalid_hash"),
+    (
+        "qBittorrent has no rescan command; use refresh",
+        "problem.no_rescan",
+    ),
+];
+
+/// A detail line in the request language: known problem texts and blocker codes are
+/// translated, field names, subject keys and anything unknown are shown as received.
+fn detail_line(tr: &Tr, raw: &str) -> String {
+    let Some((head, tail)) = raw.split_once(": ") else {
+        return raw.to_string();
+    };
+    if let Some((_, key)) = PROBLEMS.iter().find(|(en, _)| *en == tail) {
+        return format!("{head}: {}", tr.t(key));
+    }
+    let blockers: Vec<String> = tail
+        .split(", ")
+        .map(|b| {
+            tr.get(&format!("blocker.{}", crate::handlers::snake(b)))
+                .map_or_else(|| b.to_string(), str::to_string)
+        })
+        .collect();
+    format!("{head}: {}", blockers.join(", "))
+}
+
+/// The error as shown to the user, in the request language (error page and form summaries).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ErrorSummary {
+    pub code: u16,
+    pub message: String,
+    pub details: Vec<String>,
+    pub correlation: String,
+}
+
+impl WebError {
+    /// Translated message, details and correlation id.
+    #[must_use]
+    pub fn summary(&self, tr: &Tr) -> ErrorSummary {
+        ErrorSummary {
+            code: self.status.as_u16(),
+            message: tr.t(self.key).to_string(),
+            details: self.details.iter().map(|d| detail_line(tr, d)).collect(),
+            correlation: self.correlation.clone(),
+        }
+    }
+
+    fn page(&self, locale: Locale) -> String {
+        let tr = Tr::new(locale);
+        let nav: Vec<(&str, &str)> = [
+            ("/", "nav.dashboard"),
+            ("/jobs", "nav.jobs"),
+            ("/history", "nav.history"),
+            ("/plans", "nav.plans"),
+            ("/stats", "nav.stats"),
+        ]
+        .into_iter()
+        .map(|(href, key)| (href, tr.t(key)))
+        .collect();
+        let sum = self.summary(&tr);
+        ErrorPage {
+            lang: locale.as_str(),
+            app: tr.t("app.name"),
+            nav_label: tr.t("nav.main"),
+            nav: &nav,
+            code: sum.code,
+            message: &sum.message,
+            details: &sum.details,
+            correlation: &sum.correlation,
+            reference: tr.t("error.reference"),
+        }
+        .render()
+        .unwrap_or_else(|_| "<!doctype html><title>Error</title><p>Error</p>".to_string())
+    }
+}
+
 #[derive(Debug, Template)]
 #[template(path = "pages/error.html")]
 struct ErrorPage<'a> {
+    lang: &'a str,
+    app: &'a str,
+    nav_label: &'a str,
+    nav: &'a [(&'a str, &'a str)],
     code: u16,
     message: &'a str,
     details: &'a [String],
@@ -217,17 +328,9 @@ struct ErrorPage<'a> {
 
 impl IntoResponse for WebError {
     fn into_response(self) -> Response {
-        let tr = Tr::new(Locale::En);
-        let page = ErrorPage {
-            code: self.status.as_u16(),
-            message: tr.t(self.key),
-            details: &self.details,
-            correlation: &self.correlation,
-            reference: tr.t("error.reference"),
-        };
-        let body = page
-            .render()
-            .unwrap_or_else(|_| "<!doctype html><title>Error</title><p>Error</p>".to_string());
+        // English by default; the `localize` layer re-renders it in the request language
+        // (an error does not know its request).
+        let body = self.page(Locale::En);
         let mut resp = (self.status, axum::response::Html(body)).into_response();
         if let Some(secs) = self.retry_after
             && let Ok(v) = HeaderValue::from_str(&secs.to_string())
@@ -236,8 +339,25 @@ impl IntoResponse for WebError {
         }
         resp.headers_mut()
             .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+        resp.extensions_mut().insert(self);
         resp
     }
+}
+
+/// Layer: answers every [`WebError`] in the language of the request (cookie, then
+/// `Accept-Language`), whichever layer produced it.
+pub async fn localize(req: Request, next: Next) -> Response {
+    let locale = Locale::from_headers(req.headers());
+    let resp = next.run(req).await;
+    if locale == Locale::En {
+        return resp;
+    }
+    let Some(e) = resp.extensions().get::<WebError>().cloned() else {
+        return resp;
+    };
+    let (mut parts, _) = resp.into_parts();
+    parts.headers.remove(header::CONTENT_LENGTH);
+    Response::from_parts(parts, Body::from(e.page(locale)))
 }
 
 #[cfg(test)]
@@ -279,6 +399,22 @@ mod tests {
             class_status(&ErrorClass::Rejected).0,
             StatusCode::BAD_GATEWAY
         );
+    }
+
+    #[test]
+    fn every_problem_text_has_a_translation_in_both_locales() {
+        for (en, key) in PROBLEMS {
+            for l in Locale::ALL {
+                assert!(Tr::new(l).get(key).is_some(), "{key} ({en}) in {l:?}");
+            }
+        }
+        let fr = Tr::new(Locale::Fr);
+        assert_eq!(
+            detail_line(&fr, "sort: use name, size or age"),
+            format!("sort: {}", fr.t("problem.use_sort"))
+        );
+        assert_eq!(detail_line(&fr, "no separator"), "no separator");
+        assert_eq!(detail_line(&fr, "s: Unknown Thing"), "s: Unknown Thing");
     }
 
     #[test]

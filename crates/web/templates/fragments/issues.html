@@ -2,7 +2,6 @@
 <section id="list-region" aria-labelledby="list-heading">
 <h1 id="list-heading" tabindex="-1">{{ v.title }}</h1>
 {% if let Some(t) = v.snapshot_at %}<p class="muted">{{ ctx.tr.t("issues.snapshot_of") }} <time datetime="{{ t }}">{{ t }}</time></p>{% endif %}
-{% if v.truncated %}<p class="state incomplete" role="status">{% call c::badge("warn", "alert-triangle", ctx.tr.t("state.incomplete")) %} {{ ctx.tr.t("issues.truncated") }}</p>{% endif %}
 <form method="get" role="search" aria-label="{{ ctx.tr.t("issues.filters") }}">
 <input type="hidden" name="per_page" value="{{ v.per_page }}">
 <div class="row">

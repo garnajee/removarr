@@ -20,7 +20,7 @@ use removarr_domain::session::ServiceKind;
 use removarr_jobs::{CancelResult, Enqueued, JobProgress, RuntimeStatus};
 use removarr_reporting::{
     DashboardInputs, DashboardVm, HistoryQuery, HistoryVm, IssueListVm, IssueQuery, LogBuffer,
-    PlanReportVm, ReportBundle, StatsQuery, StatsVm,
+    PlanListQuery, PlanListVm, PlanReportVm, ReportBundle, StatsQuery, StatsVm,
 };
 use removarr_workflows::plans::{PlanPreview, PlanRequest};
 
@@ -62,6 +62,8 @@ pub trait ReadModel: Send + Sync {
     async fn history(&self, q: &HistoryQuery) -> Result<HistoryVm, PortError>;
     async fn stats(&self, q: &StatsQuery) -> Result<StatsVm, PortError>;
     async fn plan_report(&self, plan: PlanId) -> Result<PlanReportVm, PortError>;
+    /// Stored plans, newest first (read-only listing).
+    async fn plans(&self, q: &PlanListQuery) -> Result<PlanListVm, PortError>;
     async fn report(
         &self,
         session: Option<SessionId>,
