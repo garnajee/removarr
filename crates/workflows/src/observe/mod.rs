@@ -250,7 +250,7 @@ pub async fn run_scan(
 
     // Funnel: identity -> name+size -> semantic -> samples. No full comparison in a scan.
     let previous = ports.matches.current().await?;
-    let funnel_inventories = inventories.clone();
+    // Inventories move into the blocking task and come back in scan order: no copy is made.
     let (content, ms, chunk, conc, fctl) = (
         Arc::clone(&ports.content),
         cfg.match_settings.clone(),
@@ -258,19 +258,20 @@ pub async fn run_scan(
         cfg.content_read_concurrency,
         ctl.clone(),
     );
-    let funnel = tokio::task::spawn_blocking(move || {
-        let sources: Vec<RootInventory> = funnel_inventories
-            .iter()
-            .filter(|i| i.root.kind() == RootKind::Completed)
-            .cloned()
-            .collect();
-        let targets: Vec<RootInventory> = funnel_inventories
-            .iter()
-            .filter(|i| i.root.kind() == RootKind::Media)
-            .cloned()
-            .collect();
+    let funnel_task = tokio::task::spawn_blocking(move || {
+        let mut slots: Vec<Option<RootInventory>> = vec![None; inventories.len()];
+        let (mut sources, mut targets) = (Vec::new(), Vec::new());
+        for (i, inv) in inventories.into_iter().enumerate() {
+            match inv.root.kind() {
+                RootKind::Completed => sources.push((i, inv)),
+                RootKind::Media => targets.push((i, inv)),
+                _ => slots[i] = Some(inv),
+            }
+        }
+        let (src_idx, sources): (Vec<usize>, Vec<RootInventory>) = sources.into_iter().unzip();
+        let (tgt_idx, targets): (Vec<usize>, Vec<RootInventory>) = targets.into_iter().unzip();
         let verifier = ContentVerifier::new(ReadLimiter::new(conc), chunk);
-        run_funnel(
+        let out = run_funnel(
             FunnelInput {
                 sources: &sources,
                 targets: &targets,
@@ -280,10 +281,20 @@ pub async fn run_scan(
             &verifier,
             &*content,
             &fctl,
-        )
+        );
+        drop(previous);
+        for (i, inv) in src_idx.into_iter().zip(sources) {
+            slots[i] = Some(inv);
+        }
+        for (i, inv) in tgt_idx.into_iter().zip(targets) {
+            slots[i] = Some(inv);
+        }
+        let back: Vec<RootInventory> = slots.into_iter().flatten().collect();
+        (out, back)
     })
     .await
     .map_err(|e| join_error(&e))?;
+    let (funnel, inventories) = funnel_task;
     let candidates = match funnel {
         Ok(out) => out.match_candidates(id),
         Err(e) => {
@@ -311,12 +322,16 @@ pub async fn run_scan(
         now: ports.clock.now(),
         configured_roots: cfg.roots.clone(),
         inventories,
-        qbit: qbit.clone(),
-        arr: arr_obs.clone(),
+        qbit,
+        arr: arr_obs,
         matches: candidates,
         ignored: ports.ignores.ignored().await?,
     };
     let classified = classify(&obs, &cfg.settings)?;
+    // Take the service observations back out for the cache; drop the rest now.
+    let Observation {
+        qbit, arr: arr_obs, ..
+    } = obs;
     ports.issues.replace_current(id, &classified.issues).await?;
     ports.snapshots.save_service_status(id, &statuses).await?;
     finish(ports, &mut session, status).await?;
@@ -394,6 +409,11 @@ pub async fn refresh(
             Err(e) => return Err(e.into()),
         }
     }
+    let matches = ports.matches.current().await?;
+    let ignored = ports.ignores.ignored().await?;
+    // The cache lends its observations to the classifier and gets them back: no copy.
+    let had_qbit = cache.qbit.is_some();
+    let had_arr = cache.arr.is_some();
     let obs = Observation {
         session: session.id,
         session_status: session.status,
@@ -401,12 +421,16 @@ pub async fn refresh(
         now,
         configured_roots: cfg.roots.clone(),
         inventories,
-        qbit: cache.qbit.clone().unwrap_or(QbitObservation::NotConfigured),
-        arr: cache.arr.clone().unwrap_or_default(),
-        matches: ports.matches.current().await?,
-        ignored: ports.ignores.ignored().await?,
+        qbit: cache.qbit.take().unwrap_or(QbitObservation::NotConfigured),
+        arr: cache.arr.take().unwrap_or_default(),
+        matches,
+        ignored,
     };
-    let classified = classify(&obs, &cfg.settings)?;
+    let classified = classify(&obs, &cfg.settings);
+    let Observation { qbit, arr, .. } = obs;
+    cache.qbit = had_qbit.then_some(qbit);
+    cache.arr = had_arr.then_some(arr);
+    let classified = classified?;
     ports
         .issues
         .replace_current(session.id, &classified.issues)

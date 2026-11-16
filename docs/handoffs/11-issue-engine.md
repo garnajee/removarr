@@ -181,3 +181,39 @@ restart refresh), 6 unit tests in `issues::files`. Legacy rows routed here: T-01
 - `cargo tree -p removarr-workflows -e normal --prefix none | grep -E '^removarr-(storage|fs|qbit|arr|jellyfin|config) '`: prints nothing.
 - Not run: `cargo build --workspace --release` (no code outside `crates/workflows` changed; the crate builds in dev).
 - No network beyond crates.io; nothing committed.
+
+## Wave 16 fixes
+
+`crates/workflows/src/observe/mod.rs` only; behaviour, issues, evidence, sessions and persisted rows unchanged.
+
+* `run_scan`: the inventories are moved into the funnel's blocking task (partitioned by root kind, run, reassembled in scan
+  order and returned) instead of three clones; the previous match set is dropped right after the funnel; `Observation`
+  takes `qbit`/`arr_obs` by value and they are moved back out of it for the `ServiceCache` (no second torrent snapshot).
+* `refresh`: `cache.qbit`/`cache.arr` are lent to `Observation` with `take()` and restored after `classify` (also on a
+  classify error), instead of cloned.
+* Not changed: `run_funnel` needs the whole `previous` match set (`FunnelInput.previous: &[MatchCandidate]`), so it is
+  still loaded in full on a rescan; streaming it needs a `matching` change (owner media-match). `classify` builds its own
+  indexes (torrent/path maps, evidence) which dominate the rescan peak; not reduced here.
+
+### Measured (release, perf_budgets, loopback, synthetic)
+| Budget | Before | After |
+|---|---|---|
+| B1 idle RSS | 72.1 MiB | 68.7 MiB (MISS, limit 40) |
+| B2 first scan | 149.2 MiB | 130.9 MiB (PASS) |
+| B2 unchanged rescan | 222.7 MiB | 209.7 MiB (MISS, limit 160) |
+| B4 scan / rescan | 3.8 / 3.3 s | 3.92 / 3.37 s (PASS) |
+| B7 dashboard / list 50 / selection summary | | 1.11 / 16.3 / 2.69 ms (PASS) |
+
+Idle: 30.7 MiB right after start vs 68.7 MiB after the scans; the roughly 38 MiB difference is freed-but-resident heap
+retained by the macOS system allocator from the scan peak (live data after the scan is small: torrents shed, issues in
+SQLite), so most of the idle miss is allocator retention, not live data. Still needs a Linux/musl full-fixture run or an
+allocator decision (architect / devops).
+
+### Remaining rescan gap (open, 50 MiB over budget)
+Candidates for a follow-up: classification index memory in `crates/workflows/src/issues` (index.rs/ctx.rs), a streaming
+`previous` in `matching`, and `save_inventory`/`load_inventory` retention in db-layer. No cross-crate signature was changed.
+
+### Commands
+`cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings` pass; `cargo test --workspace` see the final report.
+`cargo build --release -p removarr`; `cargo test -p removarr-e2e-perf --test perf_budgets -- --ignored --nocapture --test-threads=1`
+(B2 rescan and B1 MISS, rest PASS; the test fails on those two as before).
