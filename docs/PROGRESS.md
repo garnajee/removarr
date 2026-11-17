@@ -59,7 +59,7 @@ Status values: `todo`, `running`, `done`, `blocked`.
 | 19 | targeted re-audit (`25-sec-audit`, fresh agent) | done | validators pass; B1, B2, B3a, B4, B6 PASS; limiter lead mitigated, still deployment-dependent (NEEDS-VALIDATION); 1 confirmed LOW: `storage-journal-scrub-mangles-path-leaves-shared-sanitizer` (journal path leaves rewritten by shared sanitizer -> recovery mislabels unchanged file as Mutated; nothing deleted). `docs/security/reaudit/` |
 | 19 | fix: `04-db-layer` journal path leaves not sanitized | done | `rel` path leaves stored byte-exact unless they contain `://` or `=` (then sanitized -> recovery sees unobservable -> manual review, fail-closed); URLs/secrets elsewhere still redacted; 2 regression tests. Residual: a file literally named like a secret without `://`/`=` is stored as-is |
 | 20 | `27-release-gate` (CP3) | running | |
-| continuous | `21-unit-tests` (from wave 3) | running | pass 1 done (domain, 11 proptests, parity-matrix.md); pass 2 done (+14 tests); pass 3 done (+18 tests; found qbit fail-closed gap, fixed by 08); pass 4 done (+13 tests, no bugs); pass 5 done (+4 tests, no bugs, matrix re-checked) |
+| continuous | `21-unit-tests` (from wave 3) | done | pass 1 done (domain, 11 proptests, parity-matrix.md); pass 2 done (+14 tests); pass 3 done (+18 tests; found qbit fail-closed gap, fixed by 08); pass 4 done (+13 tests, no bugs); pass 5 done (+4 tests, no bugs, matrix re-checked); closed at wave 20: waves 16-19 fixes each shipped their own regression tests (1055 tests), parity matrix not re-run after pass 5 |
 
 ## Incidents
 
