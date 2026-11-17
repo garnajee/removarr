@@ -349,7 +349,6 @@ published to GHCR only when a `v*.*.*` tag is pushed. The `latest` tag only move
 | `docs/release-readiness.md` | Last release assessment |
 | `docs/security/` | Security audit reports |
 | `MASTER-PROMPT.md`, `.claude/agents/` | The specification and the agents that built the application |
-| `old/` | Legacy Python reference used for the business rules |
 
 ## License
 
