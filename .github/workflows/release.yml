@@ -63,7 +63,7 @@ jobs:
           push: false
           tags: removarr:scan
       - name: Container vulnerability scan (fails on fixable HIGH or CRITICAL)
-        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0 (pins setup-trivy and actions/cache by SHA; v0.28.0 referenced the deleted setup-trivy@v0.2.1 tag)
         with:
           image-ref: removarr:scan
           severity: HIGH,CRITICAL

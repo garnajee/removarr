@@ -305,3 +305,12 @@ The user pushes and tags. This gate did neither.
   confirms the re-audit's NEEDS-VALIDATION note on B6. Fix: `/config` back to mode 1777 (sticky) with a comment
   explaining why; the default compose bind mount is unaffected either way. The audit's 1777 remark stays a
   documented, accepted hardening trade-off (single-process container, runtime uid unknown at build time).
+- **C4(a) action pins, checked on 2026-11-17 (read-only GitHub API):** the 6 actions `actions/checkout`, `docker/build-push-action`,
+  `docker/login-action`, `docker/metadata-action`, `docker/setup-buildx-action` and `docker/setup-qemu-action` match their upstream release tags.
+  `aquasecurity/trivy-action` pinned SHA matched v0.28.0, but that version calls `aquasecurity/setup-trivy@v0.2.1`
+  and `actions/cache@v4` by mutable tag, and the `setup-trivy` `v0.2.1` tag **no longer exists** (old tags removed;
+  oldest remaining release v0.2.6, 2026-03-19). The release scan step would have failed, and mutable inner tags
+  defeat the SHA pin. Bumped to trivy-action v0.36.0 (`ed142fd`, released 2026-04-22), which pins
+  setup-trivy v0.2.6 (`3fb12ec`) and actions/cache v5.0.5 (`27d5ce7`) by SHA (both verified against their tags);
+  inputs `image-ref`, `severity`, `ignore-unfixed`, `exit-code` unchanged. C4(b) tag protection and C4(c) proxy
+  setting remain for the user.
