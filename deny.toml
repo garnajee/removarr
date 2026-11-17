@@ -1,10 +1,24 @@
 # cargo-deny policy (dependency vulnerability and source checks). Run: cargo deny check advisories bans sources
 [advisories]
 yanked = "deny"
+# Every ignored advisory carries its reason and must be re-checked at each dependency update.
+ignore = [
+    # SQLite < 3.54.0 can return uninitialized page-cache memory when it opens a database together with a crafted
+    # `-wal` file written by a less trusted party. removarr only opens its own database in /config, written by
+    # itself, so the vulnerable condition does not apply. The patched libsqlite3-sys (>= 0.39) is not yet accepted
+    # by any sqlx release (0.8.6: ^0.30.1, 0.9.0: < 0.38). Remove this entry as soon as sqlx allows >= 0.39.
+    { id = "RUSTSEC-2026-0459", reason = "own database only; no sqlx release accepts libsqlite3-sys >= 0.39 yet" },
+    # basic-toml is unmaintained. It is only used by askama_derive at compile time to read askama's own config
+    # (every askama release up to 0.16.1 still depends on it) and is not part of the binary.
+    { id = "RUSTSEC-2026-0374", reason = "compile-time only (askama_derive); no askama release without it" },
+]
 
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
+# Internal `path` dependencies between workspace crates have no version; allowed because every crate is
+# `publish = false` (workspace.package).
+allow-wildcard-paths = true
 
 [sources]
 unknown-registry = "deny"

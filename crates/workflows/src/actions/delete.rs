@@ -504,9 +504,9 @@ impl Ctx<'_> {
         b: &mut Batch,
     ) -> Result<Mutation, PortError> {
         if !self.simulated
-            && !self
+            && self
                 .approval
-                .is_some_and(|a| a.confirmed_torrent_removals >= 1)
+                .is_none_or(|a| a.confirmed_torrent_removals < 1)
         {
             return Ok(Mutation::Nothing(not_executed(vec![Blocker::new(
                 BlockerCode::ProtectedZone,
