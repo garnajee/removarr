@@ -62,6 +62,8 @@ Status values: `todo`, `running`, `done`, `blocked`.
 | post-gate | C3 container smoke | done | first run 9/29 FAIL (wave-19 `/config` 0700 + named volume copy-up -> app uid cannot open /config), Dockerfile back to 1777 with rationale, re-run 29/29 PASS |
 | post-gate | C4(a) action SHA pins | done | 6/7 match upstream tags; trivy-action v0.28.0 referenced deleted `setup-trivy@v0.2.1` by mutable tag -> bumped to v0.36.0 (inner actions SHA-pinned, verified) |
 | post-gate | C2 Linux/musl full-fixture B1/B2 | done | PASS: B1 26.1 MiB, B2 96.3 / 106.5 MiB (first scan / rescan), all B1-B11 pass on Linux/musl with the full fixture; no waiver needed |
+| post-gate | C1 CI green on main | done | run 44130981688 at f76dd8c; Linux/amd64 + Rust 1.91.1 fixes (clippy lints, readelf static check, cargo-deny 0.20.2 + documented exceptions, runner disk) |
+| post-gate | C5 license | done | AGPL-3.0-or-later; README rewritten |
 | continuous | `21-unit-tests` (from wave 3) | done | pass 1 done (domain, 11 proptests, parity-matrix.md); pass 2 done (+14 tests); pass 3 done (+18 tests; found qbit fail-closed gap, fixed by 08); pass 4 done (+13 tests, no bugs); pass 5 done (+4 tests, no bugs, matrix re-checked); closed at wave 20: waves 16-19 fixes each shipped their own regression tests (1055 tests), parity matrix not re-run after pass 5 |
 
 ## Incidents

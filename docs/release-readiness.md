@@ -321,3 +321,17 @@ The user pushes and tags. This gate did neither.
   B4 8.2 s / 4.5 s, B5 39.1 / 0.12 MiB, B3 0 % CPU and 0 idle log lines, B7 dashboard 2.0 ms, issue list 8-25 ms,
   selection summary 5.6 ms, B9 0.29 s, B10 0 lines, B11 0 entries changed, Argon2 verify p95 23.6 ms. The macOS
   B1/B2 misses were host allocator behaviour; no waiver is needed on the target platform.
+- **C1 CI, 2026-11-17: PASS** on `main` at `f76dd8c` (run 44130981688: dependency advisories, fmt/clippy/test/release
+  build, image build all green). Fixes needed on the way, all found only on the Linux/amd64 runner with Rust 1.91.1:
+  clippy `unnecessary_cast` (`st_mode` is u32 on Linux) and three `nonminimal_bool` lints (rewritten with identical
+  logic, including the torrent-removal approval check); the Dockerfile static check (`ldd` false failure on amd64
+  static-pie, replaced by `readelf` checks for an interpreter and `NEEDED` entries); cargo-deny 0.18.5 could not parse
+  CVSS 4.0 advisories (now 0.20.2); runner disk full while building test binaries (CI and release workflows now build
+  without debug info or incremental compilation). cargo-deny policy: internal path dependencies allowed
+  (`allow-wildcard-paths`, every crate `publish = false`), and two documented advisory exceptions without an upstream
+  fix: RUSTSEC-2026-0459 (bundled SQLite < 3.54; removarr only opens its own database; no sqlx release accepts
+  libsqlite3-sys >= 0.39 yet: re-check at every sqlx update) and RUSTSEC-2026-0374 (basic-toml unmaintained,
+  compile-time only via askama_derive).
+- **C5 license: done.** AGPL-3.0-or-later (`LICENSE`, workspace and crate manifests, README). README rewritten with
+  step-by-step installation. Still open for the user: README screenshot, and whether `old/` (real NAS paths) and
+  `docs/security/` stay if the repository becomes public.
