@@ -11,6 +11,10 @@ permissions:
 env:
   REGISTRY: ghcr.io
   RUST_TOOLCHAIN: "1.91.1"
+  # The workspace builds many test binaries: without these, the runner disk fills up (No space left on device).
+  CARGO_INCREMENTAL: "0"
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  CARGO_PROFILE_TEST_DEBUG: "0"
 
 jobs:
   verify:

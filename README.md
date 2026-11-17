@@ -353,4 +353,8 @@ published to GHCR only when a `v*.*.*` tag is pushed. The `latest` tag only move
 
 ## License
 
-To be defined.
+[GNU Affero General Public License v3.0 or later](LICENSE) (AGPL-3.0-or-later).
+
+You may use, modify, fork and sell this software. If you distribute it, or let users interact with a modified
+version over a network (for example as a hosted service), you must make the complete corresponding source code
+available under the same license.
