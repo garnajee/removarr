@@ -295,3 +295,13 @@ The user pushes and tags. This gate did neither.
 - Proxy deployment facts (whether a proxy exists, what `trusted_proxies` is set to, the Docker peer address) are unknown
   to this gate.
 - Clippy G2 relied on cargo's cached diagnostics, valid because no source changed since the last full build.
+
+## Post-gate updates (orchestrator, after CP3)
+
+- **C3 container smoke, run on 2026-11-17: first FAILED (9/29), then PASSED (29/29) after a fix.** Cause: the wave-19
+  Dockerfile change (`/config` owned by 65532, mode 0700) is copied by Docker onto an empty named volume at every
+  mount, so the app running as another uid (`--user 1000:1000` in the smoke test, `user: "1030:100"`-style in
+  compose with a named volume) could not open `/config` and exited with `config_file: cannot be opened`. This
+  confirms the re-audit's NEEDS-VALIDATION note on B6. Fix: `/config` back to mode 1777 (sticky) with a comment
+  explaining why; the default compose bind mount is unaffected either way. The audit's 1777 remark stays a
+  documented, accepted hardening trade-off (single-process container, runtime uid unknown at build time).

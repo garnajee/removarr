@@ -30,8 +30,11 @@ FROM alpine:${ALPINE_VERSION} AS runtime
 # ffprobe ships in the ffmpeg package. No shell login, no extra tools beyond busybox.
 RUN apk add --no-cache ffmpeg \
     && mkdir -p /config \
-    && chown 65532:65532 /config \
-    && chmod 0700 /config
+    && chmod 1777 /config
+# /config must stay 1777 (sticky, like /tmp): the runtime uid is chosen by `user:` and is unknown
+# at build time, and Docker copies this mode onto an empty named volume at every mount, so 0700
+# owned by 65532 makes a named /config volume unreadable for any other uid (container smoke C3).
+# A bind mount (the default compose) takes the host directory's own ownership instead.
 COPY --from=build /out/removarr /usr/local/bin/removarr
 
 # Never root: the real identity is set at run time by `user: "${UID}:${GID}"` (Compose).
