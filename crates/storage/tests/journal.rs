@@ -300,3 +300,28 @@ async fn live_audit_rows_cannot_be_deleted_or_edited() {
         );
     }
 }
+
+#[tokio::test]
+async fn journal_paths_roundtrip_exactly_but_urls_and_secrets_are_redacted() {
+    let f = fx().await;
+    let p = executing_plan(&f, 7, 1).await;
+    let mut i = intent(70, p.id, 0, JournalMode::Live);
+    i.target = json!({
+        "path": {"root": "media", "rel": "Key: Basic Digest/a.mkv"},
+        "note": "https://tracker.example/announce?passkey=pk123456",
+    });
+    i.observed = json!({
+        "path": {"root": "media", "rel": "Key: Basic Digest/a.mkv"},
+        "url": "http://t.example/x?apikey=tok98765",
+    });
+    f.repos.journal.record_intent(&i).await.unwrap();
+
+    let all = f.repos.journal.for_plan(p.id).await.unwrap();
+    let got = &all[0].0;
+    assert_eq!(got.target["path"], i.target["path"]);
+    assert_eq!(got.observed["path"], i.observed["path"]);
+    let flat = format!("{} {}", got.target, got.observed);
+    for leaked in ["pk123456", "tok98765", "tracker.example", "t.example"] {
+        assert!(!flat.contains(leaked), "{leaked} in {flat}");
+    }
+}

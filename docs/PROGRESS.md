@@ -57,8 +57,8 @@ Status values: `todo`, `running`, `done`, `blocked`.
 | 18 | `25-sec-audit` | done | full audit, standard profile, validators pass (38 coverage units, 2 findings records). 0 confirmed, 1 needs-validation (login limiter shared bucket behind a proxy with empty trusted_proxies), 1 rejected. Source-only (sandbox not enforceable; no parallel builds). Not covered: dependency CVEs (cargo deny needs network), deployment facts. Artifacts in `docs/security/` and `~/security-audit-skill/removarr-v2/run-1` |
 | 19 | `26-sec-fix` | done | limiter lead reproduced locally: once-per-process warning on XFF from untrusted peer + REMOVARR_TRUSTED_PROXIES docs (limits unchanged; proxy facts deployment-dependent). Fixed: ARR history failure now fails the ARR service (B1), auto execution-time check reuses plan-time rule (B2), ffprobe env_clear (B4), single redaction in domain::redact (B5), /config 0700, latest only on non-prerelease tags, /config/ ignored (B6). Not a defect: dry-run recovery (B3a). Open low: temp-link sweep (B3b). 1053 tests |
 | 19 | targeted re-audit (`25-sec-audit`, fresh agent) | done | validators pass; B1, B2, B3a, B4, B6 PASS; limiter lead mitigated, still deployment-dependent (NEEDS-VALIDATION); 1 confirmed LOW: `storage-journal-scrub-mangles-path-leaves-shared-sanitizer` (journal path leaves rewritten by shared sanitizer -> recovery mislabels unchanged file as Mutated; nothing deleted). `docs/security/reaudit/` |
-| 19 | fix: `04-db-layer` journal path leaves not sanitized | running | |
-| 20 | `27-release-gate` | todo | |
+| 19 | fix: `04-db-layer` journal path leaves not sanitized | done | `rel` path leaves stored byte-exact unless they contain `://` or `=` (then sanitized -> recovery sees unobservable -> manual review, fail-closed); URLs/secrets elsewhere still redacted; 2 regression tests. Residual: a file literally named like a secret without `://`/`=` is stored as-is |
+| 20 | `27-release-gate` (CP3) | running | |
 | continuous | `21-unit-tests` (from wave 3) | running | pass 1 done (domain, 11 proptests, parity-matrix.md); pass 2 done (+14 tests); pass 3 done (+18 tests; found qbit fail-closed gap, fixed by 08); pass 4 done (+13 tests, no bugs); pass 5 done (+4 tests, no bugs, matrix re-checked) |
 
 ## Incidents
@@ -79,4 +79,4 @@ Status values: `todo`, `running`, `done`, `blocked`.
 
 ## Last quality gate
 
-After wave 19 fixes: fmt OK, clippy -D warnings OK, tests OK (1053 passed, 0 failed). Safety greps OK (deleteFiles literal false only in qbit/control.rs; single cfg.live_mode() in app/wiring.rs).
+After wave 19 fixes + journal path fix: fmt OK, clippy -D warnings OK, tests OK (1055 passed, 0 failed, 6 ignored). Safety greps OK (deleteFiles literal false only in qbit/control.rs; single cfg.live_mode() in app/wiring.rs).

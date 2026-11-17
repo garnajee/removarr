@@ -170,3 +170,13 @@ include bound values. Test `no_url_or_secret_reaches_any_table_or_the_wal_file` 
   migration refused) + 54 integration tests (60 total) (migrations fresh/reopen/newer-db, scan, plans, journal incl. durability and
   restart recovery, gains/jobs, observations, retention, concurrent readers/writers, secrets).
 - Dependency gates (domain has no tokio/sqlx/reqwest/axum; workflows has no direct storage dep): print nothing.
+
+## Security re-audit fix
+
+Finding `storage-journal-scrub-mangles-path-leaves-shared-sanitizer` (LOW, confirmed).
+
+- Cause: `scrub_value` (`crates/storage/src/codec.rs`) ran the shared sanitizer over every string leaf of journal `target` and `observed`, so a path such as `Key: Basic Digest/a.mkv` was rewritten and recovery then statted the wrong path.
+- Fix (storage only): path data in journal payloads is `RootedPath { root, rel }` (also `DirSnapshot.dir`), so a string leaf under the key `rel` is now stored verbatim. A `rel` leaf containing `://` or `=` (URL or `key=value` credential shape) is still sanitized, which fails safe: recovery sees an unobservable target and asks for manual review. All other leaves, and `root`, keep the shared sanitizer. `DirSnapshot.entries` keys are object keys, which were never rewritten.
+- Residual: a `rel` that carries a secret without `://` or `=` (for example a file literally named `Bearer xyz`) is stored as-is; file names are not credentials in the model, and this is the price of byte-exact paths.
+- Tests: unit `rel_path_leaves_are_verbatim_but_urls_and_secrets_are_not` (codec.rs) and integration `journal_paths_roundtrip_exactly_but_urls_and_secrets_are_redacted` (tests/journal.rs).
+- Gate: `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`; results in the final report.

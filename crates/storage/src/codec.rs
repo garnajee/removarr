@@ -71,14 +71,27 @@ pub(crate) fn scrub(text: &str) -> String {
     removarr_domain::redact::sanitize(text)
 }
 
-/// Applies [`scrub`] to every string leaf of a JSON value.
+/// Applies [`scrub`] to every string leaf of a JSON value, except root-relative paths.
+///
+/// A leaf under the key `rel` (the `RelPath` of a `RootedPath`) is journal path data that crash
+/// recovery stats again, so it must round-trip byte-exact: the shared sanitizer would rewrite
+/// names containing words such as `Digest` or `Key:`. A `rel` leaf is still scrubbed when it
+/// looks like a URL or a key/value credential (`://` or `=`), which fails safe: recovery then
+/// reports the target as unobservable instead of touching it.
 pub(crate) fn scrub_value(v: &Value) -> Value {
     match v {
         Value::String(s) => Value::String(scrub(s)),
         Value::Array(a) => Value::Array(a.iter().map(scrub_value).collect()),
-        Value::Object(m) => {
-            Value::Object(m.iter().map(|(k, v)| (k.clone(), scrub_value(v))).collect())
-        }
+        Value::Object(m) => Value::Object(
+            m.iter()
+                .map(|(k, v)| {
+                    let keep = k == "rel"
+                        && v.as_str()
+                            .is_some_and(|s| !s.contains("://") && !s.contains('='));
+                    (k.clone(), if keep { v.clone() } else { scrub_value(v) })
+                })
+                .collect(),
+        ),
         other => other.clone(),
     }
 }
@@ -102,6 +115,21 @@ mod tests {
         let s = scrub("announce/x?passkey=abc123 {\"password\":\"pw-9\"} Cookie: sid=zzz9");
         for leaked in ["abc123", "pw-9", "zzz9"] {
             assert!(!s.contains(leaked), "{leaked} in {s}");
+        }
+    }
+
+    #[test]
+    fn rel_path_leaves_are_verbatim_but_urls_and_secrets_are_not() {
+        let v = serde_json::json!({
+            "path": {"root": "r", "rel": "Key: Basic Digest/a.mkv"},
+            "note": "https://tracker.example/a?passkey=abc123",
+            "observed": {"rel": "x?apikey=tok999", "u": "http://t.example/announce?passkey=zz1"},
+        });
+        let out = scrub_value(&v);
+        assert_eq!(out["path"], v["path"]);
+        let flat = out.to_string();
+        for leaked in ["abc123", "tok999", "zz1", "tracker.example", "t.example"] {
+            assert!(!flat.contains(leaked), "{leaked} in {flat}");
         }
     }
 
