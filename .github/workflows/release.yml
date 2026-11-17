@@ -30,7 +30,7 @@ jobs:
       - run: cargo test --workspace --locked
       - name: Dependency advisories
         run: |
-          cargo install cargo-deny --version 0.18.5 --locked
+          cargo install cargo-deny --version 0.20.2 --locked
           cargo deny check advisories bans sources
 
   publish:

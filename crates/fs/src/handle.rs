@@ -104,6 +104,7 @@ pub fn lstat_at(dir: impl AsFd, name: &CStr) -> Result<Stat, Errno> {
 
 /// Opens one directory component without following symlinks. A symlink (or a non-directory)
 /// is reported as `Confinement` or `Io(NotADirectory)` after an `lstat` to tell them apart.
+#[allow(clippy::unnecessary_cast)] // `st_mode` is u16 on macOS, u32 on Linux
 pub fn open_dir_at(parent: impl AsFd, name: &CStr) -> Result<OwnedFd, PortError> {
     match openat(parent.as_fd(), name, dir_flags(), Mode::empty()) {
         Ok(fd) => Ok(fd),

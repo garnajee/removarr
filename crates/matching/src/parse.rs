@@ -348,7 +348,7 @@ fn find_years(raw: &str) -> Vec<(usize, u16)> {
     YEAR_RE
         .find_iter(raw)
         .filter(|m| {
-            !(m.start() > 0 && b[m.start() - 1].is_ascii_digit()) && !next_is_digit(b, m.end())
+            (m.start() == 0 || !b[m.start() - 1].is_ascii_digit()) && !next_is_digit(b, m.end())
         })
         .filter_map(|m| m.as_str().parse().ok().map(|y| (m.start(), y)))
         .collect()
@@ -442,7 +442,7 @@ pub fn parse_scene_name(file_name: &str) -> ParsedName {
             .map(|t| t.text)
             .filter(|t| {
                 !SCENE_MARKERS.contains(t)
-                    && !(t.chars().all(|c| c.is_ascii_digit()) && t.len() <= 4)
+                    && (t.len() > 4 || !t.chars().all(|c| c.is_ascii_digit()))
                     && !is_episode_token(t)
             })
             .map(str::to_string)

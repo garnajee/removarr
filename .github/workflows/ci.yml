@@ -54,7 +54,7 @@ jobs:
           rustup default "$RUST_TOOLCHAIN"
       - name: cargo-deny
         run: |
-          cargo install cargo-deny --version 0.18.5 --locked
+          cargo install cargo-deny --version 0.20.2 --locked
           cargo deny check advisories bans sources
 
   docker:

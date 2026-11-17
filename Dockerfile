@@ -23,7 +23,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     triple="$(uname -m)-unknown-linux-musl" \
     && cargo build --release --locked --target "$triple" -p removarr \
     && install -D "target/$triple/release/removarr" /out/removarr \
-    && ! ldd /out/removarr 2>/dev/null | grep -qv "statically linked"
+    && ! readelf -lW /out/removarr | grep -q "Requesting program interpreter" \
+    && ! readelf -dW /out/removarr | grep -q "(NEEDED)"
 
 # ---- runtime -----------------------------------------------------------------------------------
 FROM alpine:${ALPINE_VERSION} AS runtime
