@@ -314,3 +314,10 @@ The user pushes and tags. This gate did neither.
   setup-trivy v0.2.6 (`3fb12ec`) and actions/cache v5.0.5 (`27d5ce7`) by SHA (both verified against their tags);
   inputs `image-ref`, `severity`, `ignore-unfixed`, `exit-code` unchanged. C4(b) tag protection and C4(c) proxy
   setting remain for the user.
+- **C2 Linux/musl full-fixture measurement, run on 2026-11-17: PASS.** Static musl binary built like the Dockerfile
+  (`rust:1.91.1-alpine3.22`, `+crt-static`, `--locked`), `perf_budgets` run inside the container on loopback only,
+  same reference fixture (24,360 files, 8,585 dirs, 1,680 hardlinks, 3,000 torrents, 2,000 Radarr movies).
+  B1 idle RSS **26.1 MiB** (limit 40), B2 first scan **96.3 MiB** and unchanged rescan **106.5 MiB** (limit 160),
+  B4 8.2 s / 4.5 s, B5 39.1 / 0.12 MiB, B3 0 % CPU and 0 idle log lines, B7 dashboard 2.0 ms, issue list 8-25 ms,
+  selection summary 5.6 ms, B9 0.29 s, B10 0 lines, B11 0 entries changed, Argon2 verify p95 23.6 ms. The macOS
+  B1/B2 misses were host allocator behaviour; no waiver is needed on the target platform.
