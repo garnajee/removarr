@@ -1,0 +1,3955 @@
+[
+ {
+  "coverage_id": "Dockerfile%23runtime%20image::docker-compose.yml%23container%20hardening%20and%20mounts::deploy::ATTACK-CLASSES.md%23Obvious%20things",
+  "canonical_refs": {
+   "surface": "Dockerfile#runtime image",
+   "boundary": "docker-compose.yml#container hardening and mounts",
+   "subsystem": "deploy",
+   "attack_class": "ATTACK-CLASSES.md#Obvious things"
+  },
+  "surface": "Dockerfile#runtime image",
+  "boundary": "docker-compose.yml#container hardening and mounts",
+  "subsystem": "deploy",
+  "attack_class": "Obvious things",
+  "starting_paths": [
+   "Dockerfile",
+   ".dockerignore",
+   "docker-compose.yml",
+   ".env.example",
+   "README.md"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Obvious things",
+  "selected_companion_blocks": [
+   "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+   "CLOUD-AND-DEPLOYMENT.md#Host or control-plane capability exposure",
+   "CLOUD-AND-DEPLOYMENT.md#Secret exposure across workload boundaries",
+   "CLOUD-AND-DEPLOYMENT.md#Unexpected service or management-plane reachability",
+   "CLOUD-AND-DEPLOYMENT.md#Universal moves",
+   "CLOUD-AND-DEPLOYMENT.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-tenant app with one admin; no tenant or owner objects"
+   },
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "unsafe_code forbidden workspace-wide, no FFI"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 1,
+  "status": "covered",
+  "agent_id": "h09-deploy",
+  "reviewed_paths": [
+   ".dockerignore",
+   ".env.example",
+   "Dockerfile",
+   "README.md",
+   "crates/app/src/cli.rs",
+   "crates/config/src/load.rs",
+   "docker-compose.yml"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h09-deploy",
+    "reviewed_paths": [
+     "Dockerfile",
+     ".dockerignore"
+    ],
+    "invariant": "Non-root, no secrets in layers, build context",
+    "method": "source",
+    "result": "USER 65532, no secret ARG/ENV, only Cargo files/crates/locales COPYed, .dockerignore excludes .env, .git, db; /config 1777 single-tenant.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h09-deploy",
+    "reviewed_paths": [
+     "docker-compose.yml",
+     "crates/app/src/cli.rs"
+    ],
+    "invariant": "Compose limits capability, exposure, mounts",
+    "method": "source",
+    "result": "read_only, tmpfs, cap_drop ALL, no-new-privileges, 127.0.0.1 publish; no docker.sock/privileged; rw media mount by design.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h09-deploy",
+    "reviewed_paths": [
+     ".env.example",
+     "README.md",
+     "crates/config/src/load.rs"
+    ],
+    "invariant": "Examples don't weaken defaults",
+    "method": "source",
+    "result": "Empty secrets, placeholder hash, cookie_secure default true, trusted_proxies empty.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "_key": "container",
+  "_hunter": "h09-deploy",
+  "_hardening": [
+   "latest tag moved by prerelease tags",
+   "Trivy scans separate amd64 build; arm64 unscanned; no cosign",
+   "Tag protection owner-side",
+   "Base images tag-pinned not digest, unpinned apk ffmpeg",
+   "cargo install cargo-deny each run",
+   "compose lacks mem/pids limits and dedicated network",
+   "/config 1777 and DB umask",
+   "env doubling guidance mismatch ($$ vs quotes)",
+   "./config not in .gitignore"
+  ]
+ },
+ {
+  "coverage_id": "ci%2F.github%2Fworkflows%2Frelease.yml%23publish::ci%2F.github%2Fworkflows%2Fci.yml%23verify%20jobs%20and%20action%20pinning::ci::ATTACK-CLASSES.md%23Wildcard",
+  "canonical_refs": {
+   "surface": "ci/.github/workflows/release.yml#publish",
+   "boundary": "ci/.github/workflows/ci.yml#verify jobs and action pinning",
+   "subsystem": "ci",
+   "attack_class": "ATTACK-CLASSES.md#Wildcard"
+  },
+  "surface": "ci/.github/workflows/release.yml#publish",
+  "boundary": "ci/.github/workflows/ci.yml#verify jobs and action pinning",
+  "subsystem": "ci",
+  "attack_class": "Wildcard",
+  "starting_paths": [
+   ".github/workflows/ci.yml",
+   ".github/workflows/release.yml",
+   "deny.toml",
+   "Cargo.toml",
+   "Cargo.lock",
+   "skills-lock.json"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Wildcard",
+  "selected_companion_blocks": [
+   "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+   "SUPPLY-CHAIN-AND-RELEASE.md#Untrusted code in a privileged workflow",
+   "SUPPLY-CHAIN-AND-RELEASE.md#Workflow command and expression confusion",
+   "SUPPLY-CHAIN-AND-RELEASE.md#Mutable and unbound build inputs",
+   "SUPPLY-CHAIN-AND-RELEASE.md#Build-to-promotion substitution",
+   "SUPPLY-CHAIN-AND-RELEASE.md#Universal moves",
+   "SUPPLY-CHAIN-AND-RELEASE.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-tenant app with one admin; no tenant or owner objects"
+   },
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "unsafe_code forbidden workspace-wide, no FFI"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 1,
+  "status": "covered",
+  "agent_id": "h09-deploy",
+  "reviewed_paths": [
+   ".github/workflows/ci.yml",
+   ".github/workflows/release.yml",
+   "Cargo.toml",
+   "deny.toml",
+   "skills-lock.json"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h09-deploy",
+    "reviewed_paths": [
+     ".github/workflows/ci.yml"
+    ],
+    "invariant": "Fork PR code gets no secrets/write token",
+    "method": "source",
+    "result": "pull_request and push only, contents:read, persist-credentials false, SHA-pinned, no expressions in run:.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h09-deploy",
+    "reviewed_paths": [
+     ".github/workflows/release.yml"
+    ],
+    "invariant": "Only intended trigger publishes with minimal token",
+    "method": "source",
+    "result": "v*.*.* tag push, packages:write only in publish, GITHUB_TOKEN only, verify gate via needs, SBOM and provenance.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h09-deploy",
+    "reviewed_paths": [
+     "deny.toml",
+     "Cargo.toml",
+     "skills-lock.json"
+    ],
+    "invariant": "Dependency source policy",
+    "method": "source",
+    "result": "unknown registry/git deny, yanked deny, --locked builds.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "_key": "ci_release",
+  "_hunter": "h09-deploy"
+ },
+ {
+  "coverage_id": "crates%2Fapp%2Fsrc%23process%20startup%20bind%20healthcheck%20shutdown::crates%2Fweb%2Fsrc%2Fhealth.rs%23probe%20of%20the%20configured%20bind::crates%2Fapp::ATTACK-CLASSES.md%23Obvious%20things",
+  "canonical_refs": {
+   "surface": "crates/app/src#process startup bind healthcheck shutdown",
+   "boundary": "crates/web/src/health.rs#probe of the configured bind",
+   "subsystem": "crates/app",
+   "attack_class": "ATTACK-CLASSES.md#Obvious things"
+  },
+  "surface": "crates/app/src#process startup bind healthcheck shutdown",
+  "boundary": "crates/web/src/health.rs#probe of the configured bind",
+  "subsystem": "crates/app",
+  "attack_class": "Obvious things",
+  "starting_paths": [
+   "crates/app/src/serve.rs",
+   "crates/app/src/cli.rs",
+   "crates/app/src/main.rs",
+   "crates/app/src/wiring.rs",
+   "crates/app/src/services.rs",
+   "crates/app/src/system.rs",
+   "crates/app/src/logging.rs",
+   "crates/web/src/health.rs",
+   "crates/web/src/assets.rs"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Obvious things",
+  "selected_companion_blocks": [
+   "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+   "CLOUD-AND-DEPLOYMENT.md#Unexpected service or management-plane reachability",
+   "CLOUD-AND-DEPLOYMENT.md#Universal moves",
+   "CLOUD-AND-DEPLOYMENT.md#Validation rules",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unsafe recovery and capacity rollback",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-tenant app with one admin; no tenant or owner objects"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 2,
+  "status": "covered",
+  "agent_id": "h12-app",
+  "reviewed_paths": [
+   "Dockerfile",
+   "crates/app/src/cli.rs",
+   "crates/app/src/logging.rs",
+   "crates/app/src/serve.rs",
+   "crates/config/src/load.rs",
+   "crates/jobs/src/runtime.rs",
+   "crates/web/src/assets.rs",
+   "crates/web/src/health.rs",
+   "docker-compose.yml"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h12-app",
+    "reviewed_paths": [
+     "crates/app/src/cli.rs",
+     "crates/config/src/load.rs",
+     "Dockerfile",
+     "docker-compose.yml"
+    ],
+    "invariant": "Healthcheck cannot leave loopback",
+    "method": "source",
+    "result": "health_target falls back to loopback for non-loopback/unspecified; fixed GET /healthz; 64-byte read, 3s timeout.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h12-app",
+    "reviewed_paths": [
+     "crates/app/src/serve.rs",
+     "crates/jobs/src/runtime.rs"
+    ],
+    "invariant": "Recovery before untrusted clients; safe shutdown",
+    "method": "source",
+    "result": "runtime.start() before TcpListener::bind; bind failure shuts runtime; shutdown cancels then aborts, relying on journal recovery.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h12-app",
+    "reviewed_paths": [
+     "crates/app/src/logging.rs"
+    ],
+    "invariant": "Secrets not leaked via logging",
+    "method": "source",
+    "result": "All secrets registered with redactor before install; LogLayer sanitises regardless of EnvFilter; RUST_LOG is trusted operator env.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h12-app",
+    "reviewed_paths": [
+     "crates/web/src/health.rs",
+     "crates/web/src/assets.rs"
+    ],
+    "invariant": "Public handlers disclose nothing",
+    "method": "source",
+    "result": "healthz constant, readyz no detail, static exact-match two embedded files.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "_key": "app_startup",
+  "_hunter": "h12-app",
+  "_added_by": "post-wave-1 critic a265b0242a3216530",
+  "_hardening": [
+   "CI guard for cargo tree -e features,normal",
+   "compile_error for test-support in release",
+   "scheduler starts before bind",
+   "stop_grace_period vs shutdown grace",
+   "Jellyfin per-page memory cap"
+  ]
+ },
+ {
+  "coverage_id": "crates%2Farr%2Fsrc%2Fcommands.rs%23ARR%20commands::crates%2Fworkflows%2Fsrc%2Factions%2Farrcmd.rs%23importMode%20copy%20and%20delete%20media%20file::crates%2Farr::ATTACK-CLASSES.md%23Business%20logic",
+  "canonical_refs": {
+   "surface": "crates/arr/src/commands.rs#ARR commands",
+   "boundary": "crates/workflows/src/actions/arrcmd.rs#importMode copy and delete media file",
+   "subsystem": "crates/arr",
+   "attack_class": "ATTACK-CLASSES.md#Business logic"
+  },
+  "surface": "crates/arr/src/commands.rs#ARR commands",
+  "boundary": "crates/workflows/src/actions/arrcmd.rs#importMode copy and delete media file",
+  "subsystem": "crates/arr",
+  "attack_class": "Business logic",
+  "starting_paths": [
+   "crates/arr/src/commands.rs",
+   "crates/arr/src/http.rs",
+   "crates/workflows/src/actions/arrcmd.rs",
+   "crates/workflows/src/actions/replace.rs"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+  "selected_companion_blocks": [],
+  "excluded_blocks": [
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-tenant app with one admin; no tenant or owner objects"
+   },
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "unsafe_code forbidden workspace-wide, no FFI"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 1,
+  "status": "covered",
+  "agent_id": "h07-svc",
+  "reviewed_paths": [
+   "crates/arr/src/commands.rs",
+   "crates/arr/src/http.rs",
+   "crates/domain/src/ports.rs",
+   "crates/workflows/src/actions/arrcmd.rs",
+   "crates/workflows/src/actions/replace.rs"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h07-svc",
+    "reviewed_paths": [
+     "crates/arr/src/commands.rs",
+     "crates/domain/src/ports.rs"
+    ],
+    "invariant": "ManualImport always importMode=copy",
+    "method": "source",
+    "result": "Only body site is manual_import with literal copy; request type has no mode field; repo-wide grep no other site.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h07-svc",
+    "reviewed_paths": [
+     "crates/arr/src/commands.rs",
+     "crates/arr/src/http.rs",
+     "crates/workflows/src/actions/arrcmd.rs"
+    ],
+    "invariant": "Queue removal keeps client and no blocklist; caps gate",
+    "method": "source",
+    "result": "remove_queue_item_keep_media literal removeFromClient=false, blocklist=false; Granted flag per mutator; LiveMode token for sends; never retried.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h07-svc",
+    "reviewed_paths": [
+     "crates/workflows/src/actions/replace.rs",
+     "crates/domain/src/ports.rs"
+    ],
+    "invariant": "DeleteMediaFile scope",
+    "method": "source",
+    "result": "Media root regular file from plan, after verified import, signature incl nlink, refuses new inode or ARR current file, remove_media_file entry point.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "_key": "arr_commands",
+  "_hunter": "h07-svc",
+  "_hardening": [
+   "No private-IP filter on service URLs (operator config)",
+   "arr Http::scrub misses path-embedded tracker passkeys in ARR free text",
+   "qbit base URL with query/fragment corrupts requests",
+   "rescan/rescan_all lack capability flag",
+   "Secret::ct_eq length timing"
+  ]
+ },
+ {
+  "coverage_id": "crates%2Farr%2Fsrc%2Fhttp.rs%23outbound%20HTTP%20clients::crates%2Fconfig%2Fsrc%2Fload.rs%23service%20URL%20validation::crates%2Fconfig::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+  "canonical_refs": {
+   "surface": "crates/arr/src/http.rs#outbound HTTP clients",
+   "boundary": "crates/config/src/load.rs#service URL validation",
+   "subsystem": "crates/config",
+   "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+  },
+  "surface": "crates/arr/src/http.rs#outbound HTTP clients",
+  "boundary": "crates/config/src/load.rs#service URL validation",
+  "subsystem": "crates/config",
+  "attack_class": "Resource and file handling",
+  "starting_paths": [
+   "crates/qbit/src/http.rs",
+   "crates/arr/src/http.rs",
+   "crates/jellyfin/src/http.rs",
+   "crates/config/src/load.rs"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+  "selected_companion_blocks": [
+   "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+   "CLOUD-AND-DEPLOYMENT.md#Metadata and internal-service reachability",
+   "CLOUD-AND-DEPLOYMENT.md#Universal moves",
+   "CLOUD-AND-DEPLOYMENT.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-tenant app with one admin; no tenant or owner objects"
+   },
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "unsafe_code forbidden workspace-wide, no FFI"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 1,
+  "status": "covered",
+  "agent_id": "h07-svc",
+  "reviewed_paths": [
+   "crates/arr/src/commands.rs",
+   "crates/arr/src/http.rs",
+   "crates/arr/src/read.rs",
+   "crates/config/src/load.rs",
+   "crates/jellyfin/src/http.rs",
+   "crates/qbit/src/http.rs"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h07-svc",
+    "reviewed_paths": [
+     "crates/arr/src/http.rs",
+     "crates/qbit/src/http.rs",
+     "crates/jellyfin/src/http.rs"
+    ],
+    "invariant": "No redirects, no env proxy, TLS default, size caps",
+    "method": "source",
+    "result": "redirect none, no_proxy, no danger_accept; content-length and stream cap; keys in headers.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h07-svc",
+    "reviewed_paths": [
+     "crates/config/src/load.rs",
+     "crates/arr/src/read.rs",
+     "crates/arr/src/commands.rs"
+    ],
+    "invariant": "Service URLs operator config only; no remote URL fetched",
+    "method": "source",
+    "result": "Config::url http/https host no userinfo; DTOs ignore download URLs; only numeric ids reused.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "_key": "outbound_ssrf",
+  "_hunter": "h07-svc"
+ },
+ {
+  "coverage_id": "crates%2Farr%2Fsrc%2Fread.rs%23remote%20JSON%20parsing%20and%20qbit%20reader%20index%20settings::crates%2Fdomain%2Fsrc%2Fports.rs%23remote%20JSON%20to%20domain%20types::crates%2Farr::ATTACK-CLASSES.md%23Business%20logic",
+  "canonical_refs": {
+   "surface": "crates/arr/src/read.rs#remote JSON parsing and qbit reader index settings",
+   "boundary": "crates/domain/src/ports.rs#remote JSON to domain types",
+   "subsystem": "crates/arr",
+   "attack_class": "ATTACK-CLASSES.md#Business logic"
+  },
+  "surface": "crates/arr/src/read.rs#remote JSON parsing and qbit reader index settings",
+  "boundary": "crates/domain/src/ports.rs#remote JSON to domain types",
+  "subsystem": "crates/arr",
+  "attack_class": "Business logic",
+  "starting_paths": [
+   "crates/arr/src/read.rs",
+   "crates/arr/src/dto.rs",
+   "crates/arr/src/time.rs",
+   "crates/qbit/src/reader.rs",
+   "crates/qbit/src/index.rs",
+   "crates/qbit/src/settings.rs",
+   "crates/jellyfin/src/dto.rs"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+  "selected_companion_blocks": [
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-tenant app with one admin; no tenant or owner objects"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 3,
+  "status": "covered",
+  "agent_id": "h15-remote",
+  "reviewed_paths": [
+   "crates/arr/src/dto.rs",
+   "crates/arr/src/read.rs",
+   "crates/arr/src/time.rs",
+   "crates/domain/src/torrent.rs",
+   "crates/jellyfin/src/dto.rs",
+   "crates/jellyfin/src/reader.rs",
+   "crates/qbit/src/http.rs",
+   "crates/qbit/src/index.rs",
+   "crates/qbit/src/parse.rs",
+   "crates/qbit/src/reader.rs",
+   "crates/workflows/src/actions/revalidate.rs",
+   "crates/workflows/src/issues/ctx.rs",
+   "crates/workflows/src/issues/index.rs"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h15-remote",
+    "reviewed_paths": [
+     "crates/qbit/src/parse.rs",
+     "crates/qbit/src/http.rs",
+     "crates/qbit/src/reader.rs",
+     "crates/domain/src/torrent.rs"
+    ],
+    "invariant": "Hostile qBit JSON cannot panic or hide ownership",
+    "method": "source",
+    "result": "saturating/try_from numerics; TorrentHash 40/64 hex lowercase; missing paths Invalid; snapshot fails whole on per-torrent files error.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h15-remote",
+    "reviewed_paths": [
+     "crates/workflows/src/issues/index.rs",
+     "crates/workflows/src/issues/ctx.rs",
+     "crates/qbit/src/index.rs",
+     "crates/workflows/src/actions/revalidate.rs"
+    ],
+    "invariant": "Ownership index fails closed",
+    "method": "source",
+    "result": "Empty file list owns content dir; .!qB candidates for each save/download path; NoRule/Invalid blocks torrent-less deletions; live-holder recheck at execution.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h15-remote",
+    "reviewed_paths": [
+     "crates/arr/src/read.rs",
+     "crates/arr/src/dto.rs",
+     "crates/arr/src/time.rs",
+     "crates/jellyfin/src/reader.rs",
+     "crates/jellyfin/src/dto.rs"
+    ],
+    "invariant": "ARR/Jellyfin parsers panic-free and bounded",
+    "method": "source",
+    "result": "MAX_PAGES bounded with TooLarge; RELEASE_CACHE 10k; checked casts; ASCII-checked slices.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "_key": "remote_json",
+  "_hunter": "h15-remote",
+  "_added_by": "post-wave-2 critic a1dacc3f27cffd4d4",
+  "_hardening": [
+   "locale and flash cookies lack Secure",
+   "qbit snapshot keyed by hash: duplicate hashes in hostile response drop earlier candidates (fail-open under compromised qBit)",
+   "jellyfin lookup stops on empty page",
+   "arr paged early stop and O(files*episodes)",
+   "405/408/static 404 lack no-store"
+  ]
+ },
+ {
+  "coverage_id": "crates%2Fconfig%2Fsrc%2Flive.rs%23cargo%20features%20test-support%20and%20tier5-test-gate::Dockerfile%23release%20build%20graph%20feature%20unification::workspace::ATTACK-CLASSES.md%23Business%20logic",
+  "canonical_refs": {
+   "surface": "crates/config/src/live.rs#cargo features test-support and tier5-test-gate",
+   "boundary": "Dockerfile#release build graph feature unification",
+   "subsystem": "workspace",
+   "attack_class": "ATTACK-CLASSES.md#Business logic"
+  },
+  "surface": "crates/config/src/live.rs#cargo features test-support and tier5-test-gate",
+  "boundary": "Dockerfile#release build graph feature unification",
+  "subsystem": "workspace",
+  "attack_class": "Business logic",
+  "starting_paths": [
+   "crates/config/Cargo.toml",
+   "crates/config/src/live.rs",
+   "crates/workflows/Cargo.toml",
+   "crates/workflows/src/actions/mod.rs",
+   "crates/workflows/src/actions/run.rs",
+   "crates/workflows/src/actions/auto.rs",
+   "crates/app/Cargo.toml",
+   "Dockerfile",
+   "Cargo.toml"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+  "selected_companion_blocks": [
+   "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+   "SUPPLY-CHAIN-AND-RELEASE.md#Mutable and unbound build inputs",
+   "SUPPLY-CHAIN-AND-RELEASE.md#Universal moves",
+   "SUPPLY-CHAIN-AND-RELEASE.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-tenant app with one admin; no tenant or owner objects"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 2,
+  "status": "covered",
+  "agent_id": "h12-app",
+  "reviewed_paths": [
+   ".github/workflows/ci.yml",
+   ".github/workflows/release.yml",
+   "Dockerfile",
+   "crates/app/Cargo.toml",
+   "crates/arr/Cargo.toml",
+   "crates/config/Cargo.toml",
+   "crates/config/src/live.rs",
+   "crates/fs/Cargo.toml",
+   "crates/jellyfin/Cargo.toml",
+   "crates/jobs/Cargo.toml",
+   "crates/qbit/Cargo.toml",
+   "crates/testkit/Cargo.toml",
+   "crates/workflows/Cargo.toml",
+   "crates/workflows/src/actions/auto.rs",
+   "crates/workflows/src/actions/mod.rs",
+   "crates/workflows/src/actions/run.rs"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h12-app",
+    "reviewed_paths": [
+     "crates/config/Cargo.toml",
+     "crates/config/src/live.rs",
+     "crates/jellyfin/Cargo.toml",
+     "crates/arr/Cargo.toml",
+     "crates/qbit/Cargo.toml",
+     "crates/jobs/Cargo.toml",
+     "crates/fs/Cargo.toml",
+     "crates/workflows/Cargo.toml",
+     "crates/app/Cargo.toml",
+     "crates/testkit/Cargo.toml"
+    ],
+    "invariant": "test-support never in shipped binary",
+    "method": "source",
+    "result": "All requests for removarr-config/test-support are dev-dependencies; no default feature; resolver 3 does not unify dev features for non-test builds; for_tests callers only in tests/.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h12-app",
+    "reviewed_paths": [
+     "crates/workflows/Cargo.toml",
+     "crates/workflows/src/actions/mod.rs",
+     "crates/workflows/src/actions/run.rs",
+     "crates/workflows/src/actions/auto.rs"
+    ],
+    "invariant": "tier5-test-gate not compiled into release",
+    "method": "source",
+    "result": "Enabled only via workflows self dev-dependency; cfg-gated items; production execute uses IMPLEMENTED_TIER.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h12-app",
+    "reviewed_paths": [
+     "Dockerfile",
+     ".github/workflows/ci.yml",
+     ".github/workflows/release.yml"
+    ],
+    "invariant": "Release build resolves features from normal graph",
+    "method": "source",
+    "result": "Dockerfile uses cargo build --release --locked -p removarr, no --all-features/--workspace/--all-targets; decided from source and cargo resolver rules; cargo tree is optional owner confirmation.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "_key": "feature_gates",
+  "_hunter": "h12-app",
+  "_added_by": "post-wave-1 critic a265b0242a3216530"
+ },
+ {
+  "coverage_id": "crates%2Fconfig%2Fsrc%2Fload.rs%23env%20and%20TOML%20loading::crates%2Fconfig%2Fsrc%2Fload.rs%23validation%20and%20defaults::crates%2Fconfig::ATTACK-CLASSES.md%23Obvious%20things",
+  "canonical_refs": {
+   "surface": "crates/config/src/load.rs#env and TOML loading",
+   "boundary": "crates/config/src/load.rs#validation and defaults",
+   "subsystem": "crates/config",
+   "attack_class": "ATTACK-CLASSES.md#Obvious things"
+  },
+  "surface": "crates/config/src/load.rs#env and TOML loading",
+  "boundary": "crates/config/src/load.rs#validation and defaults",
+  "subsystem": "crates/config",
+  "attack_class": "Obvious things",
+  "starting_paths": [
+   "crates/config/src/load.rs",
+   "crates/config/src/model.rs",
+   "crates/config/src/live.rs",
+   "crates/app/src/wiring.rs",
+   "examples/removarr.toml",
+   ".env.example"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Obvious things",
+  "selected_companion_blocks": [
+   "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+   "CLOUD-AND-DEPLOYMENT.md#Security-control precedence drift",
+   "CLOUD-AND-DEPLOYMENT.md#Secret exposure across workload boundaries",
+   "CLOUD-AND-DEPLOYMENT.md#Universal moves",
+   "CLOUD-AND-DEPLOYMENT.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-tenant app with one admin; no tenant or owner objects"
+   },
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "unsafe_code forbidden workspace-wide, no FFI"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 1,
+  "status": "covered",
+  "agent_id": "h05-paths",
+  "reviewed_paths": [
+   ".env.example",
+   "crates/app/src/wiring.rs",
+   "crates/config/src/live.rs",
+   "crates/config/src/load.rs",
+   "crates/config/src/model.rs",
+   "crates/config/src/secret.rs",
+   "crates/fs/src/mutate.rs",
+   "crates/web/src/auth/mod.rs",
+   "crates/workflows/src/actions/dry_run.rs",
+   "examples/removarr.toml"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h05-paths",
+    "reviewed_paths": [
+     "crates/config/src/load.rs",
+     "examples/removarr.toml",
+     ".env.example",
+     "crates/config/src/model.rs"
+    ],
+    "invariant": "Defaults fail-safe",
+    "method": "source",
+    "result": "dry_run=true, auto_mode=false, cookie_secure=true, trusted_proxies none, ARR/auto caps off, numeric range checks.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h05-paths",
+    "reviewed_paths": [
+     "crates/config/src/load.rs",
+     "crates/config/src/secret.rs",
+     "crates/web/src/auth/mod.rs"
+    ],
+    "invariant": "Secrets env-only and never printed",
+    "method": "source",
+    "result": "No secret fields in file; session key >=64 chars; hash $argon2 prefix, full PHC parse at startup; Secret redacted.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h05-paths",
+    "reviewed_paths": [
+     "crates/config/src/live.rs",
+     "crates/config/src/model.rs",
+     "crates/app/src/wiring.rs",
+     "crates/workflows/src/actions/dry_run.rs",
+     "crates/fs/src/mutate.rs"
+    ],
+    "invariant": "No Some(LiveMode) when dry_run=true",
+    "method": "source",
+    "result": "LiveMode private field, constructor only via Config::live_mode() when !dry_run; for_tests behind dev-dependency feature; wiring only caller; recording mutators in dry-run.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "_key": "config_load",
+  "_hunter": "h05-paths",
+  "_hardening": [
+   "ffprobe child inherits full environment incl secrets, no env_clear",
+   "ffprobe format/demuxer whitelist missing so playlist-style inputs can open other local files; stderr first line echoed",
+   "ffprobe symlink check is path-based TOCTOU",
+   "Session key validated by length only",
+   "bare docker run exposes 0.0.0.0:8080",
+   "Config fields pub so in-process caller could flip dry_run"
+  ]
+ },
+ {
+  "coverage_id": "crates%2Fconfig%2Fsrc%2Fmapping.rs%23PathMapper%20to_app::crates%2Fconfig%2Fsrc%2Froots.rs%23Roots%20locate%20and%20lexpath%20normalize::crates%2Fconfig::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+  "canonical_refs": {
+   "surface": "crates/config/src/mapping.rs#PathMapper to_app",
+   "boundary": "crates/config/src/roots.rs#Roots locate and lexpath normalize",
+   "subsystem": "crates/config",
+   "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+  },
+  "surface": "crates/config/src/mapping.rs#PathMapper to_app",
+  "boundary": "crates/config/src/roots.rs#Roots locate and lexpath normalize",
+  "subsystem": "crates/config",
+  "attack_class": "Resource and file handling",
+  "starting_paths": [
+   "crates/config/src/mapping.rs",
+   "crates/config/src/roots.rs",
+   "crates/config/src/lexpath.rs",
+   "crates/domain/src/path.rs",
+   "crates/qbit/src/parse.rs"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+  "selected_companion_blocks": [],
+  "excluded_blocks": [
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-tenant app with one admin; no tenant or owner objects"
+   },
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "unsafe_code forbidden workspace-wide, no FFI"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 1,
+  "status": "covered",
+  "agent_id": "h05-paths",
+  "reviewed_paths": [
+   "crates/config/src/lexpath.rs",
+   "crates/config/src/mapping.rs",
+   "crates/config/src/roots.rs",
+   "crates/domain/src/path.rs",
+   "crates/qbit/src/parse.rs"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h05-paths",
+    "reviewed_paths": [
+     "crates/config/src/lexpath.rs",
+     "crates/config/src/mapping.rs"
+    ],
+    "invariant": "Remote paths cannot map outside roots",
+    "method": "source",
+    "result": "normalize_abs rejects '.', '..', NUL, relative; component-boundary longest prefix; Roots::locate renormalizes; unmapped fails closed.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h05-paths",
+    "reviewed_paths": [
+     "crates/config/src/roots.rs",
+     "crates/domain/src/path.rs"
+    ],
+    "invariant": "Roots canonical, distinct, non-nested; RelPath strict",
+    "method": "source",
+    "result": "canonicalize==path, not '/', non-nested, data_dir outside; RelPath rejects bad components.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h05-paths",
+    "reviewed_paths": [
+     "crates/qbit/src/parse.rs"
+    ],
+    "invariant": "qBit paths pass PathMapper",
+    "method": "source",
+    "result": "All path fields through to_app; hostile file names with '..' become Invalid and mutation refused.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "_key": "path_mapping",
+  "_hunter": "h05-paths"
+ },
+ {
+  "coverage_id": "crates%2Fdomain%2Fsrc%23policy%20issue%20evidence%20candidate%20torrent%20session%20jobs%20journal%20fs::crates%2Fdomain%2Fsrc%2Fpolicy.rs%23transition%20and%20eligibility%20rules::crates%2Fdomain::ATTACK-CLASSES.md%23Business%20logic",
+  "canonical_refs": {
+   "surface": "crates/domain/src#policy issue evidence candidate torrent session jobs journal fs",
+   "boundary": "crates/domain/src/policy.rs#transition and eligibility rules",
+   "subsystem": "crates/domain",
+   "attack_class": "ATTACK-CLASSES.md#Business logic"
+  },
+  "surface": "crates/domain/src#policy issue evidence candidate torrent session jobs journal fs",
+  "boundary": "crates/domain/src/policy.rs#transition and eligibility rules",
+  "subsystem": "crates/domain",
+  "attack_class": "Business logic",
+  "starting_paths": [
+   "crates/domain/src/policy.rs",
+   "crates/domain/src/issue.rs",
+   "crates/domain/src/evidence.rs",
+   "crates/domain/src/candidate.rs",
+   "crates/domain/src/torrent.rs",
+   "crates/domain/src/jobs.rs",
+   "crates/domain/src/journal.rs",
+   "crates/domain/src/fs.rs",
+   "crates/domain/src/session.rs"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+  "selected_companion_blocks": [],
+  "excluded_blocks": [
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-tenant app with one admin; no tenant or owner objects"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 3,
+  "status": "covered",
+  "agent_id": "h14-core",
+  "reviewed_paths": [
+   "crates/domain/src/evidence.rs",
+   "crates/domain/src/fs.rs",
+   "crates/domain/src/jobs.rs",
+   "crates/domain/src/journal.rs",
+   "crates/domain/src/plan.rs",
+   "crates/domain/src/policy.rs",
+   "crates/domain/src/session.rs",
+   "crates/fs/src/handle.rs"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h14-core",
+    "reviewed_paths": [
+     "crates/domain/src/policy.rs",
+     "crates/domain/src/plan.rs"
+    ],
+    "invariant": "Capability to ActionKind mapping total; auto eligibility allowlist; is_sample only protects",
+    "method": "source",
+    "result": "capability() exhaustive match; is_auto_eligible explicit allowlist; is_sample false positives only protect.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h14-core",
+    "reviewed_paths": [
+     "crates/domain/src/plan.rs",
+     "crates/domain/src/jobs.rs",
+     "crates/domain/src/session.rs",
+     "crates/domain/src/journal.rs"
+    ],
+    "invariant": "Transition tables cannot skip approval or revive terminal states",
+    "method": "source",
+    "result": "Plan/Job/Session/Action tables: terminal states have no outgoing edges, Draft cannot reach Executing, tests enumerate pairs.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h14-core",
+    "reviewed_paths": [
+     "crates/domain/src/fs.rs",
+     "crates/domain/src/evidence.rs",
+     "crates/fs/src/handle.rs"
+    ],
+    "invariant": "EntrySignature::matches and proof_still_valid bind proofs",
+    "method": "source",
+    "result": "Compares kind, dev, ino, size, mtime, mode, uid, gid, nlink for deletions; no ctime (hardening, needs non-operator writer).",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "_key": "domain_sm",
+  "_hunter": "h14-core",
+  "_added_by": "post-wave-2 critic a1dacc3f27cffd4d4",
+  "_hardening": [
+   "EntrySignature has no ctime",
+   "samples_match allocation from config sample size",
+   "dedupe key 64-bit truncation",
+   "LIKE on serialized evidence JSON can flip incomplete flag cosmetically"
+  ]
+ },
+ {
+  "coverage_id": "crates%2Fdomain%2Fsrc%2Farr%2Fcorrelate.rs%23remote%20data%20to%20ARR%20correlation%20to%20issues%20to%20plans%20to%20deletion::crates%2Fworkflows%2Fsrc%2Fissues%2Farrgate.rs%23ARR-validated%20deletion%20chain::crates%2Fworkflows::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries",
+  "canonical_refs": {
+   "surface": "crates/domain/src/arr/correlate.rs#remote data to ARR correlation to issues to plans to deletion",
+   "boundary": "crates/workflows/src/issues/arrgate.rs#ARR-validated deletion chain",
+   "subsystem": "crates/workflows",
+   "attack_class": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries"
+  },
+  "surface": "crates/domain/src/arr/correlate.rs#remote data to ARR correlation to issues to plans to deletion",
+  "boundary": "crates/workflows/src/issues/arrgate.rs#ARR-validated deletion chain",
+  "subsystem": "crates/workflows",
+  "attack_class": "Chained vulnerabilities and trust boundaries",
+  "starting_paths": [
+   "crates/domain/src/arr/correlate.rs",
+   "crates/domain/src/arr/mod.rs",
+   "crates/domain/src/arr/snapshot.rs",
+   "crates/domain/src/gain.rs",
+   "crates/workflows/src/issues/arrgate.rs",
+   "crates/workflows/src/issues/input.rs",
+   "crates/workflows/src/issues/index.rs",
+   "crates/workflows/src/plans/arrplans.rs",
+   "crates/workflows/src/plans/fsplans.rs",
+   "crates/workflows/src/actions/arrcmd.rs",
+   "crates/workflows/src/actions/delete.rs",
+   "crates/matching/src/numbering.rs",
+   "crates/matching/src/reject.rs",
+   "crates/matching/src/checks.rs",
+   "crates/qbit/src/index.rs",
+   "crates/jellyfin/src/recognition.rs"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+  "selected_companion_blocks": [
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Poison-record and head-of-line blocking",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-tenant app with one admin; no tenant or owner objects"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 5,
+  "status": "covered",
+  "agent_id": "h18-chain",
+  "reviewed_paths": [
+   "crates/arr/src/read.rs",
+   "crates/domain/src/arr/correlate.rs",
+   "crates/domain/src/arr/snapshot.rs",
+   "crates/domain/src/gain.rs",
+   "crates/jellyfin/src/recognition.rs",
+   "crates/matching/src/numbering.rs",
+   "crates/qbit/src/index.rs",
+   "crates/workflows/src/actions/auto.rs",
+   "crates/workflows/src/actions/replace.rs",
+   "crates/workflows/src/actions/revalidate.rs",
+   "crates/workflows/src/issues/arrgate.rs",
+   "crates/workflows/src/observe/services.rs",
+   "crates/workflows/src/plans/arrplans.rs",
+   "crates/workflows/src/plans/facts.rs",
+   "crates/workflows/src/plans/fsplans.rs"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h18-chain",
+    "reviewed_paths": [
+     "crates/domain/src/arr/correlate.rs",
+     "crates/workflows/src/issues/arrgate.rs",
+     "crates/workflows/src/plans/facts.rs",
+     "crates/workflows/src/observe/services.rs",
+     "crates/arr/src/read.rs"
+    ],
+    "invariant": "ARR data cannot unlock a deletion another step blocks",
+    "method": "source",
+    "result": "Correlator Ambiguous on unidentified/second media; library all-or-nothing and fail closed; sole fail-open step history_for_download unwrap_or_default gated by fresh preview, fingerprint, replacement preconditions: hardening.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h18-chain",
+    "reviewed_paths": [
+     "crates/workflows/src/plans/arrplans.rs",
+     "crates/workflows/src/actions/auto.rs",
+     "crates/workflows/src/actions/revalidate.rs",
+     "crates/domain/src/arr/snapshot.rs"
+    ],
+    "invariant": "Execution revalidation at least as strict as plan-time",
+    "method": "source",
+    "result": "Execution arr_validated_blockers accepts any rejection reason vs plan-time is_not_upgrade_reason; pinned by fingerprint and EntryUnchanged; needs ARR state change, no lower-trust principal: hardening.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h18-chain",
+    "reviewed_paths": [
+     "crates/workflows/src/plans/arrplans.rs",
+     "crates/matching/src/numbering.rs",
+     "crates/workflows/src/actions/replace.rs"
+    ],
+    "invariant": "Numbering mistakes cannot cause wrong-episode replacement",
+    "method": "source",
+    "result": "ARR episode assignment is authority; CoverageProof; NumberingMismatch blocks; DeleteMediaFile only after verified import, never new inode.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h18-chain",
+    "reviewed_paths": [
+     "crates/qbit/src/index.rs",
+     "crates/jellyfin/src/recognition.rs",
+     "crates/domain/src/gain.rs",
+     "crates/workflows/src/plans/fsplans.rs"
+    ],
+    "invariant": "Ownership, recognition, gains do not authorize deletion",
+    "method": "source",
+    "result": "PathIndex by path unions hashes; Jellyfin recognition report-only; gains display only.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "_key": "arr_chain",
+  "_hunter": "h18-chain",
+  "_added_by": "post-wave-4 critics a6bc4f591d11ee79b and af4f83ff2a04ffc23",
+  "_hardening": [
+   "observe/services.rs history_for_download unwrap_or_default marks failure as no history",
+   "arr_validated_blockers execution vs planning strictness and no episode coverage recheck",
+   "DeleteReplaced has no NoArrImport guard (INV-16 text concerns hardlink creation, so not a violation as written)",
+   "replace_one multi-episode old file extra episode not in coverage proof",
+   "DeleteReplaced no explain_numbering/assess_replacement",
+   "arr paged trusts totalRecords"
+  ]
+ },
+ {
+  "coverage_id": "crates%2Fdomain%2Fsrc%2Fplan.rs%23ActionPlan%20canonical%20JSON%20and%20PlanHash%3A%3Acompute%20%2F%20HashedPlan%3A%3Afrom_parts::crates%2Fworkflows%2Fsrc%2Factions%2Frun.rs%23fields%20the%20runner%20reads%20after%20approval%20versus%20hashed%20fields::crates%2Fdomain::ATTACK-CLASSES.md%23Business%20logic",
+  "canonical_refs": {
+   "surface": "crates/domain/src/plan.rs#ActionPlan canonical JSON and PlanHash::compute / HashedPlan::from_parts",
+   "boundary": "crates/workflows/src/actions/run.rs#fields the runner reads after approval versus hashed fields",
+   "subsystem": "crates/domain",
+   "attack_class": "ATTACK-CLASSES.md#Business logic"
+  },
+  "surface": "crates/domain/src/plan.rs#ActionPlan canonical JSON and PlanHash::compute / HashedPlan::from_parts",
+  "boundary": "crates/workflows/src/actions/run.rs#fields the runner reads after approval versus hashed fields",
+  "subsystem": "crates/domain",
+  "attack_class": "Business logic",
+  "starting_paths": [
+   "crates/domain/src/plan.rs",
+   "crates/domain/src/canonical.rs",
+   "crates/storage/src/repos",
+   "crates/workflows/src/actions/run.rs",
+   "crates/workflows/src/actions/revalidate.rs"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+  "selected_companion_blocks": [],
+  "excluded_blocks": [
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-tenant app with one admin; no tenant or owner objects"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 2,
+  "status": "covered",
+  "agent_id": "h10-plans",
+  "reviewed_paths": [
+   "crates/domain/src/canonical.rs",
+   "crates/domain/src/plan.rs",
+   "crates/storage/migrations/0002_plans_journal_jobs.sql",
+   "crates/storage/src/repos/plans.rs",
+   "crates/workflows/src/actions/mod.rs",
+   "crates/workflows/src/actions/run.rs",
+   "crates/workflows/src/plans/planner.rs"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h10-plans",
+    "reviewed_paths": [
+     "crates/domain/src/plan.rs",
+     "crates/domain/src/canonical.rs"
+    ],
+    "invariant": "Every field the runner reads is inside the hashed canonical form",
+    "method": "source",
+    "result": "PlanHash::compute hashes canonical_json of the whole ActionPlan; no serde(skip) in plan.rs; canonical writer sorts keys; only Built.expected_gains is unhashed and used only by preview.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h10-plans",
+    "reviewed_paths": [
+     "crates/storage/src/repos/plans.rs",
+     "crates/storage/migrations/0002_plans_journal_jobs.sql",
+     "crates/workflows/src/plans/planner.rs",
+     "crates/workflows/src/actions/run.rs"
+    ],
+    "invariant": "Mutable columns cannot change what is executed; tamper detected",
+    "method": "source",
+    "result": "PlanStore::get re-verifies with HashedPlan::from_parts on load; triggers make body/hash/mode/expiry immutable and require approval row; ticket and run.rs recheck. A DB-file writer who drops triggers can forge consistent body+hash (unkeyed SHA-256): hardening.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h10-plans",
+    "reviewed_paths": [
+     "crates/workflows/src/actions/run.rs",
+     "crates/workflows/src/actions/mod.rs"
+    ],
+    "invariant": "Runner family dispatch total",
+    "method": "source",
+    "result": "family() total; mixed families invalidate before mutation.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "_key": "plan_hash",
+  "_hunter": "h10-plans",
+  "_added_by": "post-wave-1 critic a265b0242a3216530",
+  "_hardening": [
+   "PlanHash unkeyed SHA-256: DB-file writer who drops triggers can forge plan+approval",
+   "Observe-lane queue no depth cap",
+   "service::rescan media=Some unchecked (not web-reachable)",
+   "media search no in-flight cap",
+   "Plan expiry not re-checked between steps"
+  ]
+ },
+ {
+  "coverage_id": "crates%2Ffs%2Fsrc%2Fcontent.rs%23samples_match%20and%20full_compare::crates%2Fworkflows%2Fsrc%2Fissues%2Fhardlink.rs%23signature-bound%20content%20proofs::crates%2Ffs::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+  "canonical_refs": {
+   "surface": "crates/fs/src/content.rs#samples_match and full_compare",
+   "boundary": "crates/workflows/src/issues/hardlink.rs#signature-bound content proofs",
+   "subsystem": "crates/fs",
+   "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+  },
+  "surface": "crates/fs/src/content.rs#samples_match and full_compare",
+  "boundary": "crates/workflows/src/issues/hardlink.rs#signature-bound content proofs",
+  "subsystem": "crates/fs",
+  "attack_class": "Resource and file handling",
+  "starting_paths": [
+   "crates/fs/src/content.rs",
+   "crates/fs/src/inventory.rs",
+   "crates/fs/src/perm.rs",
+   "crates/fs/src/lib.rs",
+   "crates/fs/src/gate.rs",
+   "crates/web/src/handlers/issues.rs",
+   "crates/workflows/src/issues/hardlink.rs"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+  "selected_companion_blocks": [
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-tenant app with one admin; no tenant or owner objects"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 3,
+  "status": "covered",
+  "agent_id": "h14-core",
+  "reviewed_paths": [
+   "crates/domain/src/jobs.rs",
+   "crates/fs/src/content.rs",
+   "crates/fs/src/inventory.rs",
+   "crates/fs/src/perm.rs",
+   "crates/web/src/forms.rs",
+   "crates/web/src/handlers/issues.rs",
+   "crates/workflows/src/issues/hardlink.rs"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h14-core",
+    "reviewed_paths": [
+     "crates/fs/src/content.rs"
+    ],
+    "invariant": "open_regular confined, refuses symlinks, no FIFO hang",
+    "method": "source",
+    "result": "dirfd walk, lstat then openat RDONLY|NOFOLLOW|NONBLOCK, fstat identity rematch.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h14-core",
+    "reviewed_paths": [
+     "crates/fs/src/content.rs"
+    ],
+    "invariant": "pread offsets and buffers bounded; compare bound to signature",
+    "method": "source",
+    "result": "Sizes from trusted config; short read gives Changed; fstat rechecked; in-place same-size same-mtime rewrite undetected (hardening).",
+    "artifact": null
+   },
+   {
+    "agent_id": "h14-core",
+    "reviewed_paths": [
+     "crates/web/src/handlers/issues.rs",
+     "crates/web/src/forms.rs",
+     "crates/workflows/src/issues/hardlink.rs",
+     "crates/domain/src/jobs.rs"
+    ],
+    "invariant": "verify-content cannot read arbitrary files or amplify",
+    "method": "source",
+    "result": "Issue ids validated <=2000, paths only from stored inventory, only Identical counts while signatures match.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h14-core",
+    "reviewed_paths": [
+     "crates/fs/src/perm.rs",
+     "crates/fs/src/inventory.rs"
+    ],
+    "invariant": "Permission/inventory logic cannot write",
+    "method": "source",
+    "result": "Pure computation on stored signatures; no syscalls.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "_key": "fs_content",
+  "_hunter": "h14-core",
+  "_added_by": "post-wave-2 critic a1dacc3f27cffd4d4"
+ },
+ {
+  "coverage_id": "crates%2Ffs%2Fsrc%2Fmutate.rs%23replace_with_hardlink::crates%2Ffs%2Fsrc%2Fhandle.rs%23dirfd%20confinement%20and%20signature%20checks::crates%2Ffs::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+  "canonical_refs": {
+   "surface": "crates/fs/src/mutate.rs#replace_with_hardlink",
+   "boundary": "crates/fs/src/handle.rs#dirfd confinement and signature checks",
+   "subsystem": "crates/fs",
+   "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+  },
+  "surface": "crates/fs/src/mutate.rs#replace_with_hardlink",
+  "boundary": "crates/fs/src/handle.rs#dirfd confinement and signature checks",
+  "subsystem": "crates/fs",
+  "attack_class": "Resource and file handling",
+  "starting_paths": [
+   "crates/fs/src/mutate.rs",
+   "crates/fs/src/handle.rs",
+   "crates/workflows/src/actions/consolidate.rs",
+   "crates/workflows/src/actions/replace.rs"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+  "selected_companion_blocks": [],
+  "excluded_blocks": [
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-tenant app with one admin; no tenant or owner objects"
+   },
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "unsafe_code forbidden workspace-wide, no FFI"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 1,
+  "status": "covered",
+  "agent_id": "h04-fs",
+  "reviewed_paths": [
+   "crates/domain/src/path.rs",
+   "crates/fs/src/handle.rs",
+   "crates/fs/src/mutate.rs",
+   "crates/workflows/src/actions/consolidate.rs",
+   "crates/workflows/src/actions/replace.rs"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h04-fs",
+    "reviewed_paths": [
+     "crates/fs/src/handle.rs",
+     "crates/domain/src/path.rs"
+    ],
+    "invariant": "Every component reached by openat O_NOFOLLOW from root dirfd",
+    "method": "source",
+    "result": "open_abs_dir/open_rel_dir per component NOFOLLOW|DIRECTORY; '.' '..' empty NUL refused; final component only via *at calls.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h04-fs",
+    "reviewed_paths": [
+     "crates/fs/src/mutate.rs"
+    ],
+    "invariant": "replace_with_hardlink cannot link/replace other than planned, nor outside completed->media",
+    "method": "source",
+    "result": "check_direction; full signature lstat compare; linkat no follow to unique temp, lstat proves inode, target rechecked before atomic renameat; residual microsecond window requires writer already able to replace target.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h04-fs",
+    "reviewed_paths": [
+     "crates/workflows/src/actions/consolidate.rs",
+     "crates/workflows/src/actions/replace.rs"
+    ],
+    "invariant": "Action modules pass exact plan source/target and revalidate",
+    "method": "source",
+    "result": "Plan EntryUnchanged preconditions keyed by exact paths, two revalidations, journal intent, mutator rechecks.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "_key": "fs_replace",
+  "_hunter": "h04-fs",
+  "_hardening": [
+   "set_mode file branch lacks O_NONBLOCK (FIFO swap hang)",
+   "Leftover .removarr-link-* temp hardlink after crash never swept",
+   "Content equality bound only by metadata between compare and replace",
+   "remove_tree top dir device not compared with parent",
+   "Bind mounts below root not detected"
+  ]
+ },
+ {
+  "coverage_id": "crates%2Ffs%2Fsrc%2Fmutate.rs%23unlink_regular%20remove_tree%20set_mode::crates%2Ffs%2Fsrc%2Fhandle.rs%23root%20confinement%20and%20symlink%20refusal::crates%2Ffs::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+  "canonical_refs": {
+   "surface": "crates/fs/src/mutate.rs#unlink_regular remove_tree set_mode",
+   "boundary": "crates/fs/src/handle.rs#root confinement and symlink refusal",
+   "subsystem": "crates/fs",
+   "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+  },
+  "surface": "crates/fs/src/mutate.rs#unlink_regular remove_tree set_mode",
+  "boundary": "crates/fs/src/handle.rs#root confinement and symlink refusal",
+  "subsystem": "crates/fs",
+  "attack_class": "Resource and file handling",
+  "starting_paths": [
+   "crates/fs/src/mutate.rs",
+   "crates/fs/src/handle.rs",
+   "crates/fs/src/scan.rs",
+   "crates/workflows/src/actions/delete.rs",
+   "crates/workflows/src/actions/stalled.rs"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+  "selected_companion_blocks": [],
+  "excluded_blocks": [
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-tenant app with one admin; no tenant or owner objects"
+   },
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "unsafe_code forbidden workspace-wide, no FFI"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 1,
+  "status": "covered",
+  "agent_id": "h04-fs",
+  "reviewed_paths": [
+   "crates/fs/src/handle.rs",
+   "crates/fs/src/mutate.rs",
+   "crates/fs/src/scan.rs",
+   "crates/workflows/src/actions/delete.rs",
+   "crates/workflows/src/actions/stalled.rs"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h04-fs",
+    "reviewed_paths": [
+     "crates/fs/src/mutate.rs"
+    ],
+    "invariant": "unlink never follows symlink or removes directory",
+    "method": "source",
+    "result": "open_parent no-follow; lstat_regular refuses symlinks/dirs; signature incl nlink; unlinkat with empty flags.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h04-fs",
+    "reviewed_paths": [
+     "crates/fs/src/mutate.rs",
+     "crates/fs/src/scan.rs"
+    ],
+    "invariant": "remove_tree stays in planned tree",
+    "method": "source",
+    "result": "Subdirs via NOFOLLOW openat with fstat dev/ino compare; mount boundary refuses; observed map equals plan snapshot; per-entry dev/ino recheck.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h04-fs",
+    "reviewed_paths": [
+     "crates/fs/src/mutate.rs"
+    ],
+    "invariant": "set_mode only adds owner write on planned entry",
+    "method": "source",
+    "result": "lstat, signature, euid owner, delta restricted, openat NOFOLLOW, fstat dev/ino then fchmod on fd.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h04-fs",
+    "reviewed_paths": [
+     "crates/fs/src/scan.rs",
+     "crates/fs/src/handle.rs"
+    ],
+    "invariant": "Scanner never follows symlinks, terminates",
+    "method": "source",
+    "result": "Iterative DFS, lstat+readlinkat, dev check, non-UTF-8 protected zone.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h04-fs",
+    "reviewed_paths": [
+     "crates/workflows/src/actions/delete.rs",
+     "crates/workflows/src/actions/stalled.rs"
+    ],
+    "invariant": "Delete/stalled callers pass exact plan data",
+    "method": "source",
+    "result": "Plan Op signature/snapshot required, revalidate before and after stop, mutator re-checks.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "_key": "fs_delete",
+  "_hunter": "h04-fs"
+ },
+ {
+  "coverage_id": "crates%2Fjellyfin%2Fsrc%23jellyfin%20commander%20reader%20poll%20recognition::crates%2Fdomain%2Fsrc%2Fports.rs%23JellyfinCommands%20and%20wiring%20LiveMode::crates%2Fjellyfin::ATTACK-CLASSES.md%23Business%20logic",
+  "canonical_refs": {
+   "surface": "crates/jellyfin/src#jellyfin commander reader poll recognition",
+   "boundary": "crates/domain/src/ports.rs#JellyfinCommands and wiring LiveMode",
+   "subsystem": "crates/jellyfin",
+   "attack_class": "ATTACK-CLASSES.md#Business logic"
+  },
+  "surface": "crates/jellyfin/src#jellyfin commander reader poll recognition",
+  "boundary": "crates/domain/src/ports.rs#JellyfinCommands and wiring LiveMode",
+  "subsystem": "crates/jellyfin",
+  "attack_class": "Business logic",
+  "starting_paths": [
+   "crates/jellyfin/src/commander.rs",
+   "crates/jellyfin/src/http.rs",
+   "crates/jellyfin/src/reader.rs",
+   "crates/jellyfin/src/poll.rs",
+   "crates/jellyfin/src/recognition.rs",
+   "crates/jellyfin/src/dto.rs",
+   "crates/app/src/wiring.rs"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+  "selected_companion_blocks": [],
+  "excluded_blocks": [
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-tenant app with one admin; no tenant or owner objects"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 2,
+  "status": "covered",
+  "agent_id": "h12-app",
+  "reviewed_paths": [
+   "crates/jellyfin/src/commander.rs",
+   "crates/jellyfin/src/dto.rs",
+   "crates/jellyfin/src/http.rs",
+   "crates/jellyfin/src/poll.rs",
+   "crates/jellyfin/src/reader.rs",
+   "crates/jellyfin/src/recognition.rs"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h12-app",
+    "reviewed_paths": [
+     "crates/jellyfin/src/commander.rs",
+     "crates/jellyfin/src/http.rs"
+    ],
+    "invariant": "Jellyfin mutators only under LiveMode with validated id",
+    "method": "source",
+    "result": "JellyfinCommander needs &LiveMode, built only in wiring Some arm; fixed POST paths; valid_item_id [A-Za-z0-9-] <=64; path_segments_mut encoding; no retry.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h12-app",
+    "reviewed_paths": [
+     "crates/jellyfin/src/reader.rs",
+     "crates/jellyfin/src/dto.rs",
+     "crates/jellyfin/src/poll.rs",
+     "crates/jellyfin/src/recognition.rs"
+    ],
+    "invariant": "Jellyfin paths mapped via PathMapper; bounded",
+    "method": "source",
+    "result": "GET only; PathMapper::to_app; duplicates ambiguous; size and page caps; recognition pure.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "_key": "jellyfin",
+  "_hunter": "h12-app",
+  "_added_by": "post-wave-1 critic a265b0242a3216530"
+ },
+ {
+  "coverage_id": "crates%2Fjobs%2Fsrc%2Fauto.rs%23auto%20cycle::crates%2Fjobs%2Fsrc%2Fruntime.rs%23job%20submit%2C%20locks%20and%20auto-mode%20gating::crates%2Fjobs::ATTACK-CLASSES.md%23Business%20logic",
+  "canonical_refs": {
+   "surface": "crates/jobs/src/auto.rs#auto cycle",
+   "boundary": "crates/jobs/src/runtime.rs#job submit, locks and auto-mode gating",
+   "subsystem": "crates/jobs",
+   "attack_class": "ATTACK-CLASSES.md#Business logic"
+  },
+  "surface": "crates/jobs/src/auto.rs#auto cycle",
+  "boundary": "crates/jobs/src/runtime.rs#job submit, locks and auto-mode gating",
+  "subsystem": "crates/jobs",
+  "attack_class": "Business logic",
+  "starting_paths": [
+   "crates/jobs/src/auto.rs",
+   "crates/jobs/src/runtime.rs",
+   "crates/jobs/src/workflow.rs",
+   "crates/jobs/src/locks.rs",
+   "crates/workflows/src/actions/auto.rs"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+  "selected_companion_blocks": [
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Detached work after cancellation",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Poison-record and head-of-line blocking",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unsafe recovery and capacity rollback",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-tenant app with one admin; no tenant or owner objects"
+   },
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "unsafe_code forbidden workspace-wide, no FFI"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 1,
+  "status": "covered",
+  "agent_id": "h02-routes",
+  "reviewed_paths": [
+   "crates/domain/src/jobs.rs",
+   "crates/jobs/src/auto.rs",
+   "crates/jobs/src/locks.rs",
+   "crates/jobs/src/runtime.rs",
+   "crates/jobs/src/workflow.rs",
+   "crates/storage/src/repos/jobs.rs",
+   "crates/workflows/src/actions/auto.rs",
+   "crates/workflows/src/actions/run.rs"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h02-routes",
+    "reviewed_paths": [
+     "crates/jobs/src/runtime.rs",
+     "crates/domain/src/jobs.rs",
+     "crates/storage/src/repos/jobs.rs"
+    ],
+    "invariant": "Web callers cannot enqueue AutoCycle/Recover; dedupe",
+    "method": "source",
+    "result": "submit rejects AutoCycle and Recover; dedupe key enforced in SQL transaction; claim_next transactional.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h02-routes",
+    "reviewed_paths": [
+     "crates/jobs/src/workflow.rs",
+     "crates/jobs/src/locks.rs",
+     "crates/workflows/src/actions/run.rs"
+    ],
+    "invariant": "Scope locks from stored plan; double execute rejected",
+    "method": "source",
+    "result": "Locks derived from stored plan, sorted acquisition; Planner::ticket then CAS Approved->Executing.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h02-routes",
+    "reviewed_paths": [
+     "crates/jobs/src/auto.rs",
+     "crates/workflows/src/actions/auto.rs",
+     "crates/jobs/src/workflow.rs"
+    ],
+    "invariant": "Auto mode cannot bypass approval rules",
+    "method": "source",
+    "result": "auto_enabled fixed at startup; paused latch; approve_auto-only approval with rule re-run and kind allowlist; leftovers discarded.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h02-routes",
+    "reviewed_paths": [
+     "crates/jobs/src/runtime.rs",
+     "crates/jobs/src/auto.rs"
+    ],
+    "invariant": "Cancellation and restart recovery",
+    "method": "source",
+    "result": "Cancel under lifecycle mutex; execute jobs cooperative stop; Running->Interrupted on start; execute jobs never requeued; recover before execute claim.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "_key": "jobs_auto",
+  "_hunter": "h02-routes",
+  "_hardening": [
+   "Locale and flash cookies lack Secure/HttpOnly",
+   "Queued AutoCycle after restart pauses auto mode",
+   "/recovery/retry and /auto/resume need only CSRF",
+   "Add regression test for concurrent double ExecutePlan"
+  ]
+ },
+ {
+  "coverage_id": "crates%2Fmatching%2Fsrc%2Fffprobe.rs%23spawn%20ffprobe::crates%2Fmatching%2Fsrc%2Fffprobe.rs%23argument%20construction%20and%20path%20checks::crates%2Fmatching::ATTACK-CLASSES.md%23Injection",
+  "canonical_refs": {
+   "surface": "crates/matching/src/ffprobe.rs#spawn ffprobe",
+   "boundary": "crates/matching/src/ffprobe.rs#argument construction and path checks",
+   "subsystem": "crates/matching",
+   "attack_class": "ATTACK-CLASSES.md#Injection"
+  },
+  "surface": "crates/matching/src/ffprobe.rs#spawn ffprobe",
+  "boundary": "crates/matching/src/ffprobe.rs#argument construction and path checks",
+  "subsystem": "crates/matching",
+  "attack_class": "Injection",
+  "starting_paths": [
+   "crates/matching/src/ffprobe.rs",
+   "crates/matching/src/parse.rs"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Injection",
+  "selected_companion_blocks": [
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Detached work after cancellation",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-tenant app with one admin; no tenant or owner objects"
+   },
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "unsafe_code forbidden workspace-wide, no FFI"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 1,
+  "status": "candidate",
+  "agent_id": "h05-paths",
+  "reviewed_paths": [
+   "crates/app/src/wiring.rs",
+   "crates/matching/src/ffprobe.rs"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h05-paths",
+    "reviewed_paths": [
+     "crates/matching/src/ffprobe.rs"
+    ],
+    "invariant": "No argument injection or protocol switch",
+    "method": "source",
+    "result": "argv only, input 'file:'+abs path, protocol_whitelist file, fixed arg list.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h05-paths",
+    "reviewed_paths": [
+     "crates/matching/src/ffprobe.rs"
+    ],
+    "invariant": "Output cap, timeout, no detached child",
+    "method": "source",
+    "result": "Semaphore 1-4, 4MiB stdout cap, 120s timeout, kill_on_drop.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h05-paths",
+    "reviewed_paths": [
+     "crates/matching/src/ffprobe.rs"
+    ],
+    "invariant": "Path-based symlink check keeps ffprobe in root",
+    "method": "source",
+    "result": "check_no_symlink per component then ffprobe reopens by path (acknowledged TOCTOU); requires lower-trust writer racing; read-only, parsed output limited to metadata; hardening.",
+    "artifact": null
+   },
+   {
+    "agent_id": "v02-ffprobe",
+    "reviewed_paths": [
+     "crates/matching/src/ffprobe.rs",
+     "crates/app/src/wiring.rs"
+    ],
+    "invariant": "Phase 3 candidate validation: ffprobe unrestricted demuxer",
+    "method": "source",
+    "result": "Rejected: no attacker-visible output channel; results shown only to the authenticated operator; residual is hardening.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [
+   "matching-ffprobe-unrestricted-demuxer-local-file-read"
+  ],
+  "unresolved": [],
+  "_key": "ffprobe",
+  "_hunter": "h05-paths"
+ },
+ {
+  "coverage_id": "crates%2Fqbit%2Fsrc%2Fcontrol.rs%23delete%20task::crates%2Fqbit%2Fsrc%2Fsafety.rs%23decide_removal%20and%20deleteFiles%3Dfalse::crates%2Fqbit::ATTACK-CLASSES.md%23Business%20logic",
+  "canonical_refs": {
+   "surface": "crates/qbit/src/control.rs#delete task",
+   "boundary": "crates/qbit/src/safety.rs#decide_removal and deleteFiles=false",
+   "subsystem": "crates/qbit",
+   "attack_class": "ATTACK-CLASSES.md#Business logic"
+  },
+  "surface": "crates/qbit/src/control.rs#delete task",
+  "boundary": "crates/qbit/src/safety.rs#decide_removal and deleteFiles=false",
+  "subsystem": "crates/qbit",
+  "attack_class": "Business logic",
+  "starting_paths": [
+   "crates/qbit/src/control.rs",
+   "crates/qbit/src/safety.rs",
+   "crates/qbit/src/http.rs",
+   "crates/workflows/src/actions/qbit.rs"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+  "selected_companion_blocks": [],
+  "excluded_blocks": [
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-tenant app with one admin; no tenant or owner objects"
+   },
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "unsafe_code forbidden workspace-wide, no FFI"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 1,
+  "status": "covered",
+  "agent_id": "h06-actions",
+  "reviewed_paths": [
+   "crates/domain/src/ports.rs",
+   "crates/domain/src/torrent.rs",
+   "crates/qbit/src/control.rs",
+   "crates/qbit/src/http.rs",
+   "crates/qbit/src/safety.rs",
+   "crates/workflows/src/actions/delete.rs",
+   "crates/workflows/src/actions/dry_run.rs",
+   "crates/workflows/src/actions/qbit.rs",
+   "crates/workflows/src/actions/stalled.rs"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h06-actions",
+    "reviewed_paths": [
+     "crates/qbit/src/control.rs",
+     "crates/domain/src/ports.rs",
+     "crates/workflows/src/actions/dry_run.rs"
+    ],
+    "invariant": "deleteFiles=false on every removal path",
+    "method": "source",
+    "result": "Only /torrents/delete reference is Cmd::RemoveTask with literal deleteFiles=false; trait has no flag; grep found no other sender.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h06-actions",
+    "reviewed_paths": [
+     "crates/qbit/src/control.rs",
+     "crates/domain/src/torrent.rs"
+    ],
+    "invariant": "Hash validation cannot smuggle 'all'",
+    "method": "source",
+    "result": "TorrentHash 40/64 hex only; join with '|'; reqwest form encoding.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h06-actions",
+    "reviewed_paths": [
+     "crates/qbit/src/http.rs",
+     "crates/qbit/src/control.rs",
+     "crates/workflows/src/actions/qbit.rs"
+    ],
+    "invariant": "401/403 retry cannot double-send",
+    "method": "source",
+    "result": "Retry only on 401/403 (before execution); transport errors not retried; removal outcome judged by fresh listing.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h06-actions",
+    "reviewed_paths": [
+     "crates/workflows/src/actions/delete.rs",
+     "crates/workflows/src/actions/stalled.rs",
+     "crates/qbit/src/safety.rs"
+    ],
+    "invariant": "Task removed only when authorized and files proven absent",
+    "method": "source",
+    "result": "remove_task needs confirmed removals>=1, fresh file list, all candidates Mapped and absent; decide_removal has no production caller (hardening).",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "_key": "qbit_removal",
+  "_hunter": "h06-actions",
+  "_hardening": [
+   "qbit safety.rs decide_removal has no production caller (duplicate logic in delete.rs)",
+   "run.rs execute does not re-check plan expiry",
+   "check_live_holders narrows torrent index",
+   "remove_task checks confirmed_torrent_removals>=1 rather than per-action count"
+  ]
+ },
+ {
+  "coverage_id": "crates%2Freporting%2Fsrc%2Fexplain.rs%23explain%20export%20logs%20svg%20and%20job%20events::crates%2Fjobs%2Fsrc%2Fevents.rs%23event%20redaction%20and%20ring%20buffer::crates%2Freporting::ATTACK-CLASSES.md%23Feature%20abuse%20and%20data%20leakage",
+  "canonical_refs": {
+   "surface": "crates/reporting/src/explain.rs#explain export logs svg and job events",
+   "boundary": "crates/jobs/src/events.rs#event redaction and ring buffer",
+   "subsystem": "crates/reporting",
+   "attack_class": "ATTACK-CLASSES.md#Feature abuse and data leakage"
+  },
+  "surface": "crates/reporting/src/explain.rs#explain export logs svg and job events",
+  "boundary": "crates/jobs/src/events.rs#event redaction and ring buffer",
+  "subsystem": "crates/reporting",
+  "attack_class": "Feature abuse and data leakage",
+  "starting_paths": [
+   "crates/reporting/src/explain.rs",
+   "crates/reporting/src/export.rs",
+   "crates/reporting/src/logs.rs",
+   "crates/reporting/src/svg.rs",
+   "crates/reporting/src/model.rs",
+   "crates/web/src/handlers/reports.rs",
+   "crates/web/src/handlers/media.rs",
+   "crates/web/src/handlers/dashboard.rs",
+   "crates/jobs/src/events.rs",
+   "crates/workflows/src/actions/events.rs",
+   "crates/workflows/src/issues/explain.rs",
+   "crates/storage/src/codec.rs"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Feature abuse and data leakage",
+  "selected_companion_blocks": [
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unbounded buffering and cardinality",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-tenant app with one admin; no tenant or owner objects"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 5,
+  "status": "covered",
+  "agent_id": "h17-leak",
+  "reviewed_paths": [
+   "crates/arr/src/error.rs",
+   "crates/arr/src/http.rs",
+   "crates/arr/src/read.rs",
+   "crates/config/src/model.rs",
+   "crates/config/src/redact.rs",
+   "crates/jellyfin/src/http.rs",
+   "crates/jobs/src/events.rs",
+   "crates/qbit/src/http.rs",
+   "crates/reporting/src/export.rs",
+   "crates/reporting/src/redact.rs",
+   "crates/reporting/src/reporter.rs",
+   "crates/web/src/handlers/reports.rs",
+   "crates/workflows/src/actions/events.rs",
+   "crates/workflows/src/issues/explain.rs"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h17-leak",
+    "reviewed_paths": [
+     "crates/jobs/src/events.rs",
+     "crates/workflows/src/actions/events.rs",
+     "crates/qbit/src/http.rs",
+     "crates/jellyfin/src/http.rs",
+     "crates/arr/src/http.rs",
+     "crates/arr/src/error.rs",
+     "crates/arr/src/read.rs",
+     "crates/config/src/model.rs",
+     "crates/config/src/redact.rs"
+    ],
+    "invariant": "Real secrets cannot reach job/action events via URL-only redact()",
+    "method": "source",
+    "result": "Events fed from static labels, relative paths, hashes, PortError text; adapters emit fixed error strings or scrubbed text; no secret-bearing input.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h17-leak",
+    "reviewed_paths": [
+     "crates/reporting/src/reporter.rs",
+     "crates/reporting/src/export.rs",
+     "crates/reporting/src/redact.rs",
+     "crates/web/src/handlers/reports.rs",
+     "crates/workflows/src/issues/explain.rs"
+    ],
+    "invariant": "Exports/report views carry no credentials or URLs",
+    "method": "source",
+    "result": "sanitize_json and sanitize() at export sinks; blockers exported as codes; reporting sanitizer stricter than storage scrub.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "_key": "data_leakage",
+  "_hunter": "h17-leak",
+  "_added_by": "post-wave-4 critics a6bc4f591d11ee79b and af4f83ff2a04ffc23",
+  "_hardening": [
+   "storage codec.rs scrub misses JSON/spaced/passkey-in-token forms; delegate to stronger redactor",
+   "jobs/events.rs redact() URL-only",
+   "ARR snapshot bodies and Blocker detail persisted with only redact_text, scheme URLs kept",
+   "scrub skips exact-secret replace for secrets shorter than 4 chars"
+  ]
+ },
+ {
+  "coverage_id": "crates%2Freporting%2Fsrc%2Fexport.rs%23export%20formats%20and%20report_dir::crates%2Freporting%2Fsrc%2Freport_dir.rs%23safe_name%20and%20tmp%20file%20write::crates%2Freporting::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+  "canonical_refs": {
+   "surface": "crates/reporting/src/export.rs#export formats and report_dir",
+   "boundary": "crates/reporting/src/report_dir.rs#safe_name and tmp file write",
+   "subsystem": "crates/reporting",
+   "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+  },
+  "surface": "crates/reporting/src/export.rs#export formats and report_dir",
+  "boundary": "crates/reporting/src/report_dir.rs#safe_name and tmp file write",
+  "subsystem": "crates/reporting",
+  "attack_class": "Resource and file handling",
+  "starting_paths": [
+   "crates/reporting/src/export.rs",
+   "crates/reporting/src/report_dir.rs",
+   "crates/web/src/handlers/reports.rs"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+  "selected_companion_blocks": [
+   "CLIENT-SIDE.md#Core discipline",
+   "CLIENT-SIDE.md#DOM-based XSS",
+   "CLIENT-SIDE.md#Universal moves",
+   "CLIENT-SIDE.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-tenant app with one admin; no tenant or owner objects"
+   },
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "unsafe_code forbidden workspace-wide, no FFI"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 1,
+  "status": "covered",
+  "agent_id": "h03-render",
+  "reviewed_paths": [
+   "crates/reporting/src/export.rs",
+   "crates/reporting/src/redact.rs",
+   "crates/reporting/src/report_dir.rs",
+   "crates/web/src/auth/mod.rs",
+   "crates/web/src/handlers/reports.rs"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h03-render",
+    "reviewed_paths": [
+     "crates/reporting/src/export.rs",
+     "crates/reporting/src/redact.rs"
+    ],
+    "invariant": "Names in CSV/MD/HTML exports cannot become formulas or markup",
+    "method": "source",
+    "result": "csv_cell formula guard and quoting; md_escape/html_escape; HTML export meta CSP default-src none.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h03-render",
+    "reviewed_paths": [
+     "crates/web/src/handlers/reports.rs",
+     "crates/web/src/auth/mod.rs"
+    ],
+    "invariant": "Export headers cannot be injected",
+    "method": "source",
+    "result": "file_name from digits-only server timestamp; static content type; nosniff, no-store.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h03-render",
+    "reviewed_paths": [
+     "crates/reporting/src/report_dir.rs"
+    ],
+    "invariant": "Report writes confined to data_dir/reports",
+    "method": "source",
+    "result": "safe_name charset; rejects relative/.. data dir and overlap with roots; predictable tmp via File::create follows symlink but requires pre-planted symlink in app-owned dir; no caller of ReportDir found outside module.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "_key": "exports",
+  "_hunter": "h03-render",
+  "_hardening": [
+   "report_dir.rs predictable tmp with File::create follows symlink (no caller currently)",
+   "csv_cell guard after control-char flattening misses leading space case",
+   "i18n sequential placeholder substitution",
+   "Content-Disposition from_str failure silently ignored"
+  ]
+ },
+ {
+  "coverage_id": "crates%2Freporting%2Fsrc%2Fredact.rs%23sanitize%20and%20logs::crates%2Fconfig%2Fsrc%2Fsecret.rs%23Secret%20and%20redact::crates%2Freporting::ATTACK-CLASSES.md%23Cryptography%20and%20secrets",
+  "canonical_refs": {
+   "surface": "crates/reporting/src/redact.rs#sanitize and logs",
+   "boundary": "crates/config/src/secret.rs#Secret and redact",
+   "subsystem": "crates/reporting",
+   "attack_class": "ATTACK-CLASSES.md#Cryptography and secrets"
+  },
+  "surface": "crates/reporting/src/redact.rs#sanitize and logs",
+  "boundary": "crates/config/src/secret.rs#Secret and redact",
+  "subsystem": "crates/reporting",
+  "attack_class": "Cryptography and secrets",
+  "starting_paths": [
+   "crates/reporting/src/redact.rs",
+   "crates/reporting/src/logs.rs",
+   "crates/config/src/secret.rs",
+   "crates/config/src/redact.rs",
+   "crates/app/src/logging.rs",
+   "crates/web/src/error.rs"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Cryptography and secrets",
+  "selected_companion_blocks": [
+   "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+   "CLOUD-AND-DEPLOYMENT.md#Secret exposure across workload boundaries",
+   "CLOUD-AND-DEPLOYMENT.md#Universal moves",
+   "CLOUD-AND-DEPLOYMENT.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-tenant app with one admin; no tenant or owner objects"
+   },
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "unsafe_code forbidden workspace-wide, no FFI"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 1,
+  "status": "covered",
+  "agent_id": "h07-svc",
+  "reviewed_paths": [
+   "crates/app/src/logging.rs",
+   "crates/arr/src/http.rs",
+   "crates/config/src/model.rs",
+   "crates/config/src/redact.rs",
+   "crates/config/src/secret.rs",
+   "crates/jellyfin/src/http.rs",
+   "crates/qbit/src/http.rs",
+   "crates/reporting/src/logs.rs",
+   "crates/reporting/src/redact.rs",
+   "crates/web/src/error.rs"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h07-svc",
+    "reviewed_paths": [
+     "crates/config/src/secret.rs",
+     "crates/config/src/model.rs",
+     "crates/arr/src/http.rs",
+     "crates/qbit/src/http.rs",
+     "crates/jellyfin/src/http.rs"
+    ],
+    "invariant": "Secret has no leaking Debug/Display/Serialize",
+    "method": "source",
+    "result": "Redacted Debug/Display, no Serialize, fingerprint excludes secrets, errors carry labels only.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h07-svc",
+    "reviewed_paths": [
+     "crates/reporting/src/redact.rs",
+     "crates/reporting/src/logs.rs",
+     "crates/app/src/logging.rs",
+     "crates/web/src/error.rs",
+     "crates/config/src/redact.rs"
+    ],
+    "invariant": "Logs and web errors sanitized",
+    "method": "source",
+    "result": "LogBuffer::push masks sensitive fields and runs Redactor::sanitize incl registered secrets; web errors generic with correlation id.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "_key": "redaction",
+  "_hunter": "h07-svc"
+ },
+ {
+  "coverage_id": "crates%2Freporting%2Fsrc%2Freporter.rs%23read%20model%20dashboard%20issue%20list%20detail::crates%2Fstorage%23read_only%20pool%20and%20stored%20hostile%20names%20rendered%20into%20view%20models::crates%2Freporting::ATTACK-CLASSES.md%23Injection",
+  "canonical_refs": {
+   "surface": "crates/reporting/src/reporter.rs#read model dashboard issue list detail",
+   "boundary": "crates/storage#read_only pool and stored hostile names rendered into view models",
+   "subsystem": "crates/reporting",
+   "attack_class": "ATTACK-CLASSES.md#Injection"
+  },
+  "surface": "crates/reporting/src/reporter.rs#read model dashboard issue list detail",
+  "boundary": "crates/storage#read_only pool and stored hostile names rendered into view models",
+  "subsystem": "crates/reporting",
+  "attack_class": "Injection",
+  "starting_paths": [
+   "crates/reporting/src/reporter.rs",
+   "crates/reporting/src/explain.rs",
+   "crates/reporting/src/model.rs",
+   "crates/reporting/src/svg.rs",
+   "crates/reporting/src/timefmt.rs",
+   "crates/web/src/handlers/reports.rs",
+   "crates/web/src/handlers/issues.rs"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Injection",
+  "selected_companion_blocks": [
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-tenant app with one admin; no tenant or owner objects"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 3,
+  "status": "covered",
+  "agent_id": "h14-core",
+  "reviewed_paths": [
+   "crates/reporting/src/reporter.rs",
+   "crates/reporting/src/svg.rs"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h14-core",
+    "reviewed_paths": [
+     "crates/reporting/src/reporter.rs"
+    ],
+    "invariant": "No attacker string reaches SQL text",
+    "method": "source",
+    "result": "format! only on constants/enum text; values bound; IN placeholder count <=2000; needle via instr.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h14-core",
+    "reviewed_paths": [
+     "crates/reporting/src/reporter.rs"
+    ],
+    "invariant": "Reporter pool read-only",
+    "method": "source",
+    "result": "SqliteConnectOptions read_only(true); data_version probe uses same read-only options.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h14-core",
+    "reviewed_paths": [
+     "crates/reporting/src/reporter.rs",
+     "crates/reporting/src/svg.rs"
+    ],
+    "invariant": "Stored hostile names cannot become markup",
+    "method": "source",
+    "result": "Plain strings in view models; no safe/escape bypass; svg numeric only.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "_key": "reporter",
+  "_hunter": "h14-core",
+  "_added_by": "post-wave-2 critic a1dacc3f27cffd4d4"
+ },
+ {
+  "coverage_id": "crates%2Fstorage%2Fsrc%2Fcodec.rs%23scrub%20and%20scrub_value%20free-text%20redaction%20before%20persistence::crates%2Fstorage%2Fsrc%2Frepos%23remote%20and%20operator%20text%20persisted%20to%20SQLite::crates%2Fstorage::ATTACK-CLASSES.md%23Cryptography%20and%20secrets",
+  "canonical_refs": {
+   "surface": "crates/storage/src/codec.rs#scrub and scrub_value free-text redaction before persistence",
+   "boundary": "crates/storage/src/repos#remote and operator text persisted to SQLite",
+   "subsystem": "crates/storage",
+   "attack_class": "ATTACK-CLASSES.md#Cryptography and secrets"
+  },
+  "surface": "crates/storage/src/codec.rs#scrub and scrub_value free-text redaction before persistence",
+  "boundary": "crates/storage/src/repos#remote and operator text persisted to SQLite",
+  "subsystem": "crates/storage",
+  "attack_class": "Cryptography and secrets",
+  "starting_paths": [
+   "crates/storage/src/codec.rs",
+   "crates/storage/src/repos/ignores.rs",
+   "crates/storage/src/repos/scan.rs",
+   "crates/storage/src/repos/matches.rs",
+   "crates/storage/src/repos/snapshot.rs",
+   "crates/storage/src/repos/state.rs",
+   "crates/storage/src/repos/gains.rs",
+   "crates/storage/src/error.rs"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Cryptography and secrets",
+  "selected_companion_blocks": [],
+  "excluded_blocks": [
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-tenant app with one admin; no tenant or owner objects"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 5,
+  "status": "covered",
+  "agent_id": "h17-leak",
+  "reviewed_paths": [
+   "crates/domain/src/torrent.rs",
+   "crates/storage/src/codec.rs",
+   "crates/storage/src/error.rs",
+   "crates/storage/src/repos/ignores.rs",
+   "crates/storage/src/repos/jobs.rs",
+   "crates/storage/src/repos/journal.rs",
+   "crates/storage/src/repos/matches.rs",
+   "crates/storage/src/repos/scan.rs",
+   "crates/storage/src/repos/snapshot.rs",
+   "crates/storage/src/repos/state.rs"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h17-leak",
+    "reviewed_paths": [
+     "crates/storage/src/codec.rs",
+     "crates/storage/src/repos/ignores.rs",
+     "crates/storage/src/repos/scan.rs",
+     "crates/storage/src/repos/state.rs",
+     "crates/storage/src/repos/journal.rs",
+     "crates/storage/src/repos/jobs.rs"
+    ],
+    "invariant": "scrub second-line control; secrets must not reach SQLite",
+    "method": "source",
+    "result": "scrub has bypasses (JSON key, spaced =, ?passkey in larger token, scheme-less announce paths) but all callers receive text already scrubbed upstream or static; no secret reaches inputs: hardening.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h17-leak",
+    "reviewed_paths": [
+     "crates/storage/src/repos/snapshot.rs",
+     "crates/storage/src/repos/matches.rs",
+     "crates/storage/src/repos/scan.rs",
+     "crates/storage/src/error.rs",
+     "crates/domain/src/torrent.rs"
+    ],
+    "invariant": "Unscrubbed persisted columns hold no credentials or tracker data",
+    "method": "source",
+    "result": "Torrent model omits tracker URLs/magnets; ARR text scrubbed at adapter; sqlx error text has constraint names only.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "_key": "storage_codec",
+  "_hunter": "h17-leak",
+  "_added_by": "post-wave-4 critics a6bc4f591d11ee79b and af4f83ff2a04ffc23"
+ },
+ {
+  "coverage_id": "crates%2Fstorage%2Fsrc%2Frepos%23SQLite%20repositories::crates%2Fstorage%2Fsrc%2Fdb.rs%23pool%20options%20and%20retention%20SQL::crates%2Fstorage::ATTACK-CLASSES.md%23Injection",
+  "canonical_refs": {
+   "surface": "crates/storage/src/repos#SQLite repositories",
+   "boundary": "crates/storage/src/db.rs#pool options and retention SQL",
+   "subsystem": "crates/storage",
+   "attack_class": "ATTACK-CLASSES.md#Injection"
+  },
+  "surface": "crates/storage/src/repos#SQLite repositories",
+  "boundary": "crates/storage/src/db.rs#pool options and retention SQL",
+  "subsystem": "crates/storage",
+  "attack_class": "Injection",
+  "starting_paths": [
+   "crates/storage/src/db.rs",
+   "crates/storage/src/retention.rs",
+   "crates/storage/src/repos",
+   "crates/storage/migrations"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Injection",
+  "selected_companion_blocks": [],
+  "excluded_blocks": [
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-tenant app with one admin; no tenant or owner objects"
+   },
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "unsafe_code forbidden workspace-wide, no FFI"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 1,
+  "status": "covered",
+  "agent_id": "h08-data",
+  "reviewed_paths": [
+   "Dockerfile",
+   "crates/reporting/src/reporter.rs",
+   "crates/storage/src/db.rs",
+   "crates/storage/src/repos/issues.rs",
+   "crates/storage/src/repos/jobs.rs",
+   "crates/storage/src/repos/journal.rs",
+   "crates/storage/src/repos/plans.rs",
+   "crates/storage/src/retention.rs"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h08-data",
+    "reviewed_paths": [
+     "crates/storage/src/retention.rs",
+     "crates/storage/src/db.rs"
+    ],
+    "invariant": "No request text reaches SQL text",
+    "method": "source",
+    "result": "format! only on static table/clause lists with bound ?1; pragma name validated; reader pool read_only.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h08-data",
+    "reviewed_paths": [
+     "crates/storage/src/repos/plans.rs",
+     "crates/storage/src/repos/issues.rs",
+     "crates/storage/src/repos/jobs.rs",
+     "crates/storage/src/repos/journal.rs"
+    ],
+    "invariant": "Bound params, plan integrity on load",
+    "method": "source",
+    "result": "All sqlx queries bind; PlanRepo::get verifies hash; migration triggers make plans/approvals immutable.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h08-data",
+    "reviewed_paths": [
+     "crates/reporting/src/reporter.rs"
+    ],
+    "invariant": "Dynamic ORDER BY/LIMIT/filters not attacker SQL",
+    "method": "source",
+    "result": "Static fragments from enums; needle via instr and bound; LIMIT clamped.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h08-data",
+    "reviewed_paths": [
+     "Dockerfile",
+     "crates/storage/src/db.rs"
+    ],
+    "invariant": "DB file permissions",
+    "method": "source",
+    "result": "create_if_missing under default umask in /config 1777; only co-resident local user; hardening.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "_key": "sqlite",
+  "_hunter": "h08-data",
+  "_hardening": [
+   "DB/WAL files under process umask in 1777 /config",
+   "No global HTTP connection cap, header-read timeout",
+   "Semantic stage pool uncapped on common token",
+   "IN(?...) placeholder count unbounded vs SQLite limit",
+   "Keep retention format! inputs const"
+  ]
+ },
+ {
+  "coverage_id": "crates%2Fweb%2Fsrc%2Fauth%2Flogin.rs%23POST%20%2Flogin::crates%2Fweb%2Fsrc%2Fauth%2Flimiter.rs%23login%20limiter%20and%20password%20verification::crates%2Fweb::ATTACK-CLASSES.md%23Access%20control",
+  "canonical_refs": {
+   "surface": "crates/web/src/auth/login.rs#POST /login",
+   "boundary": "crates/web/src/auth/limiter.rs#login limiter and password verification",
+   "subsystem": "crates/web",
+   "attack_class": "ATTACK-CLASSES.md#Access control"
+  },
+  "surface": "crates/web/src/auth/login.rs#POST /login",
+  "boundary": "crates/web/src/auth/limiter.rs#login limiter and password verification",
+  "subsystem": "crates/web",
+  "attack_class": "Access control",
+  "starting_paths": [
+   "crates/web/src/auth/login.rs",
+   "crates/web/src/auth/limiter.rs",
+   "crates/web/src/auth/password.rs",
+   "crates/config/src/proxy.rs"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+  "selected_companion_blocks": [
+   "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+   "WEB-PROTOCOL-AND-AUTH.md#Session fixation and invalidation",
+   "WEB-PROTOCOL-AND-AUTH.md#Cookie scope and transport",
+   "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+   "WEB-PROTOCOL-AND-AUTH.md#Validation rules",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Pre-authentication work imbalance",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-tenant app with one admin; no tenant or owner objects"
+   },
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "unsafe_code forbidden workspace-wide, no FFI"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 1,
+  "status": "candidate",
+  "agent_id": "h01-auth",
+  "reviewed_paths": [
+   "README.md",
+   "crates/config/src/load.rs",
+   "crates/config/src/proxy.rs",
+   "crates/web/src/auth/limiter.rs",
+   "crates/web/src/auth/login.rs",
+   "crates/web/src/auth/mod.rs",
+   "crates/web/src/auth/password.rs",
+   "crates/web/src/auth/request.rs",
+   "crates/web/src/auth/session.rs",
+   "crates/web/tests/auth_flow.rs",
+   "docker-compose.yml"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h01-auth",
+    "reviewed_paths": [
+     "crates/web/src/auth/limiter.rs",
+     "crates/web/src/auth/login.rs"
+    ],
+    "invariant": "Login limiter reserved before Argon2, keyed by IP and (IP,user), no cross-IP lockout",
+    "method": "source",
+    "result": "reserve() precedes verify(); keys never user-only; one source cannot reach the 4096-key cap to evict a victim window; refused attempts not counted; constant-time username compare, Argon2 always runs.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h01-auth",
+    "reviewed_paths": [
+     "crates/web/src/auth/password.rs",
+     "crates/web/src/auth/login.rs"
+    ],
+    "invariant": "Pre-auth Argon2 work is bounded",
+    "method": "source",
+    "result": "spawn_blocking behind 1-permit semaphore, PHC from config, password<=1024B, username<=128B, body 8KiB, 30s timeout, limiter before hash.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h01-auth",
+    "reviewed_paths": [
+     "crates/config/src/proxy.rs",
+     "crates/web/src/auth/request.rs"
+    ],
+    "invariant": "XFF trusted only from trusted-proxy peers",
+    "method": "source",
+    "result": "XFF ignored for untrusted peers; right-to-left walk; /0 rejected; v4-mapped canonicalised; no spoof path.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h01-auth",
+    "reviewed_paths": [
+     "crates/web/src/auth/login.rs",
+     "crates/web/src/auth/mod.rs",
+     "crates/web/src/auth/session.rs"
+    ],
+    "invariant": "Session fixation, cookie scope, login CSRF",
+    "method": "source",
+    "result": "32-byte random id, fresh id at login, PrivateCookieJar AES-GCM, HttpOnly SameSite=Strict, Secure default true, login CSRF cookie Path=/login 1h constant-time compare; pre-auth cannot create or evict sessions.",
+    "artifact": null
+   },
+   {
+    "agent_id": "v01-limiter",
+    "reviewed_paths": [
+     "crates/web/src/auth/login.rs",
+     "crates/web/src/auth/limiter.rs",
+     "crates/web/src/auth/request.rs",
+     "crates/config/src/proxy.rs",
+     "crates/config/src/load.rs",
+     "docker-compose.yml",
+     "README.md"
+    ],
+    "invariant": "Phase 3 candidate validation: shared limiter bucket when trusted_proxies empty",
+    "method": "source",
+    "result": "Source path confirmed; kept needs_validation because proxy presence, trusted_proxies setting and Docker peer address are outside the repository.",
+    "artifact": null
+   },
+   {
+    "agent_id": "v03-record",
+    "reviewed_paths": [
+     "crates/web/src/auth/login.rs",
+     "crates/web/src/auth/limiter.rs",
+     "crates/config/src/load.rs",
+     "docker-compose.yml",
+     "crates/web/tests/auth_flow.rs"
+    ],
+    "invariant": "Phase 5 record verification",
+    "method": "source",
+    "result": "Replaced record: corrected line numbers and added the per-(IP,user) window of 5 as a lock-out threshold.",
+    "artifact": null
+   },
+   {
+    "agent_id": "v04-record2",
+    "reviewed_paths": [
+     "crates/web/src/auth/login.rs",
+     "crates/web/src/auth/limiter.rs",
+     "crates/web/src/auth/request.rs",
+     "crates/config/src/proxy.rs",
+     "crates/config/src/load.rs",
+     "crates/web/tests/auth_flow.rs"
+    ],
+    "invariant": "Phase 5 re-verification of replaced record by a fresh verifier",
+    "method": "source",
+    "result": "Verified without change.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [
+   "web-login-limiter-shared-bucket-without-trusted-proxies"
+  ],
+  "unresolved": [
+   "Deployment facts: reverse proxy presence, REMOVARR_TRUSTED_PROXIES setting, peer address seen via Docker port publishing"
+  ],
+  "_key": "login",
+  "_hunter": "h01-auth",
+  "_hardening": [
+   "Shared limiter bucket when trusted_proxies unset behind reverse proxy: unauthenticated visitor can keep owner locked out of login (deployment-dependent)",
+   "No global cross-IP failed-login throttle",
+   "Unbounded Argon2 semaphore queue",
+   "Origin check ignores scheme",
+   "Limiter eviction drops blocking windows only above 4096 keys"
+  ]
+ },
+ {
+  "coverage_id": "crates%2Fweb%2Fsrc%2Fauth%2Fmod.rs%23command_guard%20and%20page_guard::crates%2Fweb%2Fsrc%2Fauth%2Frequest.rs%23same_origin%20and%20CSRF%20token%20check::crates%2Fweb::ATTACK-CLASSES.md%23Access%20control",
+  "canonical_refs": {
+   "surface": "crates/web/src/auth/mod.rs#command_guard and page_guard",
+   "boundary": "crates/web/src/auth/request.rs#same_origin and CSRF token check",
+   "subsystem": "crates/web",
+   "attack_class": "ATTACK-CLASSES.md#Access control"
+  },
+  "surface": "crates/web/src/auth/mod.rs#command_guard and page_guard",
+  "boundary": "crates/web/src/auth/request.rs#same_origin and CSRF token check",
+  "subsystem": "crates/web",
+  "attack_class": "Access control",
+  "starting_paths": [
+   "crates/web/src/auth/mod.rs",
+   "crates/web/src/auth/request.rs",
+   "crates/web/src/auth/session.rs",
+   "crates/web/src/router.rs"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+  "selected_companion_blocks": [
+   "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+   "WEB-PROTOCOL-AND-AUTH.md#Ordinary CSRF",
+   "WEB-PROTOCOL-AND-AUTH.md#Session fixation and invalidation",
+   "WEB-PROTOCOL-AND-AUTH.md#Cookie scope and transport",
+   "WEB-PROTOCOL-AND-AUTH.md#Host and forwarded-header trust",
+   "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+   "WEB-PROTOCOL-AND-AUTH.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-tenant app with one admin; no tenant or owner objects"
+   },
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "unsafe_code forbidden workspace-wide, no FFI"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 1,
+  "status": "covered",
+  "agent_id": "h01-auth",
+  "reviewed_paths": [
+   "crates/web/src/auth/login.rs",
+   "crates/web/src/auth/mod.rs",
+   "crates/web/src/auth/request.rs",
+   "crates/web/src/auth/session.rs",
+   "crates/web/src/router.rs"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h01-auth",
+    "reviewed_paths": [
+     "crates/web/src/router.rs",
+     "crates/web/src/auth/mod.rs"
+    ],
+    "invariant": "Every state-changing route behind command_guard",
+    "method": "source",
+    "result": "All POST routes under route_layer(command_guard); GET pages under page_guard which strips CommandGrant; logout runs authorize(Command); fallback 404.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h01-auth",
+    "reviewed_paths": [
+     "crates/web/src/auth/request.rs"
+    ],
+    "invariant": "same_origin not satisfiable cross-site",
+    "method": "source",
+    "result": "Unparsable/null Origin refused with no Referer fallback; Referer only if Origin absent; exact authority and port compare; X-Forwarded-Host only from trusted peer; scheme ignored by design (SameSite=Strict covers).",
+    "artifact": null
+   },
+   {
+    "agent_id": "h01-auth",
+    "reviewed_paths": [
+     "crates/web/src/auth/request.rs",
+     "crates/web/src/auth/mod.rs"
+    ],
+    "invariant": "CSRF token per session, constant-time",
+    "method": "source",
+    "result": "X-CSRF-Token header or urlencoded field, duplicates rejected, 32-byte server-side token, constant-time compare.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h01-auth",
+    "reviewed_paths": [
+     "crates/web/src/auth/session.rs",
+     "crates/web/src/auth/login.rs"
+    ],
+    "invariant": "Session lifecycle",
+    "method": "source",
+    "result": "Absolute TTL plus 2h idle, purge on create/lookup, logout removes entry, LRU 32 evicts only via credentialed login, restart revokes all.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "_key": "session_csrf",
+  "_hunter": "h01-auth"
+ },
+ {
+  "coverage_id": "crates%2Fweb%2Fsrc%2Fhandlers%23per-handler%20input%20parsing%20issues%20media%20jobs%20ops::crates%2Fweb%2Fsrc%2Fhandlers%2Fmod.rs%23parse_form%20and%20PageQuery%20limits::crates%2Fweb::ATTACK-CLASSES.md%23Injection",
+  "canonical_refs": {
+   "surface": "crates/web/src/handlers#per-handler input parsing issues media jobs ops",
+   "boundary": "crates/web/src/handlers/mod.rs#parse_form and PageQuery limits",
+   "subsystem": "crates/web",
+   "attack_class": "ATTACK-CLASSES.md#Injection"
+  },
+  "surface": "crates/web/src/handlers#per-handler input parsing issues media jobs ops",
+  "boundary": "crates/web/src/handlers/mod.rs#parse_form and PageQuery limits",
+  "subsystem": "crates/web",
+  "attack_class": "Injection",
+  "starting_paths": [
+   "crates/web/src/handlers/issues.rs",
+   "crates/web/src/handlers/media.rs",
+   "crates/web/src/handlers/jobs.rs",
+   "crates/web/src/handlers/ops.rs",
+   "crates/web/src/handlers/reports.rs",
+   "crates/web/src/forms.rs"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Injection",
+  "selected_companion_blocks": [
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-tenant app with one admin; no tenant or owner objects"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 2,
+  "status": "covered",
+  "agent_id": "h10-plans",
+  "reviewed_paths": [
+   "crates/domain/src/jobs.rs",
+   "crates/jobs/src/runtime.rs",
+   "crates/reporting/src/export.rs",
+   "crates/web/src/forms.rs",
+   "crates/web/src/handlers/issues.rs",
+   "crates/web/src/handlers/jobs.rs",
+   "crates/web/src/handlers/media.rs",
+   "crates/web/src/handlers/mod.rs",
+   "crates/web/src/handlers/ops.rs",
+   "crates/web/src/handlers/plans.rs",
+   "crates/web/src/handlers/reports.rs"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h10-plans",
+    "reviewed_paths": [
+     "crates/web/src/forms.rs",
+     "crates/web/src/handlers/mod.rs",
+     "crates/web/src/handlers/plans.rs",
+     "crates/web/src/handlers/issues.rs"
+    ],
+    "invariant": "Inputs bounded and strictly validated",
+    "method": "source",
+    "result": "Body 1MiB, URI 8KiB, selections 2000, ids strict hex/UUID, page/per_page caps, text bounded, get_many bound query, return_to restricted.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h10-plans",
+    "reviewed_paths": [
+     "crates/web/src/handlers/media.rs",
+     "crates/web/src/handlers/ops.rs",
+     "crates/web/src/handlers/jobs.rs",
+     "crates/web/src/handlers/reports.rs",
+     "crates/domain/src/jobs.rs",
+     "crates/jobs/src/runtime.rs",
+     "crates/reporting/src/export.rs"
+    ],
+    "invariant": "Expensive endpoints bounded; no client string to service query",
+    "method": "source",
+    "result": "Media ids <=9 digits, service enum, search is POST command; job paths UUID only; observe queue has no depth cap (operator-only hardening).",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "_key": "handler_inputs",
+  "_hunter": "h10-plans",
+  "_added_by": "post-wave-1 critic a265b0242a3216530"
+ },
+ {
+  "coverage_id": "crates%2Fweb%2Fsrc%2Frouter.rs%23request%20limits%20and%20scan%20pipeline::crates%2Ffs%2Fsrc%2Fgate.rs%23concurrency%20gates%20and%20caps::crates%2Fweb::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+  "canonical_refs": {
+   "surface": "crates/web/src/router.rs#request limits and scan pipeline",
+   "boundary": "crates/fs/src/gate.rs#concurrency gates and caps",
+   "subsystem": "crates/web",
+   "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+  },
+  "surface": "crates/web/src/router.rs#request limits and scan pipeline",
+  "boundary": "crates/fs/src/gate.rs#concurrency gates and caps",
+  "subsystem": "crates/web",
+  "attack_class": "Resource and file handling",
+  "starting_paths": [
+   "crates/web/src/router.rs",
+   "crates/fs/src/gate.rs",
+   "crates/fs/src/scan.rs",
+   "crates/matching/src/funnel.rs",
+   "crates/reporting/src/logs.rs"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+  "selected_companion_blocks": [
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unbounded buffering and cardinality",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Reachable fatal error or deadlock",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-tenant app with one admin; no tenant or owner objects"
+   },
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "unsafe_code forbidden workspace-wide, no FFI"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 1,
+  "status": "covered",
+  "agent_id": "h08-data",
+  "reviewed_paths": [
+   "crates/fs/src/gate.rs",
+   "crates/fs/src/scan.rs",
+   "crates/matching/src/funnel.rs",
+   "crates/matching/src/similarity.rs",
+   "crates/reporting/src/logs.rs",
+   "crates/web/src/auth/limiter.rs",
+   "crates/web/src/auth/login.rs",
+   "crates/web/src/router.rs"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h08-data",
+    "reviewed_paths": [
+     "crates/web/src/router.rs",
+     "crates/web/src/auth/limiter.rs",
+     "crates/web/src/auth/login.rs"
+    ],
+    "invariant": "Unauthenticated paths bounded",
+    "method": "source",
+    "result": "Body 1MiB, URI 8KiB, 30s timeout, login limiter before Argon2; no global concurrency cap (hardening).",
+    "artifact": null
+   },
+   {
+    "agent_id": "h08-data",
+    "reviewed_paths": [
+     "crates/fs/src/gate.rs",
+     "crates/fs/src/scan.rs"
+    ],
+    "invariant": "Scan walk and gate bounded",
+    "method": "source",
+    "result": "Iterative walk, cancellation per dir, Drop-releasing permits.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h08-data",
+    "reviewed_paths": [
+     "crates/matching/src/funnel.rs",
+     "crates/matching/src/similarity.rs"
+    ],
+    "invariant": "No remote-triggered superlinear blowup to lower-trust principal",
+    "method": "source",
+    "result": "No regex; difflib port bounded by name length; O(sources x pool) only on operator-started scan.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h08-data",
+    "reviewed_paths": [
+     "crates/reporting/src/logs.rs"
+    ],
+    "invariant": "Log ring bounded",
+    "method": "source",
+    "result": "Ring evicts; message/field lengths capped; view max 500.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "_key": "resource_dos",
+  "_hunter": "h08-data"
+ },
+ {
+  "coverage_id": "crates%2Fweb%2Fsrc%2Frouter.rs%23response%20header%20and%20method%20contract::crates%2Fweb%2Fsrc%2Fauth%2Fmod.rs%23security_headers%20if_not_present%20and%20cache%20policy::crates%2Fweb::ATTACK-CLASSES.md%23Access%20control",
+  "canonical_refs": {
+   "surface": "crates/web/src/router.rs#response header and method contract",
+   "boundary": "crates/web/src/auth/mod.rs#security_headers if_not_present and cache policy",
+   "subsystem": "crates/web",
+   "attack_class": "ATTACK-CLASSES.md#Access control"
+  },
+  "surface": "crates/web/src/router.rs#response header and method contract",
+  "boundary": "crates/web/src/auth/mod.rs#security_headers if_not_present and cache policy",
+  "subsystem": "crates/web",
+  "attack_class": "Access control",
+  "starting_paths": [
+   "crates/web/src/router.rs",
+   "crates/web/src/handlers/mod.rs",
+   "crates/web/src/error.rs",
+   "crates/web/src/handlers/reports.rs",
+   "crates/web/src/assets.rs",
+   "crates/web/src/health.rs",
+   "crates/web/src/auth/mod.rs"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+  "selected_companion_blocks": [
+   "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+   "WEB-PROTOCOL-AND-AUTH.md#Web cache poisoning through unkeyed input",
+   "WEB-PROTOCOL-AND-AUTH.md#Cache deception and private-response caching",
+   "WEB-PROTOCOL-AND-AUTH.md#Response-header injection",
+   "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+   "WEB-PROTOCOL-AND-AUTH.md#Validation rules",
+   "CLIENT-SIDE.md#Core discipline",
+   "CLIENT-SIDE.md#Universal moves",
+   "CLIENT-SIDE.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-tenant app with one admin; no tenant or owner objects"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 3,
+  "status": "covered",
+  "agent_id": "h15-remote",
+  "reviewed_paths": [
+   "crates/web/src/assets.rs",
+   "crates/web/src/auth/login.rs",
+   "crates/web/src/auth/mod.rs",
+   "crates/web/src/error.rs",
+   "crates/web/src/handlers/mod.rs",
+   "crates/web/src/handlers/ops.rs",
+   "crates/web/src/handlers/reports.rs",
+   "crates/web/src/health.rs",
+   "crates/web/src/i18n.rs",
+   "crates/web/src/router.rs"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h15-remote",
+    "reviewed_paths": [
+     "crates/web/src/router.rs",
+     "crates/web/src/handlers/mod.rs",
+     "crates/web/src/error.rs",
+     "crates/web/src/handlers/reports.rs",
+     "crates/web/src/health.rs",
+     "crates/web/src/auth/login.rs"
+    ],
+    "invariant": "Authenticated responses not cacheable",
+    "method": "source",
+    "result": "render, errors, panic, export, health set no-store; Vary HX-Request; redirects server-built; HEAD behind same route_layer.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h15-remote",
+    "reviewed_paths": [
+     "crates/web/src/auth/mod.rs",
+     "crates/web/src/router.rs",
+     "crates/web/src/assets.rs"
+    ],
+    "invariant": "Handlers cannot shadow CSP/XFO",
+    "method": "source",
+    "result": "if_not_present layers wrap whole app; no handler sets CSP/XFO/Referrer-Policy.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h15-remote",
+    "reviewed_paths": [
+     "crates/web/src/auth/mod.rs",
+     "crates/web/src/auth/login.rs",
+     "crates/web/src/handlers/mod.rs",
+     "crates/web/src/handlers/ops.rs",
+     "crates/web/src/i18n.rs"
+    ],
+    "invariant": "Cookie attributes safe",
+    "method": "source",
+    "result": "Session/login cookies HttpOnly SameSite=Strict Secure per config; locale/flash values allowlisted; locale/flash lack Secure (hardening).",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "_key": "header_contract",
+  "_hunter": "h15-remote",
+  "_added_by": "post-wave-2 critic a1dacc3f27cffd4d4"
+ },
+ {
+  "coverage_id": "crates%2Fweb%2Fsrc%2Frouter.rs%23route%20groups::crates%2Fweb%2Fsrc%2Fhandlers%2Fmod.rs%23Cmd%20extractor%20and%20CommandGrant::crates%2Fweb::ATTACK-CLASSES.md%23Access%20control",
+  "canonical_refs": {
+   "surface": "crates/web/src/router.rs#route groups",
+   "boundary": "crates/web/src/handlers/mod.rs#Cmd extractor and CommandGrant",
+   "subsystem": "crates/web",
+   "attack_class": "ATTACK-CLASSES.md#Access control"
+  },
+  "surface": "crates/web/src/router.rs#route groups",
+  "boundary": "crates/web/src/handlers/mod.rs#Cmd extractor and CommandGrant",
+  "subsystem": "crates/web",
+  "attack_class": "Access control",
+  "starting_paths": [
+   "crates/web/src/router.rs",
+   "crates/web/src/handlers/mod.rs",
+   "crates/web/src/handlers/plans.rs",
+   "crates/web/src/handlers/ops.rs",
+   "crates/web/src/forms.rs"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+  "selected_companion_blocks": [
+   "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+   "WEB-PROTOCOL-AND-AUTH.md#Ordinary CSRF",
+   "WEB-PROTOCOL-AND-AUTH.md#Response-header injection",
+   "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+   "WEB-PROTOCOL-AND-AUTH.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-tenant app with one admin; no tenant or owner objects"
+   },
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "unsafe_code forbidden workspace-wide, no FFI"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 1,
+  "status": "covered",
+  "agent_id": "h02-routes",
+  "reviewed_paths": [
+   "crates/app/src/services.rs",
+   "crates/domain/src/plan.rs",
+   "crates/storage/src/repos/plans.rs",
+   "crates/web/src/auth/mod.rs",
+   "crates/web/src/auth/request.rs",
+   "crates/web/src/forms.rs",
+   "crates/web/src/handlers/issues.rs",
+   "crates/web/src/handlers/jobs.rs",
+   "crates/web/src/handlers/media.rs",
+   "crates/web/src/handlers/mod.rs",
+   "crates/web/src/handlers/ops.rs",
+   "crates/web/src/handlers/plans.rs",
+   "crates/web/src/handlers/reports.rs",
+   "crates/web/src/router.rs",
+   "crates/workflows/src/plans/planner.rs"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h02-routes",
+    "reviewed_paths": [
+     "crates/web/src/router.rs",
+     "crates/web/src/handlers/mod.rs",
+     "crates/web/src/handlers/ops.rs",
+     "crates/web/src/handlers/jobs.rs",
+     "crates/web/src/handlers/media.rs",
+     "crates/web/src/handlers/issues.rs",
+     "crates/web/src/handlers/reports.rs",
+     "crates/web/src/handlers/plans.rs"
+    ],
+    "invariant": "Mutating routes POST behind command_guard with CommandGrant",
+    "method": "source",
+    "result": "20 mutating routes all POST in command group; GET pages read-only; Cmd extractor 403 without grant; FailClosedGuard default.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h02-routes",
+    "reviewed_paths": [
+     "crates/web/src/forms.rs",
+     "crates/web/src/handlers/ops.rs",
+     "crates/web/src/handlers/reports.rs"
+    ],
+    "invariant": "Form validation, redirects, unbounded lists",
+    "method": "source",
+    "result": "Strict UUID/hex ids, selections capped 2000, text bounded, acknowledged paths compared with plan sets, return_to restricted, export format allowlisted.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h02-routes",
+    "reviewed_paths": [
+     "crates/web/src/handlers/plans.rs",
+     "crates/workflows/src/plans/planner.rs",
+     "crates/domain/src/plan.rs",
+     "crates/storage/src/repos/plans.rs",
+     "crates/app/src/services.rs"
+    ],
+    "invariant": "Plan approve/execute binding and races",
+    "method": "source",
+    "result": "Hash recomputed on load, typed counts, acknowledgements, expiry, CAS transitions, ticket at enqueue and run.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h02-routes",
+    "reviewed_paths": [
+     "crates/web/src/auth/mod.rs",
+     "crates/web/src/auth/request.rs",
+     "crates/web/src/router.rs"
+    ],
+    "invariant": "Command CSRF/Origin and response-header safety",
+    "method": "source",
+    "result": "Session then Origin then token; Location and HX-Redirect built from validated ids; no header injection.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "_key": "route_authz",
+  "_hunter": "h02-routes"
+ },
+ {
+  "coverage_id": "crates%2Fweb%2Ftemplates%23askama%20templates%20and%20HTMX::crates%2Fweb%2Fsrc%2Fauth%2Fmod.rs%23CSP%20and%20escaping::crates%2Fweb::ATTACK-CLASSES.md%23Injection",
+  "canonical_refs": {
+   "surface": "crates/web/templates#askama templates and HTMX",
+   "boundary": "crates/web/src/auth/mod.rs#CSP and escaping",
+   "subsystem": "crates/web",
+   "attack_class": "ATTACK-CLASSES.md#Injection"
+  },
+  "surface": "crates/web/templates#askama templates and HTMX",
+  "boundary": "crates/web/src/auth/mod.rs#CSP and escaping",
+  "subsystem": "crates/web",
+  "attack_class": "Injection",
+  "starting_paths": [
+   "crates/web/templates",
+   "crates/web/src/i18n.rs",
+   "crates/web/src/handlers/mod.rs",
+   "crates/web/src/assets.rs",
+   "crates/web/static"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Injection",
+  "selected_companion_blocks": [
+   "CLIENT-SIDE.md#Core discipline",
+   "CLIENT-SIDE.md#DOM-based XSS",
+   "CLIENT-SIDE.md#Client-side navigation confusion",
+   "CLIENT-SIDE.md#Clickjacking",
+   "CLIENT-SIDE.md#Universal moves",
+   "CLIENT-SIDE.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-tenant app with one admin; no tenant or owner objects"
+   },
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "unsafe_code forbidden workspace-wide, no FFI"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 1,
+  "status": "covered",
+  "agent_id": "h03-render",
+  "reviewed_paths": [
+   "crates/web/src/assets.rs",
+   "crates/web/src/auth/mod.rs",
+   "crates/web/src/handlers/mod.rs",
+   "crates/web/src/handlers/reports.rs",
+   "crates/web/src/i18n.rs",
+   "crates/web/templates",
+   "crates/web/templates/base.html",
+   "crates/web/templates/fragments/stats.html"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h03-render",
+    "reviewed_paths": [
+     "crates/web/templates",
+     "crates/web/src/handlers/mod.rs"
+    ],
+    "invariant": "Remote strings cannot reach HTML contexts unescaped",
+    "method": "source",
+    "result": "No askama.toml so default html escaper; no safe/escape/PreEscaped in templates; hx-* static; remote names only in escaped text nodes.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h03-render",
+    "reviewed_paths": [
+     "crates/web/templates/fragments/stats.html",
+     "crates/web/src/handlers/reports.rs"
+    ],
+    "invariant": "SVG chart geometry cannot inject markup",
+    "method": "source",
+    "result": "Attributes are numeric or &'static str; labels escaped.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h03-render",
+    "reviewed_paths": [
+     "crates/web/src/i18n.rs",
+     "crates/web/src/handlers/mod.rs"
+    ],
+    "invariant": "i18n substitution cannot escape encoding",
+    "method": "source",
+    "result": "String replace on static text, result autoescaped; sequential re-substitution cosmetic.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h03-render",
+    "reviewed_paths": [
+     "crates/web/src/auth/mod.rs",
+     "crates/web/templates/base.html",
+     "crates/web/src/assets.rs"
+    ],
+    "invariant": "CSP, HTMX config, static serving effective",
+    "method": "source",
+    "result": "CSP default-src self with script-src self; allowEval false; HTMX SRI and embedded hash-tested; /static exact match on two names; frame-ancestors none.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "_key": "templates",
+  "_hunter": "h03-render"
+ },
+ {
+  "coverage_id": "crates%2Fworkflows%2Fsrc%2Factions%2Frecovery.rs%23startup%20recovery%20and%20journal%20replay::crates%2Fstorage%23journal%20and%20plan%20status%20tables%20after%20crash::crates%2Fworkflows::ATTACK-CLASSES.md%23Business%20logic",
+  "canonical_refs": {
+   "surface": "crates/workflows/src/actions/recovery.rs#startup recovery and journal replay",
+   "boundary": "crates/storage#journal and plan status tables after crash",
+   "subsystem": "crates/workflows",
+   "attack_class": "ATTACK-CLASSES.md#Business logic"
+  },
+  "surface": "crates/workflows/src/actions/recovery.rs#startup recovery and journal replay",
+  "boundary": "crates/storage#journal and plan status tables after crash",
+  "subsystem": "crates/workflows",
+  "attack_class": "Business logic",
+  "starting_paths": [
+   "crates/workflows/src/actions/recovery.rs",
+   "crates/workflows/src/actions/journal.rs",
+   "crates/workflows/src/actions/batch.rs",
+   "crates/workflows/src/actions/simple.rs",
+   "crates/workflows/src/actions/verify.rs",
+   "crates/jobs/src/handler.rs",
+   "crates/web/src/handlers/ops.rs",
+   "crates/storage/migrations"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+  "selected_companion_blocks": [
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unsafe recovery and capacity rollback",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Poison-record and head-of-line blocking",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-tenant app with one admin; no tenant or owner objects"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 2,
+  "status": "covered",
+  "agent_id": "h13-recov",
+  "reviewed_paths": [
+   "crates/domain/src/journal.rs",
+   "crates/domain/src/torrent.rs",
+   "crates/fs/src/mutate.rs",
+   "crates/jobs/src/handler.rs",
+   "crates/jobs/src/runtime.rs",
+   "crates/jobs/src/workflow.rs",
+   "crates/storage/migrations/0001_observations.sql",
+   "crates/storage/migrations/0002_plans_journal_jobs.sql",
+   "crates/storage/src/db.rs",
+   "crates/storage/src/recovery.rs",
+   "crates/storage/src/repos/jobs.rs",
+   "crates/storage/src/repos/journal.rs",
+   "crates/storage/src/repos/plans.rs",
+   "crates/web/src/handlers/ops.rs",
+   "crates/workflows/src/actions/batch.rs",
+   "crates/workflows/src/actions/consolidate.rs",
+   "crates/workflows/src/actions/journal.rs",
+   "crates/workflows/src/actions/qbit.rs",
+   "crates/workflows/src/actions/recovery.rs",
+   "crates/workflows/src/actions/run.rs",
+   "crates/workflows/src/actions/simple.rs",
+   "crates/workflows/src/actions/verify.rs"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h13-recov",
+    "reviewed_paths": [
+     "crates/workflows/src/actions/recovery.rs",
+     "crates/workflows/src/actions/journal.rs",
+     "crates/workflows/src/actions/consolidate.rs",
+     "crates/fs/src/mutate.rs",
+     "crates/workflows/src/actions/simple.rs"
+    ],
+    "invariant": "Recovery never re-issues a destructive step",
+    "method": "source",
+    "result": "recover_plan only observes and writes results, never calls mutators; swapped file not judged success; Failed re-observed; ARR import/grab ambiguous treated Mutated.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h13-recov",
+    "reviewed_paths": [
+     "crates/workflows/src/actions/recovery.rs",
+     "crates/workflows/src/actions/qbit.rs",
+     "crates/domain/src/torrent.rs",
+     "crates/workflows/src/actions/run.rs",
+     "crates/workflows/src/actions/consolidate.rs"
+    ],
+    "invariant": "Torrents restarted only when data intact",
+    "method": "source",
+    "result": "initial_states journaled before stop; modified hashes started only on Verified recheck; initially stopped never started.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h13-recov",
+    "reviewed_paths": [
+     "crates/jobs/src/runtime.rs",
+     "crates/jobs/src/handler.rs",
+     "crates/jobs/src/workflow.rs",
+     "crates/web/src/handlers/ops.rs",
+     "crates/storage/src/repos/jobs.rs",
+     "crates/storage/src/recovery.rs"
+    ],
+    "invariant": "Recovery gates execute lane; no auto replay",
+    "method": "source",
+    "result": "ensure_recovered before every claim, 12 attempts then NeedsManual, execute jobs never replayed, interrupted AutoCycle pauses auto.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h13-recov",
+    "reviewed_paths": [
+     "crates/storage/src/db.rs",
+     "crates/storage/migrations/0001_observations.sql",
+     "crates/storage/migrations/0002_plans_journal_jobs.sql",
+     "crates/storage/src/repos/journal.rs",
+     "crates/storage/src/repos/plans.rs",
+     "crates/domain/src/journal.rs"
+    ],
+    "invariant": "Migrations atomic forward-only; triggers keep audit invariants",
+    "method": "source",
+    "result": "sqlx transactional migrations, version mismatch fails closed, immutability triggers.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h13-recov",
+    "reviewed_paths": [
+     "crates/workflows/src/actions/simple.rs",
+     "crates/workflows/src/actions/batch.rs",
+     "crates/workflows/src/actions/verify.rs",
+     "crates/workflows/src/actions/recovery.rs"
+    ],
+    "invariant": "simple/batch/verify steps interpreted conservatively",
+    "method": "source",
+    "result": "FixMode, rescan/refresh, verify steps recovered without re-sending commands.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "_key": "recovery_lifecycle",
+  "_hunter": "h13-recov",
+  "_added_by": "post-wave-1 critic a265b0242a3216530",
+  "_hardening": [
+   "Dry-run recovery of stopped torrents not durable: torrents stay stopped after later live restart",
+   "QbitRemoveKeepData recovery decides gone from single possibly-empty listing",
+   "recovery restarts deliberately paused torrents",
+   "recheck on never-stopped torrents",
+   "leftover .removarr-link-*/.removarr-probe-* hardlinks only reported in memory, scanned as ordinary files and add nlink",
+   "recovery retry cadence 300s x12",
+   "execute_gated invalidated path crash leaves plan unrunnable",
+   "recover() continue on non-Executing unfinished intents (unreachable via trigger)",
+   "ArrGrab/ArrManualImport no-result recorded as Done though unknown"
+  ]
+ },
+ {
+  "coverage_id": "crates%2Fworkflows%2Fsrc%2Factions%2Frun.rs%23execute%20plan::crates%2Fdomain%2Fsrc%2Fplan.rs%23approve%20and%20ticket%20hash%20binding%3B%20revalidate.rs::crates%2Fworkflows::ATTACK-CLASSES.md%23Business%20logic",
+  "canonical_refs": {
+   "surface": "crates/workflows/src/actions/run.rs#execute plan",
+   "boundary": "crates/domain/src/plan.rs#approve and ticket hash binding; revalidate.rs",
+   "subsystem": "crates/workflows",
+   "attack_class": "ATTACK-CLASSES.md#Business logic"
+  },
+  "surface": "crates/workflows/src/actions/run.rs#execute plan",
+  "boundary": "crates/domain/src/plan.rs#approve and ticket hash binding; revalidate.rs",
+  "subsystem": "crates/workflows",
+  "attack_class": "Business logic",
+  "starting_paths": [
+   "crates/workflows/src/actions/run.rs",
+   "crates/workflows/src/actions/revalidate.rs",
+   "crates/workflows/src/actions/recovery.rs",
+   "crates/workflows/src/plans/planner.rs",
+   "crates/domain/src/journal.rs"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+  "selected_companion_blocks": [],
+  "excluded_blocks": [
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-tenant app with one admin; no tenant or owner objects"
+   },
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "unsafe_code forbidden workspace-wide, no FFI"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 1,
+  "status": "covered",
+  "agent_id": "h06-actions",
+  "reviewed_paths": [
+   "crates/domain/src/plan.rs",
+   "crates/storage/src/repos/journal.rs",
+   "crates/storage/src/repos/plans.rs",
+   "crates/workflows/src/actions/batch.rs",
+   "crates/workflows/src/actions/delete.rs",
+   "crates/workflows/src/actions/dry_run.rs",
+   "crates/workflows/src/actions/journal.rs",
+   "crates/workflows/src/actions/mod.rs",
+   "crates/workflows/src/actions/qbit.rs",
+   "crates/workflows/src/actions/recovery.rs",
+   "crates/workflows/src/actions/revalidate.rs",
+   "crates/workflows/src/actions/run.rs",
+   "crates/workflows/src/actions/stalled.rs",
+   "crates/workflows/src/issues/index.rs",
+   "crates/workflows/src/plans/fsplans.rs",
+   "crates/workflows/src/plans/planner.rs"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h06-actions",
+    "reviewed_paths": [
+     "crates/workflows/src/plans/planner.rs",
+     "crates/domain/src/plan.rs",
+     "crates/storage/src/repos/plans.rs",
+     "crates/workflows/src/actions/run.rs"
+    ],
+    "invariant": "Live execution needs approved, unexpired, hash-bound plan",
+    "method": "source",
+    "result": "from_parts recomputes hash; approve checks hash/expiry/counts/acks; ticket and execute_gated repeat checks; CAS Approved->Executing.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h06-actions",
+    "reviewed_paths": [
+     "crates/workflows/src/actions/journal.rs",
+     "crates/storage/src/repos/journal.rs",
+     "crates/workflows/src/actions/run.rs"
+    ],
+    "invariant": "Journal intent before mutation, fail closed",
+    "method": "source",
+    "result": "intent() error propagates before adapter; synchronous=FULL; live intent only for Executing plan.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h06-actions",
+    "reviewed_paths": [
+     "crates/workflows/src/actions/run.rs",
+     "crates/workflows/src/actions/dry_run.rs",
+     "crates/workflows/src/actions/journal.rs",
+     "crates/workflows/src/actions/mod.rs"
+    ],
+    "invariant": "Dry-run never invokes live mutator",
+    "method": "source",
+    "result": "Simulation swaps recording mutators; Ctx::step journals Simulated without calling closure.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h06-actions",
+    "reviewed_paths": [
+     "crates/workflows/src/actions/revalidate.rs",
+     "crates/workflows/src/actions/batch.rs",
+     "crates/workflows/src/actions/delete.rs",
+     "crates/workflows/src/actions/stalled.rs",
+     "crates/workflows/src/plans/fsplans.rs",
+     "crates/workflows/src/issues/index.rs"
+    ],
+    "invariant": "Live revalidation, fail closed",
+    "method": "source",
+    "result": "Two passes around stop; signatures incl nlink, torrent states, NoTorrentReferences, live holders; any read error blocks.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h06-actions",
+    "reviewed_paths": [
+     "crates/workflows/src/actions/recovery.rs",
+     "crates/storage/src/repos/journal.rs",
+     "crates/workflows/src/actions/qbit.rs"
+    ],
+    "invariant": "Recovery never re-executes or deletes",
+    "method": "source",
+    "result": "Observes disk/listing/ARR; never trusts Failed result; Interrupted terminal; restarts only torrents it stopped.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "_key": "action_runner",
+  "_hunter": "h06-actions"
+ },
+ {
+  "coverage_id": "crates%2Fworkflows%2Fsrc%2Fissues%23arrqueue%20scope%20torrents%20aggregate%20explain%3B%20observe%20services%3B%20evaluate::crates%2Fworkflows%2Fsrc%2Fissues%2Fscope.rs%23torrent%20protection%20and%20ignore%20scope::crates%2Fworkflows::ATTACK-CLASSES.md%23Business%20logic",
+  "canonical_refs": {
+   "surface": "crates/workflows/src/issues#arrqueue scope torrents aggregate explain; observe services; evaluate",
+   "boundary": "crates/workflows/src/issues/scope.rs#torrent protection and ignore scope",
+   "subsystem": "crates/workflows",
+   "attack_class": "ATTACK-CLASSES.md#Business logic"
+  },
+  "surface": "crates/workflows/src/issues#arrqueue scope torrents aggregate explain; observe services; evaluate",
+  "boundary": "crates/workflows/src/issues/scope.rs#torrent protection and ignore scope",
+  "subsystem": "crates/workflows",
+  "attack_class": "Business logic",
+  "starting_paths": [
+   "crates/workflows/src/issues/arrqueue.rs",
+   "crates/workflows/src/issues/scope.rs",
+   "crates/workflows/src/issues/torrents.rs",
+   "crates/workflows/src/issues/aggregate.rs",
+   "crates/workflows/src/issues/explain.rs",
+   "crates/workflows/src/observe/services.rs",
+   "crates/workflows/src/evaluate/mod.rs"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+  "selected_companion_blocks": [
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-tenant app with one admin; no tenant or owner objects"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 4,
+  "status": "covered",
+  "agent_id": "h16-auto",
+  "reviewed_paths": [
+   "crates/domain/src/ids.rs",
+   "crates/workflows/src/evaluate/mod.rs",
+   "crates/workflows/src/issues/aggregate.rs",
+   "crates/workflows/src/issues/arrqueue.rs",
+   "crates/workflows/src/issues/ctx.rs",
+   "crates/workflows/src/issues/explain.rs",
+   "crates/workflows/src/issues/index.rs",
+   "crates/workflows/src/issues/scope.rs",
+   "crates/workflows/src/issues/torrents.rs",
+   "crates/workflows/src/observe/services.rs",
+   "crates/workflows/src/plans/facts.rs"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h16-auto",
+    "reviewed_paths": [
+     "crates/workflows/src/issues/index.rs",
+     "crates/workflows/src/issues/torrents.rs",
+     "crates/workflows/src/plans/facts.rs",
+     "crates/workflows/src/observe/services.rs"
+    ],
+    "invariant": "Hostile qBit JSON cannot make protected torrent look unprotected",
+    "method": "source",
+    "result": "protection() fail-closed; files-unreadable torrent owns content dir; torrent_states blocks missing holders; TorrentHash normalized.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h16-auto",
+    "reviewed_paths": [
+     "crates/workflows/src/issues/scope.rs",
+     "crates/workflows/src/issues/ctx.rs",
+     "crates/domain/src/ids.rs"
+    ],
+    "invariant": "Ignore keys cannot collide; fail-closed perimeter",
+    "method": "source",
+    "result": "SubjectKey formats prefixed and disjoint; subtree_blockers and auto_blockers fail closed on unfinished/errored/protected roots.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h16-auto",
+    "reviewed_paths": [
+     "crates/workflows/src/issues/arrqueue.rs",
+     "crates/workflows/src/issues/aggregate.rs",
+     "crates/workflows/src/issues/explain.rs",
+     "crates/workflows/src/evaluate/mod.rs"
+    ],
+    "invariant": "Queue id derivation and aggregation not hostile-driven",
+    "method": "source",
+    "result": "Queue issues keyed from numeric ARR ids, queue removal manual only; notes display only; aggregates bounded.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "_key": "issue_derivation",
+  "_hunter": "h16-auto",
+  "_added_by": "final-clean critic adf46a0687ab02298",
+  "_hardening": [
+   "actions/auto.rs arr_validated_blockers at execution accepts any rejection reason, planning requires is_not_upgrade_reason",
+   "is_not_upgrade_reason uses broad contains('upgrade')",
+   "observe/services.rs history_for_download unwrap_or_default hides failed ARR history",
+   "plans/facts.rs descendants() upper bound wrong for root dir (not called with root)"
+  ]
+ },
+ {
+  "coverage_id": "crates%2Fworkflows%2Fsrc%2Fissues%23issue%20classification%20from%20remote%20and%20NAS%20data::crates%2Fmatching%2Fsrc%23hostile%20release%20and%20file%20names::crates%2Fworkflows::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+  "canonical_refs": {
+   "surface": "crates/workflows/src/issues#issue classification from remote and NAS data",
+   "boundary": "crates/matching/src#hostile release and file names",
+   "subsystem": "crates/workflows",
+   "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+  },
+  "surface": "crates/workflows/src/issues#issue classification from remote and NAS data",
+  "boundary": "crates/matching/src#hostile release and file names",
+  "subsystem": "crates/workflows",
+  "attack_class": "Resource and file handling",
+  "starting_paths": [
+   "crates/workflows/src/issues/files.rs",
+   "crates/workflows/src/issues/hardlink.rs",
+   "crates/workflows/src/issues/orphan.rs",
+   "crates/workflows/src/issues/incomplete.rs",
+   "crates/workflows/src/issues/library.rs",
+   "crates/workflows/src/observe/mod.rs",
+   "crates/matching/src/parse.rs",
+   "crates/matching/src/normalize.rs",
+   "crates/matching/src/proof.rs",
+   "crates/matching/src/funnel.rs",
+   "crates/matching/src/similarity.rs"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+  "selected_companion_blocks": [
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Superlinear parsing, matching, or evaluation",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Poison-record and head-of-line blocking",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-tenant app with one admin; no tenant or owner objects"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 2,
+  "status": "covered",
+  "agent_id": "h11-issues",
+  "reviewed_paths": [
+   "crates/domain/src/evidence.rs",
+   "crates/domain/src/fs.rs",
+   "crates/domain/src/path.rs",
+   "crates/domain/src/policy.rs",
+   "crates/matching/src/checks.rs",
+   "crates/matching/src/funnel.rs",
+   "crates/matching/src/normalize.rs",
+   "crates/matching/src/parse.rs",
+   "crates/matching/src/proof.rs",
+   "crates/matching/src/similarity.rs",
+   "crates/workflows/src/actions/consolidate.rs",
+   "crates/workflows/src/issues/ctx.rs",
+   "crates/workflows/src/issues/files.rs",
+   "crates/workflows/src/issues/hardlink.rs",
+   "crates/workflows/src/issues/incomplete.rs",
+   "crates/workflows/src/issues/index.rs",
+   "crates/workflows/src/issues/library.rs",
+   "crates/workflows/src/issues/mod.rs",
+   "crates/workflows/src/issues/orphan.rs",
+   "crates/workflows/src/observe/mod.rs",
+   "crates/workflows/src/plans/fsplans.rs"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h11-issues",
+    "reviewed_paths": [
+     "crates/matching/src/normalize.rs",
+     "crates/matching/src/funnel.rs",
+     "crates/workflows/src/issues/hardlink.rs",
+     "crates/workflows/src/plans/fsplans.rs",
+     "crates/workflows/src/actions/consolidate.rs",
+     "crates/matching/src/proof.rs",
+     "crates/domain/src/evidence.rs",
+     "crates/domain/src/fs.rs"
+    ],
+    "invariant": "Hostile or colliding names never bypass identical-content gates",
+    "method": "source",
+    "result": "Name key and semantic only produce candidates; Identical only from ContentVerifier::verify with full_compare and signature rechecks; consolidate re-runs compare against plan signatures.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h11-issues",
+    "reviewed_paths": [
+     "crates/matching/src/parse.rs",
+     "crates/matching/src/normalize.rs",
+     "crates/matching/src/similarity.rs",
+     "crates/matching/src/checks.rs",
+     "crates/domain/src/path.rs"
+    ],
+    "invariant": "No panic and bounded parsing on hostile names",
+    "method": "source",
+    "result": "parse slices only ASCII-folded output; guarded indexes/arith; linear regex engine; sequence_ratio O(n^2-n^3) on <=255-byte names (hardening).",
+    "artifact": null
+   },
+   {
+    "agent_id": "h11-issues",
+    "reviewed_paths": [
+     "crates/workflows/src/issues/orphan.rs",
+     "crates/workflows/src/issues/files.rs",
+     "crates/workflows/src/issues/incomplete.rs",
+     "crates/workflows/src/issues/library.rs",
+     "crates/workflows/src/issues/index.rs",
+     "crates/workflows/src/issues/ctx.rs",
+     "crates/workflows/src/issues/mod.rs",
+     "crates/domain/src/policy.rs"
+    ],
+    "invariant": "Classification selects delete targets only when no torrent holds them",
+    "method": "source",
+    "result": "Ownership by mapped path and inode; descendants() component-wise; junk skips held/video/sample files; fail-closed ownership blockers.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h11-issues",
+    "reviewed_paths": [
+     "crates/workflows/src/observe/mod.rs",
+     "crates/matching/src/funnel.rs",
+     "crates/matching/src/similarity.rs",
+     "crates/workflows/src/issues/index.rs",
+     "crates/workflows/src/issues/orphan.rs",
+     "crates/workflows/src/issues/incomplete.rs",
+     "crates/workflows/src/issues/ctx.rs"
+    ],
+    "invariant": "Scan/classify work bounded",
+    "method": "source",
+    "result": "Quadratic classification spots and unbounded similarity pool exist but only degrade operator-started scans CPU time; no execution possible so not strengthened; hardening.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "_key": "issues_matching",
+  "_hunter": "h11-issues",
+  "_added_by": "post-wave-1 critic a265b0242a3216530",
+  "_hardening": [
+   "orphan.rs and index.rs quadratic classification",
+   "classify() runs synchronously in async scan",
+   "similarity candidate pool uncapped",
+   "funnel truncation to 10 name+size decoys can hide candidate (no wrong action)",
+   "orphan-subtitle ASCII lowercase false positives",
+   "carried identical proof ignores ctime"
+  ]
+ },
+ {
+  "coverage_id": "crates%2Fworkflows%2Fsrc%2Fplans%23plan%20construction%20from%20stored%20scan%20facts::crates%2Fweb%2Fsrc%2Fhandlers%2Fplans.rs%23client-supplied%20issue_ids%20and%20service%2Fid%20params::crates%2Fworkflows::ATTACK-CLASSES.md%23Business%20logic",
+  "canonical_refs": {
+   "surface": "crates/workflows/src/plans#plan construction from stored scan facts",
+   "boundary": "crates/web/src/handlers/plans.rs#client-supplied issue_ids and service/id params",
+   "subsystem": "crates/workflows",
+   "attack_class": "ATTACK-CLASSES.md#Business logic"
+  },
+  "surface": "crates/workflows/src/plans#plan construction from stored scan facts",
+  "boundary": "crates/web/src/handlers/plans.rs#client-supplied issue_ids and service/id params",
+  "subsystem": "crates/workflows",
+  "attack_class": "Business logic",
+  "starting_paths": [
+   "crates/workflows/src/plans/build.rs",
+   "crates/workflows/src/plans/fsplans.rs",
+   "crates/workflows/src/plans/arrplans.rs",
+   "crates/workflows/src/plans/request.rs",
+   "crates/workflows/src/plans/service.rs",
+   "crates/workflows/src/plans/gate.rs",
+   "crates/web/src/handlers/plans.rs",
+   "crates/web/src/handlers/media.rs",
+   "crates/web/src/forms.rs"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+  "selected_companion_blocks": [],
+  "excluded_blocks": [
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-tenant app with one admin; no tenant or owner objects"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 2,
+  "status": "covered",
+  "agent_id": "h10-plans",
+  "reviewed_paths": [
+   "crates/storage/src/repos/issues.rs",
+   "crates/web/src/forms.rs",
+   "crates/web/src/handlers/media.rs",
+   "crates/web/src/handlers/ops.rs",
+   "crates/workflows/src/plans/arrplans.rs",
+   "crates/workflows/src/plans/build.rs",
+   "crates/workflows/src/plans/fsplans.rs",
+   "crates/workflows/src/plans/gate.rs",
+   "crates/workflows/src/plans/planner.rs",
+   "crates/workflows/src/plans/request.rs",
+   "crates/workflows/src/plans/service.rs",
+   "crates/workflows/src/plans/validate.rs"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h10-plans",
+    "reviewed_paths": [
+     "crates/workflows/src/plans/build.rs",
+     "crates/workflows/src/plans/planner.rs",
+     "crates/storage/src/repos/issues.rs",
+     "crates/web/src/forms.rs"
+    ],
+    "invariant": "Plan data only from server-held scan data",
+    "method": "source",
+    "result": "Client supplies category, action enum, hex issue ids, flags; build::select reloads issues, rejects unknown/resolved/foreign-session/wrong-category; paths, hashes, signatures from stored inventories; preview/create/auto share build_plan and gate.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h10-plans",
+    "reviewed_paths": [
+     "crates/workflows/src/plans/fsplans.rs",
+     "crates/workflows/src/plans/validate.rs",
+     "crates/workflows/src/plans/gate.rs"
+    ],
+    "invariant": "Plan cannot target outside roots, protected zones, held or mismatching items",
+    "method": "source",
+    "result": "Root kind per ActionKind, regular-file-only, torrent_guard, shared-inode check, folder deletion requires all descendants in unit, EntryUnchanged and NoScanErrorUnder pins, validate::check_plan re-asserts.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h10-plans",
+    "reviewed_paths": [
+     "crates/workflows/src/plans/arrplans.rs",
+     "crates/workflows/src/plans/service.rs",
+     "crates/web/src/handlers/media.rs",
+     "crates/web/src/handlers/ops.rs",
+     "crates/workflows/src/plans/request.rs"
+    ],
+    "invariant": "Client service/ARR ids cannot create actions on unobserved targets",
+    "method": "source",
+    "result": "Grab release must equal entry in fresh search result and be approved; queue removal derives ids from stored issue; typed-count approval and hash for all.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "_key": "plan_build",
+  "_hunter": "h10-plans",
+  "_added_by": "post-wave-1 critic a265b0242a3216530"
+ },
+ {
+  "coverage_id": "crates%2Fworkflows%2Fsrc%2Fplans%2Fauto.rs%23automatic%20policy%20rules%20A1-A9%20and%20approve_auto%20final%20check::crates%2Fworkflows%2Fsrc%2Fplans%2Fexpiry.rs%23staleness%20at%20approval::crates%2Fworkflows::ATTACK-CLASSES.md%23Business%20logic",
+  "canonical_refs": {
+   "surface": "crates/workflows/src/plans/auto.rs#automatic policy rules A1-A9 and approve_auto final check",
+   "boundary": "crates/workflows/src/plans/expiry.rs#staleness at approval",
+   "subsystem": "crates/workflows",
+   "attack_class": "ATTACK-CLASSES.md#Business logic"
+  },
+  "surface": "crates/workflows/src/plans/auto.rs#automatic policy rules A1-A9 and approve_auto final check",
+  "boundary": "crates/workflows/src/plans/expiry.rs#staleness at approval",
+  "subsystem": "crates/workflows",
+  "attack_class": "Business logic",
+  "starting_paths": [
+   "crates/workflows/src/plans/auto.rs",
+   "crates/workflows/src/plans/expiry.rs",
+   "crates/workflows/src/plans/facts.rs",
+   "crates/workflows/src/plans/preview.rs",
+   "crates/workflows/src/actions/auto.rs",
+   "crates/jobs/src/auto.rs"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+  "selected_companion_blocks": [
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "single-tenant app with one admin; no tenant or owner objects"
+   }
+  ],
+  "prior_status": "none",
+  "attempts": [],
+  "wave": 4,
+  "status": "covered",
+  "agent_id": "h16-auto",
+  "reviewed_paths": [
+   "crates/domain/src/plan.rs",
+   "crates/jobs/src/auto.rs",
+   "crates/matching/src/funnel.rs",
+   "crates/workflows/src/actions/auto.rs",
+   "crates/workflows/src/actions/consolidate.rs",
+   "crates/workflows/src/plans/auto.rs",
+   "crates/workflows/src/plans/build.rs",
+   "crates/workflows/src/plans/expiry.rs",
+   "crates/workflows/src/plans/fsplans.rs",
+   "crates/workflows/src/plans/gate.rs",
+   "crates/workflows/src/plans/planner.rs"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h16-auto",
+    "reviewed_paths": [
+     "crates/workflows/src/plans/auto.rs",
+     "crates/workflows/src/plans/planner.rs",
+     "crates/workflows/src/plans/build.rs",
+     "crates/workflows/src/plans/gate.rs",
+     "crates/domain/src/plan.rs"
+    ],
+    "invariant": "Only units meeting every auto rule are auto-approved",
+    "method": "source",
+    "result": "create_auto: check_enabled, build_plan with A2-A8, auto_plan_defects, approve_auto (origin, expiry, samples, unrecoverable, kind, completeness, ARR-validated deletion); re-run at execution; at least as strict as manual.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h16-auto",
+    "reviewed_paths": [
+     "crates/matching/src/funnel.rs",
+     "crates/workflows/src/plans/fsplans.rs",
+     "crates/workflows/src/actions/consolidate.rs",
+     "crates/workflows/src/actions/auto.rs"
+    ],
+    "invariant": "NameSize candidate cannot auto-consolidate different content",
+    "method": "source",
+    "result": "compare_then_replace always runs full byte compare before replace_with_hardlink; completed->media only.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h16-auto",
+    "reviewed_paths": [
+     "crates/workflows/src/plans/expiry.rs",
+     "crates/workflows/src/plans/planner.rs",
+     "crates/workflows/src/actions/auto.rs",
+     "crates/jobs/src/auto.rs"
+    ],
+    "invariant": "Stale/expired plan cannot be auto-approved or executed",
+    "method": "source",
+    "result": "Built and approved in one step; approve_auto re-run at execution with AutoPolicy approval of exact hash, fresh perimeter and ARR reads; failed_sets 7-day lookback fails closed.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "_key": "auto_policy",
+  "_hunter": "h16-auto",
+  "_added_by": "final-clean critic adf46a0687ab02298"
+ }
+]

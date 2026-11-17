@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block title %}{{ ctx.tr.t("issues.selection") }} - {{ ctx.tr.t("app.name") }}{% endblock %}
+{% block content %}<section aria-labelledby="sel-title">
+<h1 id="sel-title">{{ ctx.tr.t("issues.selection") }}</h1>
+{% include "fragments/selection_summary.html" %}
+<p class="muted">{{ ctx.tr.t("issues.selection_readonly") }}</p>
+<p><a class="btn" href="/">{{ ctx.tr.t("nav.dashboard") }}</a></p>
+</section>{% endblock %}

@@ -1,0 +1,40 @@
+[package]
+name = "removarr-workflows"
+description = "Use cases: observe, evaluate, plan, execute and verify."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+removarr-domain = { workspace = true }
+removarr-matching = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+async-trait = { workspace = true }
+
+[dev-dependencies]
+removarr-workflows = { path = ".", features = ["tier5-test-gate"] }
+tempfile = { workspace = true }
+removarr-testkit = { workspace = true }
+# Test-only: the real confined filesystem adapter builds the parity-fixture inventories and the
+# permission rules are checked against it. Normal dependencies stay domain + matching
+# (architecture 2.2; gate in docs/development.md).
+removarr-fs = { workspace = true }
+removarr-config = { workspace = true, features = ["test-support"] }
+# Test-only (plan-engine): real SQLite repositories for immutable plan persistence, approval CAS
+# and status transitions. Normal dependencies are unchanged.
+removarr-storage = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
+
+[features]
+# Test-only: exposes `actions::execute_with_gate` so the tier-5 runner path can be tested while
+# `IMPLEMENTED_TIER` stays T4. Enabled only by the self dev-dependency below.
+tier5-test-gate = []

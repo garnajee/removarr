@@ -1,0 +1,25 @@
+{% import "components.html" as c %}
+<section id="history" aria-labelledby="history-title">
+<h1 id="history-title" tabindex="-1">{{ ctx.tr.t("nav.history") }}</h1>
+{% if v.vm.unfinished_intents > 0 %}<p class="state incomplete" role="alert">{% call c::badge("warn", "alert-triangle", ctx.tr.t("state.incomplete")) %} {{ ctx.tr.t("history.unfinished") }}: {{ v.vm.unfinished_intents }}</p>{% endif %}
+{% if v.vm.rows.is_empty() %}<p class="state">{{ ctx.tr.t("empty.history") }}</p>{% else %}
+<div class="tablewrap"><table class="stack">
+<caption>{{ ctx.tr.t("history.caption") }}</caption>
+<thead><tr><th scope="col">{{ ctx.tr.t("history.at") }}</th><th scope="col">{{ ctx.tr.t("history.action") }}</th><th scope="col">{{ ctx.tr.t("history.target") }}</th><th scope="col">{{ ctx.tr.t("history.reason") }}</th><th scope="col">{{ ctx.tr.t("history.outcome") }}</th><th scope="col">{{ ctx.tr.t("history.freed") }}</th></tr></thead>
+<tbody>
+{% for r in v.vm.rows %}<tr>
+<td data-label="{{ ctx.tr.t("history.at") }}"><time datetime="{{ r.at_iso }}">{{ r.at_iso }}</time></td>
+<td data-label="{{ ctx.tr.t("history.action") }}"><a href="/plans/{{ r.plan_id }}">{{ ctx.coded("kind", r.action_kind) }}</a></td>
+<td data-label="{{ ctx.tr.t("history.target") }}"><code class="path" translate="no">{{ r.target }}</code></td>
+<td data-label="{{ ctx.tr.t("history.reason") }}">{{ ctx.coded("origin", r.reason.origin) }}</td>
+<td data-label="{{ ctx.tr.t("history.outcome") }}">{{ ctx.coded("outcome", r.outcome.key) }}</td>
+<td data-label="{{ ctx.tr.t("history.freed") }}">{{ r.attributable_bytes }}</td>
+</tr>{% endfor %}
+</tbody></table></div>
+{% endif %}
+<nav class="pager" aria-label="{{ ctx.tr.t("issues.pages") }}">
+{% if let Some(u) = v.prev_url %}<a class="btn" href="{{ u }}" rel="prev">{{ ctx.tr.t("issues.prev") }}</a>{% endif %}
+<span>{{ ctx.tn("history.page", v.page) }}</span>
+{% if let Some(u) = v.next_url %}<a class="btn" href="{{ u }}" rel="next">{{ ctx.tr.t("issues.next") }}</a>{% endif %}
+</nav>
+</section>

@@ -1,0 +1,33 @@
+[package]
+name = "removarr-integration-tests"
+description = "Cross-crate integration tests: real local components, loopback fakes for external services."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+removarr = { path = "../app" }
+removarr-domain = { workspace = true }
+removarr-config = { workspace = true }
+removarr-arr = { workspace = true }
+removarr-storage = { workspace = true }
+removarr-fs = { workspace = true }
+removarr-jobs = { workspace = true }
+removarr-reporting = { workspace = true }
+removarr-web = { workspace = true }
+removarr-workflows = { workspace = true }
+removarr-testkit = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
+axum = { workspace = true }
+tower = { workspace = true }
+http-body-util = { workspace = true }
+reqwest = { workspace = true }
+serde_json = { workspace = true }
+async-trait = { workspace = true }
+argon2 = { workspace = true }
+rustix = { workspace = true }
+sqlx = { workspace = true }

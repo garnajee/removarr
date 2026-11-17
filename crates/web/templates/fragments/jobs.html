@@ -1,0 +1,7 @@
+<section id="jobs" aria-labelledby="jobs-title">
+<h1 id="jobs-title" tabindex="-1">{{ ctx.tr.t("nav.jobs") }}</h1>
+{% if v.jobs.is_empty() %}<p class="state">{{ ctx.tr.t("jobs.none") }}</p>{% endif %}
+<ul class="cards">{% for j in v.jobs %}<li class="card"><a href="/jobs/{{ j.id }}"><strong>{{ j.label }}</strong></a> <span class="pill{% if j.status == "Interrupted" || j.status == "Failed" %} pill-crit{% endif %}">{% if j.status == "Interrupted" || j.status == "Failed" %}&#9888; {% endif %}{{ ctx.coded("job_status", j.status) }}</span>{% if !j.stage.is_empty() %} <span class="tag">{{ j.stage }}</span>{% endif %}
+{% if j.total > 0 %}<progress value="{{ j.done }}" max="{{ j.total }}" aria-label="{{ ctx.tr.t("jobs.progress") }}">{{ j.done }} / {{ j.total }}</progress>{% endif %}</li>{% endfor %}</ul>
+<p class="tag">{{ ctx.tr.t("jobs.memory_note") }}</p>
+</section>

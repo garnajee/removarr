@@ -1,0 +1,26 @@
+{% import "components.html" as c %}
+<section id="media" aria-labelledby="media-title">
+<h1 id="media-title" tabindex="-1">{{ ctx.tr.t("media.title") }} <span translate="no">{{ v.service }} #{{ v.media_id }}</span></h1>
+<p class="muted">{{ ctx.tr.t("media.search_help") }}</p>
+<form method="post" action="/media/{{ v.service }}/{{ v.media_id }}/search">{% call c::csrf(ctx.chrome.csrf) %}{% if !v.episode_id.is_empty() %}<input type="hidden" name="episode_id" value="{{ v.episode_id }}">{% endif %}<button type="submit">{{ ctx.tr.t("media.search") }}</button></form>
+{% if !v.grab_enabled %}<div class="state" role="note"><p>{{ ctx.tr.t(v.grab_note) }}</p></div>{% endif %}
+{% if v.searched %}
+<h2>{{ ctx.tr.t("media.results") }}</h2>
+{% if v.results.is_empty() %}<p class="state">{{ ctx.tr.t("media.none") }}</p>
+{% else %}<p class="muted">{{ ctx.tr.t("media.grab_flow") }}</p>
+<div class="tablewrap"><table class="stack">
+<caption>{{ ctx.tr.t("media.results") }}</caption>
+<thead><tr><th scope="col">{{ ctx.tr.t("media.col.release") }}</th><th scope="col">{{ ctx.tr.t("media.col.indexer") }}</th><th scope="col">{{ ctx.tr.t("issues.col.size") }}</th><th scope="col">{{ ctx.tr.t("media.col.seeders") }}</th><th scope="col">{{ ctx.tr.t("issues.col.age") }}</th><th scope="col">{{ ctx.tr.t("media.col.quality") }}</th><th scope="col">{{ ctx.tr.t("media.col.cf_score") }}</th><th scope="col">{{ ctx.tr.t("media.col.arr") }}</th><th scope="col">{{ ctx.tr.t("media.col.action") }}</th></tr></thead>
+<tbody>{% for r in v.results %}<tr>
+<td data-label="{{ ctx.tr.t("media.col.release") }}" translate="no">{{ r.title }}<br><code>{{ r.token }}</code></td>
+<td data-label="{{ ctx.tr.t("media.col.indexer") }}" translate="no">{{ r.indexer }} ({{ r.protocol }})</td>
+<td data-label="{{ ctx.tr.t("issues.col.size") }}">{{ r.size }}</td>
+<td data-label="{{ ctx.tr.t("media.col.seeders") }}">{{ r.seeders }}</td>
+<td data-label="{{ ctx.tr.t("issues.col.age") }}">{{ r.age_days }}</td>
+<td data-label="{{ ctx.tr.t("media.col.quality") }}" translate="no">{{ r.quality }}{% for f in r.custom_formats %} <span class="tag">{{ f }}</span>{% endfor %}</td>
+<td data-label="{{ ctx.tr.t("media.col.cf_score") }}">{{ r.cf_score }}</td>
+<td data-label="{{ ctx.tr.t("media.col.arr") }}">{% if r.approved %}{% call c::badge("ok", "check-circle", ctx.tr.t("media.approved")) %}{% else %}{% call c::badge("warn", "alert-triangle", ctx.tr.t("media.rejected")) %}{% endif %}{% if !r.rejections.is_empty() %}<ul>{% for x in r.rejections %}<li>{{ x }}</li>{% endfor %}</ul>{% endif %}</td>
+<td data-label="{{ ctx.tr.t("media.col.action") }}">{% if !v.grab_enabled %}<span class="tag">{{ ctx.tr.t("media.unavailable") }}</span>{% else if !r.grabbable %}<span class="tag">{{ ctx.tr.t("media.not_grabbable") }}</span>{% else %}<form method="post" action="/media/{{ v.service }}/{{ v.media_id }}/grab-plan">{% call c::csrf(ctx.chrome.csrf) %}<input type="hidden" name="release" value="{{ r.token }}"><input type="hidden" name="indexer_id" value="{{ r.indexer_id }}">{% if !v.episode_id.is_empty() %}<input type="hidden" name="episode_id" value="{{ v.episode_id }}">{% endif %}<button type="submit">{{ ctx.tr.t("media.plan_grab") }}</button></form>{% endif %}</td>
+</tr>{% endfor %}</tbody></table></div>{% endif %}
+{% endif %}
+</section>

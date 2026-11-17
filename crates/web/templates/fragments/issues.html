@@ -1,0 +1,92 @@
+{% import "components.html" as c %}
+<section id="list-region" aria-labelledby="list-heading">
+<h1 id="list-heading" tabindex="-1">{{ v.title }}</h1>
+{% if let Some(t) = v.snapshot_at %}<p class="muted">{{ ctx.tr.t("issues.snapshot_of") }} <time datetime="{{ t }}">{{ t }}</time></p>{% endif %}
+<form method="get" role="search" aria-label="{{ ctx.tr.t("issues.filters") }}">
+<input type="hidden" name="per_page" value="{{ v.per_page }}">
+<div class="row">
+<div class="field"><label for="f-q">{{ ctx.tr.t("issues.search") }}</label><input id="f-q" type="search" name="q" value="{{ v.q }}" maxlength="200" autocomplete="off"></div>
+<div class="field"><label for="f-kind">{{ ctx.tr.t("issues.kind") }}</label><select id="f-kind" name="kind">
+<option value="all"{% if v.kind == "all" %} selected{% endif %}>{{ ctx.tr.t("issues.kind.all") }}</option>
+<option value="folder"{% if v.kind == "folder" %} selected{% endif %}>{{ ctx.tr.t("issues.kind.folder") }}</option>
+<option value="file"{% if v.kind == "file" %} selected{% endif %}>{{ ctx.tr.t("issues.kind.file") }}</option>
+</select></div>
+<div class="field"><label for="f-sort">{{ ctx.tr.t("issues.sort") }}</label><select id="f-sort" name="sort">
+<option value="name"{% if v.sort == "name" %} selected{% endif %}>{{ ctx.tr.t("issues.col.name") }}</option>
+<option value="size"{% if v.sort == "size" %} selected{% endif %}>{{ ctx.tr.t("issues.col.size") }}</option>
+<option value="age"{% if v.sort == "age" %} selected{% endif %}>{{ ctx.tr.t("issues.col.age") }}</option>
+</select></div>
+<div class="field"><label for="f-dir">{{ ctx.tr.t("issues.dir") }}</label><select id="f-dir" name="dir">
+<option value="asc"{% if v.dir == "asc" %} selected{% endif %}>{{ ctx.tr.t("issues.dir.asc") }}</option>
+<option value="desc"{% if v.dir == "desc" %} selected{% endif %}>{{ ctx.tr.t("issues.dir.desc") }}</option>
+</select></div>
+{% if !v.ignored_mode %}<div class="field"><label for="f-recent">{{ ctx.tr.t("issues.hide_recent") }}</label><select id="f-recent" name="hide_recent">
+<option value="1"{% if v.hide_recent %} selected{% endif %}>{{ ctx.tn("issues.hide_recent_on", v.hide_recent_days) }}</option>
+<option value="0"{% if !v.hide_recent %} selected{% endif %}>{{ ctx.tr.t("issues.hide_recent_off") }}</option>
+</select></div>{% endif %}
+<button type="submit" class="primary">{{ ctx.tr.t("issues.apply") }}</button>
+</div>
+<p class="tag">{{ ctx.tr.t("issues.selection_resets") }}</p>
+</form>
+<p class="strip" role="status"><strong>{{ v.strip }}</strong></p>
+{% if let Some(n) = v.hidden_note %}<p class="tag">{{ n }}</p>{% endif %}
+{% if let Some(k) = v.empty_key %}<div class="state"><p>{{ ctx.tr.t(k) }}</p>{% if v.filters_active %}<p><a class="btn" href="{{ v.clear_filters_url }}">{{ ctx.tr.t("issues.clear_filters") }}</a></p>{% endif %}</div>{% endif %}
+<form id="selection" method="post" action="{% if v.ignored_mode %}/issues/restore{% else %}/plans{% endif %}" hx-post="/issues/selection-summary" hx-trigger="change delay:150ms" hx-target="#selection-summary" hx-swap="outerHTML" hx-sync="this:replace">
+{% call c::csrf(ctx.chrome.csrf) %}
+{% if let Some(cat) = v.category %}<input type="hidden" name="category" value="{{ cat }}">{% endif %}
+{% if v.on_page > 0 %}
+<p class="row">
+{% if v.select_all %}<a class="btn" href="{{ v.clear_url }}">{{ ctx.tr.t("issues.clear_selection") }}</a>{% else %}<a class="btn" href="{{ v.select_all_url }}">{{ ctx.tn("issues.select_page", v.on_page) }}</a>{% endif %}
+<button type="reset">{{ ctx.tr.t("issues.reset") }}</button>
+</p>
+{% endif %}
+<ul class="cards">
+{% for r in v.rows %}<li class="card {{ r.level }}">
+<label class="check"><input type="checkbox" name="issue_ids" value="{{ r.id }}"{% if r.checked %} checked{% endif %}><span class="vh">{{ ctx.tr.t("issues.select_item") }} {{ r.name }}</span><span aria-hidden="true">{{ ctx.tr.t("issues.select") }}</span></label>
+<p><a href="/issues/{{ r.category }}/{{ r.id }}"><strong translate="no">{{ r.name }}</strong></a></p>
+<p>{% call c::badge(r.level, r.icon, ctx.tr.t(r.severity_key)) %}
+<span class="pill"><svg class="badge-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><use href="#i-{% if r.kind == "folder" %}folder{% else %}file{% endif %}"/></svg> {% if r.kind == "folder" %}{{ ctx.tr.t("issues.kind.folder_one") }}{% else %}{{ ctx.tr.t("issues.kind.file_one") }}{% endif %}</span>
+{% if r.blockers > 0 %}<span class="pill">{{ ctx.tn("issues.blockers_pill", r.blockers) }}</span>{% endif %}
+{% if r.incomplete %}<span class="pill">{{ ctx.tr.t("state.incomplete") }}</span>{% endif %}</p>
+<dl class="meta">
+<div><dt>{{ ctx.tr.t("issues.col.age") }}</dt><dd>{{ ctx.tn("unit.day", r.age_days) }}</dd></div>
+<div><dt>{{ ctx.tr.t("issues.col.size") }}</dt><dd>{{ r.size }}</dd></div>
+<div><dt>{{ ctx.tr.t("issues.col.torrents") }}</dt><dd>{{ r.torrents }}</dd></div>
+</dl>
+</li>{% endfor %}
+</ul>
+<div class="sel-bar">
+<p id="selection-summary" role="status" aria-live="polite" aria-atomic="true">{{ v.sel_text }}</p>
+{% if v.ignored_mode %}
+<div class="row"><button type="submit" class="primary">{{ ctx.tr.t("command.restore") }}</button>
+<button type="submit" formaction="/issues/selection-summary" formnovalidate>{{ ctx.tr.t("command.selection_total") }}</button></div>
+{% else %}
+<div class="field"><label for="sel-action">{{ ctx.tr.t("issues.action") }}</label>
+<select id="sel-action" name="action" required><option value="" selected disabled>{{ ctx.tr.t("issues.choose_action") }}</option>{% for a in v.actions %}<option value="{{ a.value }}">{{ a.label }}</option>{% endfor %}</select></div>
+<label class="check"><input type="checkbox" name="remove_torrent_tasks" value="1"><span>{{ ctx.tr.t("plan.remove_torrent_tasks") }}</span></label>
+<div class="row">
+<button type="submit" formaction="/plans/preview">{{ ctx.tr.t("command.preview") }}</button>
+<button type="submit" class="primary">{{ ctx.tr.t("command.create_plan") }}</button>
+</div>
+<details class="sel-more"><summary>{{ ctx.tr.t("issues.more_actions") }}</summary>
+<p class="tag">{{ ctx.tr.t("issues.plan_note") }}</p>
+<div class="row">
+<button type="submit" formaction="/issues/selection-summary" formnovalidate>{{ ctx.tr.t("command.selection_total") }}</button>
+<button type="submit" formaction="/issues/evaluate" formnovalidate>{{ ctx.tr.t("command.evaluate") }}</button>
+<button type="submit" formaction="/issues/verify-content" formnovalidate>{{ ctx.tr.t("command.verify_content") }}</button>
+</div>
+<details class="sel-ignore"><summary>{{ ctx.tr.t("ignore.open") }}</summary>
+<p class="muted">{{ ctx.tr.t("ignore.reversible") }}</p>
+<div class="field"><label for="ign-reason">{{ ctx.tr.t("issues.ignore_reason") }}</label><input id="ign-reason" type="text" name="reason" maxlength="500" autocomplete="off"></div>
+<button type="submit" formaction="/issues/ignore" formnovalidate>{{ ctx.tr.t("command.ignore") }}</button>
+</details>
+</details>
+{% endif %}
+</div>
+</form>
+<nav class="pager" aria-label="{{ ctx.tr.t("issues.pages") }}">
+{% if let Some(u) = v.prev_url %}<a class="btn" href="{{ u }}" rel="prev">{{ ctx.tr.t("issues.prev") }}</a>{% endif %}
+<span>{{ ctx.nm("issues.page_of", v.page, v.pages) }}</span>
+{% if let Some(u) = v.next_url %}<a class="btn" href="{{ u }}" rel="next">{{ ctx.tr.t("issues.next") }}</a>{% endif %}
+</nav>
+</section>

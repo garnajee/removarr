@@ -1,0 +1,15 @@
+# Keep the build context small and free of local state or secrets.
+.git
+.github
+.claude
+.env
+.env.*
+!.env.example
+target
+old
+docs
+*.md
+*.db
+*.db-wal
+*.db-shm
+data

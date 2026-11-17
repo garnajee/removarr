@@ -1,0 +1,57 @@
+{% import "components.html" as c %}
+<section id="plan" aria-labelledby="plan-title">
+<h1 id="plan-title" tabindex="-1">{{ ctx.tr.t("plan.title") }} <code translate="no">{{ v.id }}</code></h1>
+<p>{% if v.mode_dry_run %}{% call c::badge("info", "info-circle", ctx.tr.t("mode.dry_run")) %}{% else %}{% call c::badge("warn", "alert-triangle", ctx.tr.t("mode.live")) %}{% endif %}
+<span class="pill">{{ ctx.coded("plan_status", v.status) }}</span></p>
+{% if !v.stored %}<div class="state" role="status"><p>{% call c::badge("info", "info-circle", ctx.tr.t("plan.preview_label")) %} {{ ctx.tr.t("plan.preview_not_stored") }}</p></div>{% endif %}
+{% if v.mode_dry_run %}<p class="state" role="note">{{ ctx.tr.t("plan.dry_run_only") }}</p>{% endif %}
+{% if v.status == "Expired" %}<p class="state error" role="alert">{{ ctx.tr.t("error.plan.expired") }}</p>{% endif %}
+{% if v.status == "Invalidated" %}<p class="state error" role="alert">{{ ctx.tr.t("error.plan.stale") }}</p>{% endif %}
+{% if v.status == "Interrupted" || v.status == "PartiallyExecuted" || v.status == "Failed" %}<p class="state incomplete" role="status">{{ ctx.tr.t("plan.not_all_done") }}</p>{% endif %}
+<h2>{{ ctx.tr.t("plan.gains") }}</h2>
+<dl class="facts">
+<dt>{{ ctx.tr.t("plan.gain_logical") }}</dt><dd>{{ v.logical }} <span class="tag">{{ ctx.tr.t("gain.logical_help") }}</span></dd>
+<dt>{{ ctx.tr.t("plan.gain_attributable") }}</dt><dd>{{ v.attributable }} <span class="tag">{{ ctx.tr.t("gain.expected_help") }}</span></dd>
+<dt>{{ ctx.tr.t("plan.gain_added") }}</dt><dd>{{ v.added }} <span class="tag">{{ ctx.tr.t("gain.added_help") }}</span></dd>
+<dt>{{ ctx.tr.t("plan.gain_net") }}</dt><dd>{{ v.net }} <span class="tag">{{ ctx.tr.t("gain.net_help") }}</span></dd>
+</dl>
+{% if v.irreversible %}<div class="panel-danger" role="note">{% call c::badge("crit", "alert-octagon", ctx.tr.t("confirm.cannot_undo")) %} {{ ctx.tr.t("plan.irreversible") }}</div>{% endif %}
+{% if !v.warnings.is_empty() %}<h2>{{ ctx.tr.t("plan.warnings") }}</h2><ul>{% for w in v.warnings %}<li>{{ ctx.coded("blocker", w) }}</li>{% endfor %}</ul>{% endif %}
+<h2>{{ ctx.tr.t("plan.actions") }} ({{ v.actions.len() }})</h2>
+<ol class="cards">
+{% for a in v.actions %}<li class="card {% if a.irreversible %}crit{% endif %}">
+<p><strong>{{ ctx.coded("kind", a.kind) }}</strong> <span class="pill">{{ ctx.coded("tier", a.tier) }}</span>{% if a.irreversible %} <span class="pill">{{ ctx.tr.t("plan.irreversible_short") }}</span>{% endif %}{% if a.companion %} <span class="pill">{{ ctx.tr.t("plan.companion") }}</span>{% endif %}</p>
+<code class="path" translate="no">{{ a.target }}</code>
+{% if !a.annexes.is_empty() %}<ul>{% for x in a.annexes %}<li><code class="path" translate="no">{{ x }}</code></li>{% endfor %}</ul>{% endif %}
+<dl class="meta"><div><dt>{{ ctx.tr.t("plan.gain_logical") }}</dt><dd>{{ a.logical }}</dd></div><div><dt>{{ ctx.tr.t("plan.gain_attributable") }}</dt><dd>{{ a.attributable }}</dd></div>{% if a.torrents > 0 %}<div><dt>{{ ctx.tr.t("issues.col.torrents") }}</dt><dd>{{ a.torrents }}</dd></div>{% endif %}</dl>
+</li>
+{% endfor %}
+</ol>
+{% if !v.excluded.is_empty() %}<h2>{{ ctx.tr.t("plan.excluded") }} ({{ v.excluded.len() }})</h2>
+<ul>{% for e in v.excluded %}<li><code class="path" translate="no">{{ e.subject }}</code><ul>{% for b in e.blockers %}<li>{{ ctx.coded("blocker", b) }}</li>{% endfor %}</ul></li>{% endfor %}</ul>{% endif %}
+<h2>{{ ctx.tr.t("plan.details") }}</h2>
+<dl class="facts">
+<dt>{{ ctx.tr.t("plan.origin") }}</dt><dd>{{ ctx.coded("origin", v.origin) }}</dd>
+<dt>{{ ctx.tr.t("plan.created_at") }}</dt><dd><time datetime="{{ v.created_at }}">{{ v.created_at }}</time></dd>
+<dt>{{ ctx.tr.t("plan.expires_at") }}</dt><dd><time datetime="{{ v.expires_at }}">{{ v.expires_at }}</time></dd>
+<dt>{{ ctx.tr.t("plan.max_tier") }}</dt><dd>{{ ctx.coded("tier", v.max_tier) }}</dd>
+</dl>
+{% if let Some(r) = v.report %}
+<h2>{{ ctx.tr.t("plan.results") }}</h2>
+<dl class="facts">
+<dt>{{ ctx.tr.t("plan.recorded_attributable") }}</dt><dd>{{ v.recorded_attributable }} <span class="tag">{{ ctx.tr.t("gain.recorded_help") }}</span></dd>
+<dt>{{ ctx.tr.t("plan.recorded_added") }}</dt><dd>{{ v.recorded_added }}</dd>
+</dl>
+{% if !v.observed.is_empty() %}<h3>{{ ctx.tr.t("plan.observed") }}</h3><p class="tag">{{ ctx.tr.t("gain.observed_help") }}</p>
+<ul>{% for o in v.observed %}<li><code translate="no">{{ o.0 }}</code>: {{ o.1 }}</li>{% endfor %}</ul>{% endif %}
+<ul class="cards">{% for a in r.actions %}<li class="card"><strong>#{{ a.index }} {{ ctx.coded("kind", a.kind) }}</strong>: {{ ctx.coded("outcome", a.outcome.key) }}</li>{% endfor %}</ul>
+{% if !r.remaining.is_empty() %}<h3>{{ ctx.tr.t("plan.remaining") }}</h3><ul class="cards">{% for x in r.remaining %}<li class="card incomplete">#{{ x.index }} {{ ctx.coded("kind", x.kind) }}: {{ ctx.coded("next_step", x.next_step) }}</li>{% endfor %}</ul>{% endif %}
+{% if !v.differences.is_empty() %}<ul>{% for d in v.differences %}<li>{{ d }}</li>{% endfor %}</ul>{% endif %}
+{% endif %}
+{% if v.can_approve %}<p><a class="btn primary" href="/plans/{{ v.id }}/confirm">{{ ctx.tr.t("command.review_and_approve") }}</a></p><p class="tag">{{ ctx.tr.t("confirm.approve_not_execute") }}</p>{% endif %}
+{% if v.can_simulate %}<form method="post" action="/plans/{{ v.id }}/simulate">{% call c::csrf(ctx.chrome.csrf) %}<button type="submit">{{ ctx.tr.t("command.simulate") }}</button> <span class="tag">{{ ctx.tr.t("plan.simulate_help") }}</span></form>{% endif %}
+{% if v.can_execute %}<details class="card crit"><summary>{{ ctx.tr.t("plan.execute_open") }}</summary>
+<p>{{ ctx.tn("plan.execute_text", v.actions.len()) }} {{ ctx.tr.t("gain.expected_help") }}: <strong>{{ v.attributable }}</strong>.{% if v.irreversible %} {{ ctx.tr.t("plan.irreversible") }}{% endif %}</p>
+<form method="post" action="/plans/{{ v.id }}/execute">{% call c::csrf(ctx.chrome.csrf) %}<button type="submit" class="danger">{{ ctx.tn("plan.execute_now", v.actions.len()) }}</button></form></details>{% endif %}
+{% if v.can_discard %}<form method="post" action="/plans/{{ v.id }}/discard">{% call c::csrf(ctx.chrome.csrf) %}<button type="submit">{{ ctx.tr.t("command.discard") }}</button></form>{% endif %}
+</section>

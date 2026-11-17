@@ -1,0 +1,78 @@
+{% import "components.html" as c %}
+<section id="issue" aria-labelledby="issue-title">
+<p><a href="/issues/{{ v.view.category }}">{{ v.category_label }}</a></p>
+<h1 id="issue-title" tabindex="-1" translate="no">{{ v.row.name }}</h1>
+<p>{% call c::badge(v.view.level, v.view.icon, ctx.tr.t(v.view.severity_key)) %}
+<span class="pill">{% if v.view.kind == "folder" %}{{ ctx.tr.t("issues.kind.folder_one") }}{% else %}{{ ctx.tr.t("issues.kind.file_one") }}{% endif %}</span>
+{% if v.row.ignored %}<span class="pill">{{ ctx.tr.t("ignore.is_ignored") }}</span>{% endif %}</p>
+<h2>{{ ctx.tr.t("issues.col.blockers") }}</h2>
+{% if v.row.blockers.is_empty() %}<p class="panel-ok">{{ ctx.tr.t("blocker.none") }}</p>
+{% else %}<div class="panel-danger" role="note"><p><strong>{{ ctx.tn("issues.blockers_pill", v.row.blockers.len()) }}</strong> {{ ctx.tr.t("blocker.excluded_note") }}</p>
+<ul>{% for b in v.row.blockers %}<li>{{ ctx.coded("blocker", b) }}</li>{% endfor %}</ul></div>{% endif %}
+{% if v.row.completeness.state != "complete" %}<div class="state incomplete" role="note"><p>{% call c::badge("warn", "alert-triangle", ctx.tr.t("state.incomplete")) %} {{ ctx.tr.t("evidence.incomplete_text") }}</p>
+{% if !v.row.completeness.missing.is_empty() %}<ul>{% for m in v.row.completeness.missing %}<li>{{ m }}</li>{% endfor %}</ul>{% endif %}</div>{% endif %}
+<h2>{{ ctx.tr.t("detail.summary") }}</h2>
+<dl class="facts">
+<dt>{{ ctx.tr.t("issues.col.size") }}</dt><dd>{{ v.view.size }}</dd>
+<dt>{{ ctx.tr.t("gain.potential") }}</dt><dd>{{ v.potential }} <span class="tag">{{ ctx.tr.t("gain.potential_help") }}</span></dd>
+{% if v.row.potential_counted_bytes != v.row.potential_bytes %}<dt>{{ ctx.tr.t("gain.potential_counted") }}</dt><dd>{{ v.potential_counted }} <span class="tag">{{ ctx.tr.t("space.overlap_note") }}</span></dd>{% endif %}
+<dt>{{ ctx.tr.t("issues.col.age") }}</dt><dd>{{ ctx.tn("unit.day", v.view.age_days) }}</dd>
+<dt>{{ ctx.tr.t("issues.col.torrents") }}</dt><dd>{{ v.view.torrents }}</dd>
+<dt>{{ ctx.tr.t("issues.first_seen") }}</dt><dd><time datetime="{{ v.first_seen }}">{{ v.first_seen }}</time></dd>
+<dt>{{ ctx.tr.t("issues.completeness") }}</dt><dd>{{ ctx.coded("completeness", v.row.completeness.state) }}</dd>
+<dt>{{ ctx.tr.t("detail.outcome") }}</dt><dd>{{ ctx.coded("outcome", v.outcome) }}</dd>
+</dl>
+<h2>{{ ctx.tr.t("issues.paths") }}</h2>
+<ul>{% for p in v.row.paths %}<li><code class="path" translate="no">{{ p }}</code></li>{% endfor %}</ul>
+{% if !v.annex_tree.is_empty() %}<h2>{{ ctx.tr.t("detail.annexes") }}</h2>
+<ul class="tree">{% for n in v.annex_tree %}{% for _ in 0..n.close_before %}</ul></li>{% endfor %}<li>{% if n.dir %}<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="16" height="16"><use href="#i-folder"/></svg> <code class="path" translate="no">{{ n.name }}</code><ul>{% else %}<code class="path" translate="no">{{ n.name }}</code></li>{% endif %}{% endfor %}{% for _ in 0..v.annex_close_end %}</ul></li>{% endfor %}</ul>{% endif %}
+{% if !v.row.torrents.is_empty() %}<h2>{{ ctx.tr.t("detail.torrents") }}</h2>
+<div class="tablewrap"><table class="stack">
+<caption>{{ ctx.tr.t("detail.torrents") }}</caption>
+<thead><tr><th scope="col">{{ ctx.tr.t("detail.torrent_name") }}</th><th scope="col">{{ ctx.tr.t("detail.torrent_state") }}</th><th scope="col">{{ ctx.tr.t("detail.torrent_hash") }}</th></tr></thead>
+<tbody>{% for t in v.row.torrents %}<tr><td data-label="{{ ctx.tr.t("detail.torrent_name") }}" translate="no">{{ t.name }}</td><td data-label="{{ ctx.tr.t("detail.torrent_state") }}"><code translate="no">{{ t.state }}</code></td><td data-label="{{ ctx.tr.t("detail.torrent_hash") }}"><code translate="no">{{ t.hash }}</code></td></tr>{% endfor %}</tbody></table></div>{% endif %}
+{% if !v.planned.is_empty() %}<h2>{{ ctx.tr.t("detail.planned") }}</h2>
+<p class="muted">{{ ctx.tr.t("detail.planned_note") }}</p>
+<div class="tablewrap"><table class="stack">
+<caption>{{ ctx.tr.t("detail.planned") }}</caption>
+<thead><tr><th scope="col">{{ ctx.tr.t("history.action") }}</th><th scope="col">{{ ctx.tr.t("plan.status") }}</th><th scope="col">{{ ctx.tr.t("plans.mode") }}</th><th scope="col">{{ ctx.tr.t("detail.planned_state") }}</th><th scope="col">{{ ctx.tr.t("plans.planned") }}</th><th scope="col">{{ ctx.tr.t("issues.col.torrents") }}</th></tr></thead>
+<tbody>{% for p in v.planned %}<tr>
+<td data-label="{{ ctx.tr.t("history.action") }}"><a href="/plans/{{ p.plan_id }}">{{ ctx.coded("kind", p.kind) }}</a></td>
+<td data-label="{{ ctx.tr.t("plan.status") }}">{{ ctx.coded("plan_status", p.plan_status) }}</td>
+<td data-label="{{ ctx.tr.t("plans.mode") }}">{% if p.dry_run %}{{ ctx.tr.t("mode.dry_run") }}{% else %}{{ ctx.tr.t("mode.live") }}{% endif %}</td>
+<td data-label="{{ ctx.tr.t("detail.planned_state") }}">{{ ctx.coded("outcome", p.state) }}</td>
+<td data-label="{{ ctx.tr.t("plans.planned") }}">{{ p.attributable }}{% if p.added != "0 B" %} <span class="tag">+{{ p.added }} {{ ctx.tr.t("plans.added") }}</span>{% endif %}</td>
+<td data-label="{{ ctx.tr.t("issues.col.torrents") }}">{{ p.torrents }}</td>
+</tr>{% endfor %}</tbody></table></div>{% endif %}
+{% if !v.row.inodes.is_empty() %}<h2>{{ ctx.tr.t("issues.inodes") }}</h2>
+<ul>{% for i in v.row.inodes %}<li><code translate="no">{{ i }}</code></li>{% endfor %}</ul>{% endif %}
+<h2>{{ ctx.tr.t("issues.evidence") }}</h2>
+{% if v.row.evidence.is_empty() %}<p class="state">{{ ctx.tr.t("evidence.none") }}</p>{% endif %}
+<ul class="cards">{% for e in v.row.evidence %}<li class="card {% if e.current %}ok{% else %}info{% endif %}">
+<p><strong>{{ ctx.coded("evidence", e.kind) }}</strong> <span class="pill">{% if e.current %}{{ ctx.tr.t("evidence.current") }}{% else %}{{ ctx.tr.t("issues.dated") }}{% endif %}</span></p>
+<p>{{ e.summary }}</p>
+<p class="tag">{{ ctx.tr.t("evidence.observed_at") }} <time datetime="{{ e.observed_at_iso }}">{{ e.observed_at_iso }}</time> - {{ ctx.coded("provenance", e.provenance) }}</p>
+</li>{% endfor %}</ul>
+{% if v.row.ignored %}
+<h2>{{ ctx.tr.t("ignore.restore_title") }}</h2>
+<form method="post" action="/issues/restore">{% call c::csrf(ctx.chrome.csrf) %}<input type="hidden" name="issue_ids" value="{{ v.view.id }}"><button type="submit" class="primary">{{ ctx.tr.t("command.restore") }}</button></form>
+{% else %}
+<h2>{{ ctx.tr.t("detail.act") }}</h2>
+<p class="muted">{{ ctx.tr.t("issues.plan_note") }}</p>
+<form method="post" action="/plans">
+{% call c::csrf(ctx.chrome.csrf) %}
+<input type="hidden" name="category" value="{{ v.view.category }}">
+<input type="hidden" name="issue_ids" value="{{ v.view.id }}">
+<div class="field"><label for="d-action">{{ ctx.tr.t("issues.action") }}</label>
+<select id="d-action" name="action" required><option value="" selected disabled>{{ ctx.tr.t("issues.choose_action") }}</option>{% for a in v.actions %}<option value="{{ a.value }}">{{ a.label }}</option>{% endfor %}</select></div>
+<label class="check"><input type="checkbox" name="remove_torrent_tasks" value="1"><span>{{ ctx.tr.t("plan.remove_torrent_tasks") }}</span></label>
+<div class="row"><button type="submit" formaction="/plans/preview">{{ ctx.tr.t("command.preview") }}</button><button type="submit" class="primary">{{ ctx.tr.t("command.create_plan") }}</button></div>
+</form>
+<details><summary>{{ ctx.tr.t("ignore.open") }}</summary>
+<p class="muted">{{ ctx.tr.t("ignore.reversible") }}</p>
+<form method="post" action="/issues/ignore">{% call c::csrf(ctx.chrome.csrf) %}<input type="hidden" name="issue_ids" value="{{ v.view.id }}">
+<div class="field"><label for="d-reason">{{ ctx.tr.t("issues.ignore_reason") }}</label><input id="d-reason" type="text" name="reason" maxlength="500" autocomplete="off"></div>
+<button type="submit">{{ ctx.tr.t("command.ignore") }}</button></form>
+</details>
+{% endif %}
+</section>

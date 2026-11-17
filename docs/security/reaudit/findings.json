@@ -1,0 +1,157 @@
+[
+ {
+  "verdict": "confirmed",
+  "fingerprint": "storage-journal-scrub-mangles-path-leaves-shared-sanitizer",
+  "title": "Shared sanitizer applied to journal path leaves can rewrite stored paths and mislabel crash recovery",
+  "description": "Since commit 4adeac3 storage::codec::scrub_value runs the shared sanitizer (removarr_domain::redact::sanitize) on every string leaf of journal intent target and observed values and of step final_state. A path leaf containing a whitespace-delimited word such as Basic, Bearer or Digest (the next word is replaced), a standalone sensitive key with an empty value such as Key: or Pass: (the rest of the line is replaced), a sensitive key=value pair after a comma or semicolon, or /announce or :// (the word becomes [url]) is stored in mangled form. The mangled string is still a valid path, so deserialization succeeds. If the process crashes between the intent row and the result row of a file or tree removal, recovery stats the mangled path, finds nothing and reports the step as Mutated although the file was never deleted. Effect: the interrupted action is labelled ExecutedUnverified and the torrent gets an extra recheck instead of being reported as interrupted. No file, torrent or ARR mutation follows and recovery never re-issues commands. Most of the class existed in the old scrubber (Basic or Bearer, Key= or Key: rewritten as Key=[redacted], ://); new in 4adeac3 are Digest, /announce, many more key names, comma, semicolon and ampersand segmentation, and the rest-of-line rule. For a tree removal only the tree root directory path is a rewritten value; file names inside the snapshot are JSON object keys and are not scrubbed.",
+  "root_cause": "Free-text credential redaction is applied to path-typed JSON leaves that recovery later parses back as authoritative paths and signatures.",
+  "intended_behavior": "Persisted journal targets must round-trip exactly so recovery can compare them with the disk; redaction should apply to messages and reasons, not to path fields (or recovery must fail closed when a stored target was altered).",
+  "trace": [
+   {
+    "kind": "entrypoint",
+    "file": "crates/storage/src/repos/journal.rs",
+    "line": 99,
+    "scope": "JournalRepo::record_intent",
+    "description": "Intent target and observed are passed through scrub_value before insertion (final_state at line 64)."
+   },
+   {
+    "kind": "propagation",
+    "file": "crates/storage/src/codec.rs",
+    "line": 75,
+    "scope": "scrub_value",
+    "description": "Every string leaf, including RelPath strings, goes through scrub, which now calls the shared sanitizer."
+   },
+   {
+    "kind": "propagation",
+    "file": "crates/domain/src/redact.rs",
+    "line": 125,
+    "scope": "sanitize",
+    "description": "Bearer, Basic and Digest redact the next word; an empty-value sensitive key redacts the rest of the line (line 83)."
+   },
+   {
+    "kind": "sink",
+    "file": "crates/workflows/src/actions/recovery.rs",
+    "line": 734,
+    "scope": "observe_fs_intent",
+    "description": "A stat of the mangled path gives Ok(None), mapped to Executed::Mutated."
+   }
+  ],
+  "evidence": [
+   {
+    "file": "crates/storage/src/codec.rs",
+    "line": 70,
+    "description": "scrub is now a thin call to removarr_domain::redact::sanitize."
+   },
+   {
+    "file": "crates/workflows/src/actions/recovery.rs",
+    "line": 714,
+    "description": "For FsRemoveTree a mangled tree root directory path (snapshot.dir.rel) makes all_gone true and yields Mutated; names of entries inside the snapshot are map keys and are not scrubbed."
+   },
+   {
+    "file": "crates/domain/src/redact.rs",
+    "line": 103,
+    "description": "sanitize tests each whitespace-delimited word; a path word that is exactly a trigger word, or a keyed word, matches."
+   }
+  ],
+  "conditions": [
+   {
+    "kind": "timing_dependency",
+    "description": "The process must crash between the intent row and the result row of a removal step."
+   },
+   {
+    "kind": "data_state",
+    "description": "The file path (or the tree root directory path) must contain a stand-alone trigger word such as Digest, Basic or Key:, or contain /announce, ://, or a sensitive key=value after a comma."
+   }
+  ],
+  "execution": {
+   "attacker_perspective": "A torrent or release provider who chooses file or folder names that end up in an approved deletion plan.",
+   "payloads": [
+    "Season 1/The Basic Instinct (1992).mkv",
+    "a/Show Key: Of Life.mkv"
+   ],
+   "instructions": [
+    "In an isolated fixture, record a removal intent for a target whose path contains the payload word.",
+    "Read the stored target back and compare it with the original.",
+    "Simulate a crash before the result row and run recovery with the file still present."
+   ],
+   "observed_result": "Source trace only: the stored path differs from the original, recovery sees no file and returns Mutated for an unchanged file. Not executed."
+  },
+  "remediation": {
+   "strategy": "Do not sanitize path-typed leaves of target and observed (sanitize reason and message fields only), or make observe_fs_intent return Unobservable when the scrubbed target differs from the original. Add a round-trip regression test with names containing Digest, Key: and /announce."
+  },
+  "severity": {
+   "likelihood": {
+    "score": "low",
+    "reason": "Needs a crash inside a narrow window and an unusual release name."
+   },
+   "impact": {
+    "score": "low",
+    "reason": "Mislabelled interrupted action plus an extra qBittorrent recheck; no wrong deletion or re-execution."
+   },
+   "overall_severity": "low"
+  },
+  "confidence": {
+   "score": "medium",
+   "reason": "Source-traced and independently verified by a fresh verifier; not executed because sandbox controls are not enforceable here."
+  }
+ },
+ {
+  "verdict": "needs_validation",
+  "fingerprint": "web-login-limiter-shared-bucket-without-trusted-proxies",
+  "title": "Login limiter collapses to one shared bucket behind a reverse proxy when trusted_proxies is unset (visibility added, exposure unchanged)",
+  "description": "Carried from run-1. Commit 4adeac3 adds a one-time warning event forwarded_header_untrusted_peer and documentation, and a test that shows the shared bucket, the per-IP window of 20, expiry after 15 minutes and separation once the proxy network is trusted. The limits and the rule that X-Forwarded-For is ignored from an untrusted peer are unchanged, so with an empty trusted_proxies behind a proxy all clients still share one bucket and 5 failed logins with the operator username per window block the operator login (reserve runs before verification). Existing sessions are unaffected. The behavior is intended fail-closed design; exposure depends on deployment. The warning can be consumed by any unauthenticated POST /login that carries an X-Forwarded-For header (it fires before the origin and CSRF checks), so it is a hint, not a guarantee.",
+  "claimed_root_cause": "Default empty trusted_proxies plus per-peer-IP limiter keys; deployment must set REMOVARR_TRUSTED_PROXIES behind a proxy.",
+  "trace": [
+   {
+    "kind": "entrypoint",
+    "file": "crates/web/src/auth/login.rs",
+    "line": 131,
+    "scope": "submit",
+    "description": "Client address comes from request::client_ip."
+   },
+   {
+    "kind": "propagation",
+    "file": "crates/web/src/auth/request.rs",
+    "line": 22,
+    "scope": "client_ip",
+    "description": "Peer address is used unless the peer is a trusted proxy."
+   },
+   {
+    "kind": "propagation",
+    "file": "crates/web/src/auth/login.rs",
+    "line": 140,
+    "scope": "submit",
+    "description": "New once-only warning when X-Forwarded-For arrives from an untrusted peer; logs only the peer address."
+   },
+   {
+    "kind": "sink",
+    "file": "crates/web/src/auth/limiter.rs",
+    "line": 135,
+    "scope": "LoginLimiter::reserve",
+    "description": "Refuses when the per-IP or per-IP-and-username window is full, before password verification."
+   }
+  ],
+  "evidence": [
+   {
+    "file": "crates/web/tests/auth_flow.rs",
+    "line": 1032,
+    "description": "New test: shared bucket, 429 with Retry-After, expiry, and trusted 172.18.0.0/16 separating clients (read, not executed)."
+   },
+   {
+    "file": "README.md",
+    "line": 101,
+    "description": "Hardening item 4 now explains the shared bucket and the log event."
+   }
+  ],
+  "blockers": [
+   "Whether the operator runs a reverse proxy in front of the container.",
+   "Value of REMOVARR_TRUSTED_PROXIES or server.trusted_proxies.",
+   "Peer address Docker presents (bridge gateway or proxy).",
+   "Whether a proxy or WAF limit prevents an attacker sustaining the failed attempts."
+  ],
+  "validation_plan": {
+   "local": "Run the new auth_flow test in a skill-conformant sandbox (no network, empty environment, scratch-local target copy and limits) to confirm behavior; the test source already encodes the expected results.",
+   "deployment": "Owner checks their own login_failed and login_succeeded log lines for client_ip equal to the proxy or gateway address and for the forwarded_header_untrusted_peer event; set trusted_proxies accordingly."
+  }
+ }
+]

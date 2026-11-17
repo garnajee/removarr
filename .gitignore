@@ -25,3 +25,6 @@ target/
 *.db-shm
 *.sqlite
 data/
+
+# Local application data (SQLite database, config) of a compose run
+/config/

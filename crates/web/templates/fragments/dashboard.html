@@ -1,0 +1,73 @@
+{% import "components.html" as c %}
+<section id="dashboard" aria-labelledby="dash-title">
+<h1 id="dash-title" tabindex="-1">{{ ctx.tr.t("nav.dashboard") }}</h1>
+<div class="card {{ v.urgency_class }}">
+<h2>{{ ctx.tr.t("dashboard.urgency") }}</h2>
+{% call c::badge(v.urgency_class, v.vm.urgency.icon, ctx.tr.t(v.vm.urgency.label_key)) %}
+{% if !v.reasons.is_empty() %}<ul>{% for r in v.reasons %}<li>{{ r.0 }}{% if let Some(n) = r.1 %} ({{ n }}){% endif %}</li>{% endfor %}</ul>{% endif %}
+</div>
+<div class="grid wide">
+<div class="card">
+<h2>{{ ctx.tr.t("dashboard.scan") }}</h2>
+{% if let Some(sc) = v.vm.last_scan %}
+<p>{{ ctx.tr.t("dashboard.last_scan") }}: {% if let Some(t) = sc.finished_at_iso %}<time datetime="{{ t }}">{{ t }}</time>{% else %}{{ ctx.tr.t("dashboard.running") }}{% endif %}</p>
+{% if sc.stale %}<p class="state stale" role="status">{% call c::badge("warn", "alert-triangle", ctx.tr.t("state.stale")) %} {{ ctx.tr.t("state.stale_text") }}</p>{% endif %}
+{% if !sc.complete %}<p class="state incomplete" role="status">{% call c::badge("warn", "alert-triangle", ctx.tr.t("state.incomplete")) %} {{ ctx.tr.t("state.incomplete_text") }}</p>{% endif %}
+<dl class="meta"><div><dt>{{ ctx.tr.t("dashboard.entries") }}</dt><dd>{{ sc.entries_scanned }}</dd></div><div><dt>{{ ctx.tr.t("dashboard.scan_errors") }}</dt><dd>{{ sc.scan_errors }}</dd></div></dl>
+{% else %}<p class="state" role="status">{{ ctx.tr.t("empty.no_scan") }}</p>{% endif %}
+<p>{{ ctx.tr.t("dashboard.next_scan") }}: {% if let Some(t) = v.next_scan %}<time datetime="{{ t }}">{{ t }}</time>{% else %}{{ ctx.tr.t("dashboard.none") }}{% endif %}</p>
+<form method="post" action="/scan">{% call c::csrf(ctx.chrome.csrf) %}<button type="submit" class="primary">{{ ctx.tr.t("command.scan") }}</button></form>
+</div>
+<div class="card">
+<h2>{{ ctx.tr.t("dashboard.space") }}</h2>
+<dl class="facts">
+<dt>{{ ctx.tr.t("space.logical") }}</dt><dd>{{ v.logical }}</dd>
+<dt>{{ ctx.tr.t("space.allocated") }}</dt><dd>{{ v.allocated }}</dd>
+<dt>{{ ctx.tr.t("space.shared") }}</dt><dd>{{ v.shared }}</dd>
+<dt>{{ ctx.tr.t("space.potential_not_guaranteed") }}</dt><dd>{{ v.potential }}</dd>
+</dl>
+{% if v.vm.space.potential_overlap_excluded_bytes > 0 %}<p class="tag">{{ ctx.tr.t("space.overlap_note") }}: {{ v.overlap }}</p>{% endif %}
+<p class="tag">{{ ctx.tr.t("space.not_a_promise") }}</p>
+{% if let Some(t) = v.vm.space.observed_at_iso %}<p class="tag">{{ ctx.tr.t("dashboard.as_observed_at") }} <time datetime="{{ t }}">{{ t }}</time></p>{% endif %}
+</div>
+<div class="card {% if v.vm.auto.paused %}warn{% endif %}">
+<h2>{{ ctx.tr.t("nav.auto") }}</h2>
+<p>{% if v.vm.auto.enabled %}{% call c::badge("ok", "check-circle", ctx.tr.t("auto.enabled")) %}{% else %}{% call c::badge("info", "info-circle", ctx.tr.t("auto.disabled")) %}{% endif %}</p>
+{% if let Some(r) = v.auto_paused %}<p>{% call c::badge("warn", "alert-triangle", ctx.tr.t("auto.paused")) %}</p><p>{{ ctx.tr.t("auto.pause_reason") }}: {{ r }}</p>{% endif %}
+<p><a href="/auto">{{ ctx.tr.t("dashboard.details") }}</a></p>
+<p>{{ ctx.tr.t("dashboard.recovery") }}: {{ ctx.tr.t(v.recovery_key) }}</p>
+{% if v.recovery_needs_manual %}<form method="post" action="/recovery/retry">{% call c::csrf(ctx.chrome.csrf) %}<button type="submit">{{ ctx.tr.t("command.retry_recovery") }}</button></form>{% endif %}
+</div>
+</div>
+<h2>{{ ctx.tr.t("dashboard.issues") }}</h2>
+{% if v.categories.is_empty() %}<p class="state">{{ ctx.tr.t("empty.no_scan") }}</p>{% endif %}
+<ul class="cards">
+{% for cat in v.categories %}<li class="card {{ cat.level }}"><a href="/issues/{{ cat.slug }}"><strong>{{ cat.label }}</strong></a>
+<p>{% call c::badge(cat.level, cat.icon, ctx.tr.t(cat.severity_key)) %} <span class="pill">{{ ctx.tn("unit.item", cat.count) }}</span> <span class="pill">{{ cat.size }}</span></p></li>
+{% endfor %}
+</ul>
+<p><a href="/ignored">{{ ctx.tr.t("nav.ignored") }}</a>: {{ ctx.tn("unit.item", v.vm.ignored_issues) }}</p>
+<h2>{{ ctx.tr.t("dashboard.services") }}</h2>
+<ul class="cards">
+{% for sv in v.services %}<li class="card {{ sv.level }}"><strong>{{ sv.name }}</strong> {% call c::badge(sv.level, sv.icon, sv.state) %}{% if let Some(ver) = sv.version %} <span class="tag">{{ ver }}</span>{% endif %}
+{% if !sv.current %}<p class="tag">{{ ctx.tr.t("dashboard.as_of_last_scan") }} <time datetime="{{ sv.observed_at }}">{{ sv.observed_at }}</time></p>{% endif %}</li>
+{% endfor %}
+</ul>
+<details><summary>{{ ctx.tr.t("dashboard.service_actions") }}</summary>
+<p class="muted">{{ ctx.tr.t("dashboard.service_actions_help") }}</p>
+{% for name in v.refreshable %}
+<form method="post" action="/services/{{ name }}/refresh">{% call c::csrf(ctx.chrome.csrf) %}<button type="submit">{{ ctx.tr.t("command.refresh") }} <span translate="no">{{ name }}</span></button></form>
+{% endfor %}
+{% for name in v.rescannable %}
+<form method="post" action="/services/{{ name }}/rescan">{% call c::csrf(ctx.chrome.csrf) %}<button type="submit">{{ ctx.tr.t("command.rescan_plan") }} <span translate="no">{{ name }}</span></button></form>
+{% endfor %}
+</details>
+<h2>{{ ctx.tr.t("nav.jobs") }}</h2>
+{% if v.jobs.is_empty() %}<p class="state">{{ ctx.tr.t("jobs.none") }}</p>{% endif %}
+<ul class="cards">
+{% for j in v.jobs %}<li class="card"><a href="/jobs/{{ j.id }}">{{ j.label }}</a> <span class="pill">{{ ctx.coded("job_status", j.status) }}</span>{% if !j.stage.is_empty() %} <span class="tag">{{ j.stage }}</span>{% endif %}
+{% if j.total > 0 %}<progress value="{{ j.done }}" max="{{ j.total }}" aria-label="{{ ctx.tr.t("jobs.progress") }}">{{ j.done }} / {{ j.total }}</progress>{% endif %}</li>
+{% endfor %}
+</ul>
+<p><span>{{ ctx.tr.t("export.title") }}:</span> <a href="/export/latest/json">{{ ctx.tr.t("export.json") }}</a> <a href="/export/latest/csv">{{ ctx.tr.t("export.csv") }}</a> <a href="/export/latest/md">{{ ctx.tr.t("export.md") }}</a></p>
+</section>

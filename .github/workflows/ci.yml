@@ -1,0 +1,82 @@
+name: CI
+
+# Checks only. This workflow never publishes anything and has read-only permissions.
+on:
+  pull_request:
+  push:
+    branches: [main]
+    paths-ignore: ["**.md", "docs/**", ".github/ISSUE_TEMPLATE/**"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_TOOLCHAIN: "1.91.1"   # keep equal to ARG RUST_VERSION in the Dockerfile
+
+jobs:
+  check:
+    name: fmt, clippy, test, release build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component rustfmt,clippy
+          rustup default "$RUST_TOOLCHAIN"
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Test
+        run: cargo test --workspace --locked
+      - name: Release build
+        run: cargo build --workspace --release --locked
+
+  audit:
+    name: dependency advisories
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
+          rustup default "$RUST_TOOLCHAIN"
+      - name: cargo-deny
+        run: |
+          cargo install cargo-deny --version 0.18.5 --locked
+          cargo deny check advisories bans sources
+
+  docker:
+    name: image build (no push)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - name: Build (amd64, not pushed)
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          push: false
+          load: true
+          tags: removarr:ci
+      - name: Non-root, ffprobe and healthcheck smoke test
+        run: |
+          set -eu
+          test "$(docker run --rm --user 1000:1000 --entrypoint id removarr:ci -u)" = "1000"
+          docker run --rm --entrypoint ffprobe removarr:ci -version >/dev/null
+          test "$(docker image inspect -f '{{.Config.User}}' removarr:ci)" != "" 
+          ! docker run --rm removarr:ci healthcheck   # no server: must fail fast, not hang
