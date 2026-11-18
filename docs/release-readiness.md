@@ -335,3 +335,13 @@ The user pushes and tags. This gate did neither.
 - **C5 license: done.** AGPL-3.0-or-later (`LICENSE`, workspace and crate manifests, README). README rewritten with
   step-by-step installation. Still open for the user: README screenshot, and whether `old/` (real NAS paths) and
   `docs/security/` stay if the repository becomes public.
+- **C4(b) tag protection: not available.** Tag rulesets need GitHub Pro or a public repository (API: "Upgrade to
+  GitHub Pro or make this repository public"); the legacy tag-protection API no longer exists. Mitigation while the
+  repository is private: the owner is the only collaborator (no invitations, no deploy keys). Apply the ruleset
+  (creation/update/deletion of `refs/tags/v*.*.*`, admin bypass) when the repository becomes public or moves to Pro.
+- **First release v0.1.1, 2026-11-18: published.** v0.1.0 never published (QEMU-emulated arm64 build exceeded the
+  90-minute job limit; tag left in place, nothing deleted). Release workflow now builds natively per architecture
+  (`ubuntu-24.04`, `ubuntu-24.04-arm`), scans each image with Trivy, pushes by digest with SBOM and provenance, and
+  merges one OCI index: `ghcr.io/garnajee/removarr-v2:0.1.1` and `:latest` (linux/amd64, linux/arm64; run
+  44350181742, index `sha256:dae03df01f35128433c301f0b37f47a167dd4a79e11d8290361a14b92d4f50d7`). The package is
+  private like the repository: `docker login ghcr.io` is needed to pull it.

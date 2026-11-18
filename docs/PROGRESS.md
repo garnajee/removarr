@@ -64,6 +64,8 @@ Status values: `todo`, `running`, `done`, `blocked`.
 | post-gate | C2 Linux/musl full-fixture B1/B2 | done | PASS: B1 26.1 MiB, B2 96.3 / 106.5 MiB (first scan / rescan), all B1-B11 pass on Linux/musl with the full fixture; no waiver needed |
 | post-gate | C1 CI green on main | done | run 44130981688 at f76dd8c; Linux/amd64 + Rust 1.91.1 fixes (clippy lints, readelf static check, cargo-deny 0.20.2 + documented exceptions, runner disk) |
 | post-gate | C5 license | done | AGPL-3.0-or-later; README rewritten |
+| post-gate | C4(b) tag protection | blocked (plan) | rulesets need GitHub Pro or a public repo; owner is the only collaborator |
+| post-gate | first release | done | v0.1.1 published to GHCR (amd64 + arm64, native runners); v0.1.0 never published (QEMU timeout) |
 | continuous | `21-unit-tests` (from wave 3) | done | pass 1 done (domain, 11 proptests, parity-matrix.md); pass 2 done (+14 tests); pass 3 done (+18 tests; found qbit fail-closed gap, fixed by 08); pass 4 done (+13 tests, no bugs); pass 5 done (+4 tests, no bugs, matrix re-checked); closed at wave 20: waves 16-19 fixes each shipped their own regression tests (1055 tests), parity matrix not re-run after pass 5 |
 
 ## Incidents
