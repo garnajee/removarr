@@ -1,0 +1,43 @@
+##########################################################################
+# Title:            removarr | Tasks (Saltbox role)                      #
+# URL:              https://github.com/garnajee/removarr-v2              #
+# --                                                                     #
+##########################################################################
+#                   GNU Affero General Public License v3.0               #
+##########################################################################
+---
+- name: Check that the removarr secrets are set
+  ansible.builtin.assert:
+    that:
+      - lookup('role_var', '_password_hash', role='removarr') | length > 0
+      - lookup('role_var', '_session_key', role='removarr') | length > 0
+    fail_msg: >-
+      Set removarr_role_password_hash and removarr_role_session_key in
+      /srv/git/saltbox/inventories/host_vars/localhost.yml (see the removarr README, "Install on Saltbox").
+    quiet: true
+
+- name: Read the Saltbox Docker network (Traefik reaches removarr through it)
+  community.docker.docker_network_info:
+    name: "{{ docker_networks_name_common }}"
+  register: removarr_saltbox_network
+
+- name: Trust the Saltbox network as the reverse proxy
+  ansible.builtin.set_fact:
+    removarr_saltbox_subnet: "{{ removarr_saltbox_network.network.IPAM.Config | map(attribute='Subnet') | join(',') }}"
+  when: removarr_saltbox_network.exists
+
+- name: Add DNS record
+  ansible.builtin.include_tasks: "{{ resources_tasks_path }}/dns/tasker.yml"
+  vars:
+    dns_record: "{{ lookup('role_var', '_dns_record', role='removarr') }}"
+    dns_zone: "{{ lookup('role_var', '_dns_zone', role='removarr') }}"
+    dns_proxy: "{{ lookup('role_var', '_dns_proxy', role='removarr') }}"
+
+- name: Remove existing Docker container
+  ansible.builtin.include_tasks: "{{ resources_tasks_path }}/docker/remove_docker_container.yml"
+
+- name: Create directories
+  ansible.builtin.include_tasks: "{{ resources_tasks_path }}/directories/create_directories.yml"
+
+- name: Create Docker container
+  ansible.builtin.include_tasks: "{{ resources_tasks_path }}/docker/create_docker_container.yml"

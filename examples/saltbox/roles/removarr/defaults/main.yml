@@ -1,0 +1,181 @@
+##########################################################################
+# Title:            removarr | Default Variables (Saltbox role)          #
+# URL:              https://github.com/garnajee/removarr-v2              #
+# --                                                                     #
+##########################################################################
+#                   GNU Affero General Public License v3.0               #
+##########################################################################
+---
+# Override any of these in /srv/git/saltbox/inventories/host_vars/localhost.yml.
+# Required there: removarr_role_password_hash and removarr_role_session_key.
+
+################################
+# Basics
+################################
+
+removarr_name: removarr
+
+################################
+# Secrets and services
+################################
+
+# `docker run --rm -i ghcr.io/garnajee/removarr-v2:latest hash-password` (Argon2id PHC string)
+removarr_role_password_hash: ""
+# `openssl rand -hex 64`
+removarr_role_session_key: ""
+removarr_role_username: "admin"
+
+# A service is used only once its secret is set (a URL without its secret would refuse startup).
+removarr_role_qbit_url: "http://qbittorrent:8080"
+removarr_role_qbit_username: ""
+removarr_role_qbit_password: ""
+removarr_role_sonarr_url: "http://sonarr:8989"
+removarr_role_sonarr_api_key: ""
+removarr_role_radarr_url: "http://radarr:7878"
+removarr_role_radarr_api_key: ""
+removarr_role_jellyfin_url: "http://jellyfin:8096"
+removarr_role_jellyfin_api_key: ""
+
+################################
+# Roots and path mappings
+################################
+
+# removarr audits the real disk (/mnt/local), not the mergerfs union (/mnt/unionfs):
+# hardlinks are native there, and cloud files are never downloaded for a proof.
+# Each root must exist. Set removarr_role_incomplete_root to "" if qBittorrent has no incomplete folder.
+removarr_role_completed_root: "/mnt/local/downloads/torrents/qbittorrent/completed"
+removarr_role_incomplete_root: "/mnt/local/downloads/torrents/qbittorrent/incoming"
+removarr_role_media_roots: "/mnt/local/Media/Movies,/mnt/local/Media/TV"
+
+# The services report /mnt/unionfs paths: translate them to the /mnt/local paths above.
+removarr_role_qbit_path_map: "{{ '/mnt/unionfs/downloads/torrents/qbittorrent/completed=/mnt/local/downloads/torrents/qbittorrent/completed'
+                                 ~ (',/mnt/unionfs/downloads/torrents/qbittorrent/incoming=/mnt/local/downloads/torrents/qbittorrent/incoming'
+                                    if (lookup('role_var', '_incomplete_root', role='removarr') | length > 0) else '') }}"
+removarr_role_sonarr_path_map: "/mnt/unionfs/Media/TV=/mnt/local/Media/TV"
+removarr_role_radarr_path_map: "/mnt/unionfs/Media/Movies=/mnt/local/Media/Movies"
+removarr_role_jellyfin_path_map: "/mnt/unionfs/Media/TV=/mnt/local/Media/TV,/mnt/unionfs/Media/Movies=/mnt/local/Media/Movies"
+
+################################
+# Paths
+################################
+
+removarr_role_paths_folder: "{{ removarr_name }}"
+removarr_role_paths_location: "{{ server_appdata_path }}/{{ removarr_role_paths_folder }}"
+removarr_role_paths_folders_list:
+  - "{{ removarr_role_paths_location }}"
+
+################################
+# Web
+################################
+
+removarr_role_web_subdomain: "{{ removarr_name }}"
+removarr_role_web_domain: "{{ user.domain }}"
+removarr_role_web_port: "8080"
+removarr_role_web_url: "{{ lookup('role_web', role='removarr', scheme='https') }}"
+
+################################
+# DNS
+################################
+
+removarr_role_dns_record: "{{ lookup('role_var', '_web_subdomain', role='removarr') }}"
+removarr_role_dns_zone: "{{ lookup('role_var', '_web_domain', role='removarr') }}"
+removarr_role_dns_proxy: "{{ dns_proxied }}"
+
+################################
+# Traefik
+################################
+
+# Authelia stays in front by default; removarr's own sign-in still applies. Set to "" to drop Authelia.
+removarr_role_traefik_sso_middleware: "{{ traefik_default_sso_middleware }}"
+removarr_role_traefik_middleware_default: "{{ traefik_default_middleware }}"
+removarr_role_traefik_middleware_custom: ""
+removarr_role_traefik_certresolver: "{{ traefik_default_certresolver }}"
+removarr_role_traefik_enabled: true
+removarr_role_traefik_api_enabled: false
+removarr_role_traefik_api_endpoint: ""
+
+################################
+# Docker
+################################
+
+# Container
+removarr_role_docker_container: "{{ removarr_name }}"
+
+# Image
+removarr_role_docker_image_pull: true
+removarr_role_docker_image_repo: "ghcr.io/garnajee/removarr-v2"
+removarr_role_docker_image_tag: "latest"
+removarr_role_docker_image: "{{ lookup('role_var', '_docker_image_repo', role='removarr') }}:{{ lookup('role_var', '_docker_image_tag', role='removarr') }}"
+
+# Envs. An empty value counts as unset; a service URL is left empty until its secret is set.
+removarr_role_docker_envs_default:
+  TZ: "{{ tz }}"
+  REMOVARR_DRY_RUN: "true"
+  REMOVARR_AUTO_MODE: "false"
+  REMOVARR_COOKIE_SECURE: "true"
+  REMOVARR_USERNAME: "{{ lookup('role_var', '_username', role='removarr') }}"
+  REMOVARR_PASSWORD_HASH: "{{ lookup('role_var', '_password_hash', role='removarr') }}"
+  REMOVARR_SESSION_KEY: "{{ lookup('role_var', '_session_key', role='removarr') }}"
+  REMOVARR_TRUSTED_PROXIES: "{{ removarr_saltbox_subnet | default('') }}"
+  REMOVARR_COMPLETED_ROOT: "{{ lookup('role_var', '_completed_root', role='removarr') }}"
+  REMOVARR_INCOMPLETE_ROOT: "{{ lookup('role_var', '_incomplete_root', role='removarr') }}"
+  REMOVARR_MEDIA_ROOTS: "{{ lookup('role_var', '_media_roots', role='removarr') }}"
+  REMOVARR_QBIT_PATH_MAP: "{{ lookup('role_var', '_qbit_path_map', role='removarr') }}"
+  REMOVARR_SONARR_PATH_MAP: "{{ lookup('role_var', '_sonarr_path_map', role='removarr') }}"
+  REMOVARR_RADARR_PATH_MAP: "{{ lookup('role_var', '_radarr_path_map', role='removarr') }}"
+  REMOVARR_JELLYFIN_PATH_MAP: "{{ lookup('role_var', '_jellyfin_path_map', role='removarr') }}"
+  REMOVARR_QBIT_URL: "{{ lookup('role_var', '_qbit_url', role='removarr')
+                       if (lookup('role_var', '_qbit_password', role='removarr') | length > 0) else '' }}"
+  REMOVARR_QBIT_USERNAME: "{{ lookup('role_var', '_qbit_username', role='removarr') }}"
+  REMOVARR_QBIT_PASSWORD: "{{ lookup('role_var', '_qbit_password', role='removarr') }}"
+  REMOVARR_SONARR_URL: "{{ lookup('role_var', '_sonarr_url', role='removarr')
+                         if (lookup('role_var', '_sonarr_api_key', role='removarr') | length > 0) else '' }}"
+  REMOVARR_SONARR_API_KEY: "{{ lookup('role_var', '_sonarr_api_key', role='removarr') }}"
+  REMOVARR_RADARR_URL: "{{ lookup('role_var', '_radarr_url', role='removarr')
+                         if (lookup('role_var', '_radarr_api_key', role='removarr') | length > 0) else '' }}"
+  REMOVARR_RADARR_API_KEY: "{{ lookup('role_var', '_radarr_api_key', role='removarr') }}"
+  REMOVARR_JELLYFIN_URL: "{{ lookup('role_var', '_jellyfin_url', role='removarr')
+                           if (lookup('role_var', '_jellyfin_api_key', role='removarr') | length > 0) else '' }}"
+  REMOVARR_JELLYFIN_API_KEY: "{{ lookup('role_var', '_jellyfin_api_key', role='removarr') }}"
+removarr_role_docker_envs_custom: {}
+removarr_role_docker_envs: "{{ lookup('role_var', '_docker_envs_default', role='removarr')
+                               | combine(lookup('role_var', '_docker_envs_custom', role='removarr')) }}"
+
+# Volumes: /config here, plus Saltbox's global /mnt:/mnt (one mount, so hardlinks work).
+# No extra /downloads mount: removarr only uses /mnt paths.
+removarr_role_docker_volumes_download: false
+removarr_role_docker_volumes_default:
+  - "{{ lookup('role_var', '_paths_location', role='removarr') }}:/config"
+removarr_role_docker_volumes_custom: []
+removarr_role_docker_volumes: "{{ lookup('role_var', '_docker_volumes_default', role='removarr')
+                                  + lookup('role_var', '_docker_volumes_custom', role='removarr') }}"
+
+# Hostname
+removarr_role_docker_hostname: "{{ removarr_name }}"
+
+# Networks
+removarr_role_docker_networks_alias: "{{ removarr_name }}"
+removarr_role_docker_networks_default: []
+removarr_role_docker_networks_custom: []
+removarr_role_docker_networks: "{{ docker_networks_common
+                                   + lookup('role_var', '_docker_networks_default', role='removarr')
+                                   + lookup('role_var', '_docker_networks_custom', role='removarr') }}"
+
+# Identity and hardening: the Saltbox user, never root; read-only root filesystem.
+removarr_role_docker_user: "{{ uid }}:{{ gid }}"
+removarr_role_docker_read_only: true
+removarr_role_docker_tmpfs:
+  - "/tmp"
+removarr_role_docker_cap_drop:
+  - "ALL"
+removarr_role_docker_security_opts:
+  - "no-new-privileges:true"
+removarr_role_docker_healthcheck:
+  test: ["CMD", "removarr", "healthcheck"]
+  interval: 30s
+  timeout: 5s
+  retries: 3
+  start_period: 10s
+
+# Restart Policy
+removarr_role_docker_restart_policy: unless-stopped

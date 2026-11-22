@@ -23,6 +23,7 @@ Written in Rust (Axum, Askama, HTMX, SQLite). It ships as one small, non-root Do
   - [6. Start and sign in](#6-start-and-sign-in)
   - [7. First dry run](#7-first-dry-run)
   - [8. Going live](#8-going-live)
+- [Install on Saltbox](#install-on-saltbox)
 - [Configuration](#configuration)
 - [Reverse proxy](#reverse-proxy)
 - [Operations](#operations)
@@ -79,6 +80,7 @@ Written in Rust (Axum, Askama, HTMX, SQLite). It ships as one small, non-root Do
 ## Installation
 
 The steps below use example paths. Replace `/srv/media` and the folder names with your own.
+On a [Saltbox](https://docs.saltbox.dev/) server, follow [Install on Saltbox](#install-on-saltbox) instead.
 
 ### 1. Get the image
 
@@ -229,6 +231,93 @@ Repeat until the proposals look right.
 5. Automatic mode (`REMOVARR_AUTO_MODE=true`) is optional. It only runs plans that pass every automatic rule:
    minimum age, ARR validation, full comparison, and a complete, reliable scan. It pauses at the first doubt.
 
+## Install on Saltbox
+
+[`examples/saltbox/`](examples/saltbox/) holds an Ansible role, installed with one command through
+[saltbox_mod](https://github.com/saltyorg/saltbox_mod), and a Compose file for those who prefer Compose. Both follow
+Saltbox conventions:
+- the Saltbox user, never root;
+- one `/mnt:/mnt` mount, so hardlinks work;
+- `/opt/removarr` for config and the database;
+- the `saltbox` network;
+- Traefik with Authelia at `https://removarr.<your domain>`.
+
+removarr audits the real disk, `/mnt/local`, rather than the mergerfs union `/mnt/unionfs`. Hardlinks are native
+there, and no cloud file is ever downloaded for a proof. The services report `/mnt/unionfs` paths, so the role maps
+them to `/mnt/local`.
+
+Defaults:
+
+| What | Path |
+|---|---|
+| Completed downloads | `/mnt/local/downloads/torrents/qbittorrent/completed` |
+| Incomplete downloads | `/mnt/local/downloads/torrents/qbittorrent/incoming` |
+| Media | `/mnt/local/Media/Movies` and `/mnt/local/Media/TV` |
+
+The qBittorrent paths are the ones the Saltbox qBittorrent docs recommend. Every root must exist.
+
+**With the role (recommended):**
+
+1. While the image is private, sign in once on the server: `docker login ghcr.io` (a GitHub token with
+   `read:packages`).
+2. Install saltbox_mod and copy the role:
+   ```sh
+   sb install saltbox-mod
+   git clone https://github.com/garnajee/removarr-v2.git /tmp/removarr-v2
+   cp -r /tmp/removarr-v2/examples/saltbox/roles/removarr /opt/saltbox_mod/roles/
+   ```
+3. In `/opt/saltbox_mod/saltbox_mod.yml`, add this line under `roles:`, between `# Apps Start` and `# Apps End`:
+   ```yaml
+       - { role: removarr, tags: ['removarr'] }
+   ```
+4. Create the secrets:
+   ```sh
+   docker run --rm -i ghcr.io/garnajee/removarr-v2:latest hash-password   # type the password
+   openssl rand -hex 64                                                    # session key
+   ```
+5. Add your settings to the Saltbox inventory (`sb edit inventory`, which opens
+   `/srv/git/saltbox/inventories/host_vars/localhost.yml`). Use single quotes so the `$` signs of the hash stay
+   literal. Each service is optional: one without a key is simply not used.
+   ```yaml
+   removarr_role_password_hash: '$argon2id$v=19$...'   # the full hash-password output
+   removarr_role_session_key: '...'
+   removarr_role_qbit_username: 'your qBittorrent user'
+   removarr_role_qbit_password: '...'
+   removarr_role_sonarr_api_key: '...'   # Sonarr: Settings > General > API Key
+   removarr_role_radarr_api_key: '...'
+   removarr_role_jellyfin_api_key: '...' # Jellyfin: Dashboard > API Keys
+   ```
+6. Install it: `sb install mod-removarr`. Rerun the same command after any change, or to update the image.
+7. Open `https://removarr.<your domain>`. Sign in through Authelia, then with the removarr account. Continue with
+   [7. First dry run](#7-first-dry-run). To go live, add this line to the inventory and rerun step 6:
+   ```yaml
+   removarr_role_docker_envs_custom: { REMOVARR_DRY_RUN: 'false' }
+   ```
+
+Any setting can be overridden the same way:
+- other roots or mappings: `removarr_role_media_roots`, `removarr_role_*_path_map`;
+- no incomplete folder: `removarr_role_incomplete_root: ''`;
+- a pinned image: `removarr_role_docker_image_tag: '0.1.1'`;
+- no Authelia: `removarr_role_traefik_sso_middleware: ''`;
+- any other variable: `removarr_role_docker_envs_custom`.
+
+The role trusts the `saltbox` network as the reverse proxy (`REMOVARR_TRUSTED_PROXIES`).
+
+**With Compose:** copy [`examples/saltbox/compose.yaml`](examples/saltbox/compose.yaml) to
+`/opt/removarr/compose.yaml`. Then:
+1. Set `user:`, `TZ` and your domain in it.
+2. Create `/opt/removarr/.env` with the secrets: `REMOVARR_PASSWORD_HASH`, `REMOVARR_SESSION_KEY`, and the service
+   URLs and keys, such as `REMOVARR_SONARR_URL=http://sonarr:8989`.
+3. Add `REMOVARR_TRUSTED_PROXIES` with the subnet from
+   `docker network inspect saltbox -f '{{(index .IPAM.Config 0).Subnet}}'`.
+4. Run `docker compose -f /opt/removarr/compose.yaml up -d`.
+
+**Limits on Saltbox:**
+- Media already uploaded to a cloud remote is not on `/mnt/local`. removarr doesn't see it, so it never proposes
+  anything for it, and may list the matching ARR files as missing.
+- Check the case of the Radarr folder: `Movies` or `movies`. Paths are case-sensitive.
+- Other qBittorrent save paths go in `REMOVARR_QBIT_EXTERNAL_PREFIXES`, through `removarr_role_docker_envs_custom`.
+
 ## Configuration
 
 Settings come from environment variables (`.env`). An optional TOML file can hold the non-secret settings:
@@ -345,6 +434,7 @@ published to GHCR only when a `v*.*.*` tag is pushed. The `latest` tag only move
 | `crates/` | Rust workspace: `domain`, `config`, `storage`, `fs`, `qbit`, `arr`, `jellyfin`, `matching`, `workflows`, `jobs`, `reporting`, `web`, `app` (the `removarr` binary), test crates |
 | `locales/` | English and French interface text |
 | `examples/removarr.toml` | Commented configuration file |
+| `examples/saltbox/` | Saltbox install: Ansible role and Compose file |
 | `docs/architecture.md` | Architecture, module ownership, performance budgets |
 | `docs/release-readiness.md` | Last release assessment |
 | `docs/security/` | Security audit reports |

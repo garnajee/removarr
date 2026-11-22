@@ -1,0 +1,71 @@
+# removarr on Saltbox, Docker Compose variant (the Ansible role in ./roles/removarr does the same in one command).
+# Install: mkdir /opt/removarr && cp compose.yaml /opt/removarr/ && create /opt/removarr/.env (secrets, see the README),
+# then `docker compose -f /opt/removarr/compose.yaml up -d`.
+# Replace every xYOUR_DOMAIN_NAMEx and check the lines marked CHANGE.
+
+services:
+  removarr:
+    image: ghcr.io/garnajee/removarr-v2:latest   # pin a version tag in production
+    container_name: removarr
+    hostname: removarr
+    restart: unless-stopped
+
+    # CHANGE to your Saltbox user's uid:gid (`id -u`:`id -g`). Never root, no PUID/PGID.
+    user: "1000:1000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+
+    # Secrets: REMOVARR_PASSWORD_HASH, REMOVARR_SESSION_KEY, service credentials, REMOVARR_TRUSTED_PROXIES.
+    env_file: .env
+    environment:
+      TZ: Etc/UTC                                # CHANGE to your time zone
+      REMOVARR_DRY_RUN: "true"                   # keep until a dry run looks right
+      REMOVARR_AUTO_MODE: "false"
+      REMOVARR_COOKIE_SECURE: "true"
+      # removarr audits the real disk (/mnt/local), not the mergerfs union (/mnt/unionfs).
+      # Each root must exist; drop REMOVARR_INCOMPLETE_ROOT and the incoming mapping if you have no incoming folder.
+      REMOVARR_COMPLETED_ROOT: /mnt/local/downloads/torrents/qbittorrent/completed
+      REMOVARR_INCOMPLETE_ROOT: /mnt/local/downloads/torrents/qbittorrent/incoming
+      REMOVARR_MEDIA_ROOTS: /mnt/local/Media/Movies,/mnt/local/Media/TV
+      # The services report /mnt/unionfs paths: translate them to /mnt/local.
+      REMOVARR_QBIT_PATH_MAP: /mnt/unionfs/downloads/torrents/qbittorrent/completed=/mnt/local/downloads/torrents/qbittorrent/completed,/mnt/unionfs/downloads/torrents/qbittorrent/incoming=/mnt/local/downloads/torrents/qbittorrent/incoming
+      REMOVARR_SONARR_PATH_MAP: /mnt/unionfs/Media/TV=/mnt/local/Media/TV
+      REMOVARR_RADARR_PATH_MAP: /mnt/unionfs/Media/Movies=/mnt/local/Media/Movies
+      REMOVARR_JELLYFIN_PATH_MAP: /mnt/unionfs/Media/TV=/mnt/local/Media/TV,/mnt/unionfs/Media/Movies=/mnt/local/Media/Movies
+
+    volumes:
+      # Saltbox convention: one /mnt mount, same paths as the host, so hardlinks work (no EXDEV).
+      - /mnt:/mnt:rslave
+      - /opt/removarr:/config
+
+    healthcheck:
+      test: ["CMD", "removarr", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    networks:
+      - saltbox
+    labels:
+      com.github.saltbox.saltbox_managed: true
+      traefik.enable: true
+      traefik.http.routers.removarr-http.entrypoints: web
+      traefik.http.routers.removarr-http.middlewares: globalHeaders@file,redirect-to-https@docker,robotHeaders@file,cloudflarewarp@docker,authelia@docker
+      traefik.http.routers.removarr-http.rule: Host(`removarr.xYOUR_DOMAIN_NAMEx`)
+      traefik.http.routers.removarr-http.service: removarr
+      traefik.http.routers.removarr.entrypoints: websecure
+      traefik.http.routers.removarr.middlewares: globalHeaders@file,secureHeaders@file,robotHeaders@file,cloudflarewarp@docker,authelia@docker
+      traefik.http.routers.removarr.rule: Host(`removarr.xYOUR_DOMAIN_NAMEx`)
+      traefik.http.routers.removarr.service: removarr
+      traefik.http.routers.removarr.tls.certresolver: cfdns
+      traefik.http.routers.removarr.tls.options: securetls@file
+      traefik.http.services.removarr.loadbalancer.server.port: 8080
+
+networks:
+  saltbox:
+    external: true
