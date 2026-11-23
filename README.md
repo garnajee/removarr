@@ -1,4 +1,27 @@
-# removarr
+<br/>
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/a9b7fc5d-66d2-4e4d-827d-5885e77b7c78" alt="Removarr Logo" width="250px" height="250px"/>
+  <h2 align="center">Removarr</h2>
+</p>
+<p align="center">
+  <a href="https://github.com/garnajee/removarr/issues/new?template=bug_report.md"><img src="https://img.shields.io/badge/report-issue-red" alt="Report Issue"></a>
+  <a href="https://github.com/garnajee/removarr/issues/new?template=feature_request.md">
+  <img src="https://img.shields.io/badge/request-feature-fuchsia" alt="Request Feature"></a>
+  <br/>
+  <a href="https://github.com/garnajee/removarr/stargazers">
+    <img src="https://img.shields.io/github/stars/garnajee/removarr?style=social" alt="GitHub stars">
+  </a>
+  <a href="https://github.com/garnajee/removarr/forks">
+    <img src="https://img.shields.io/github/forks/garnajee/removarr?style=social" alt="GitHub forks">
+  </a>
+  <br/>
+  <img src="https://img.shields.io/github/contributors/garnajee/removarr?color=dark-green" alt="Contributors">
+  <img src="https://img.shields.io/github/issues/garnajee/removarr" alt="Issues">
+  <img src="https://img.shields.io/github/license/garnajee/removarr?color=blue" alt="License">
+  <br/>
+  <a href="https://github.com/garnajee/removarr/actions/workflows/ci.yml"><img src="https://github.com/garnajee/removarr/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
+  <a href="https://github.com/garnajee/removarr/actions/workflows/release.yml"><img src="https://github.com/garnajee/removarr/actions/workflows/release.yml/badge.svg" alt="Image build and publish status"></a>
+</p>
 
 A self-hosted web app that audits the storage shared by **qBittorrent**, **Sonarr**, **Radarr** and **Jellyfin**,
 then helps you clean it up safely.
