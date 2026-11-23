@@ -1,4 +1,4 @@
-# Security audit report: removarr-v2
+# Security audit report: removarr
 
 **Run:** removarr-v2 / run-1. **Skill:** Cloudflare `security-audit` (project install, commit c1c8a8c). **Mode:** full audit, `standard` profile, full-repository scope, no budget set. **Source ref:** `cb62ef1df38b0a0a1b3042b2ff907dec77414b7c` (branch `autonomous-build`, clean worktree). **Prior runs:** none (no compatible ledger; no carried same-source confirmations or changed-source revalidations).
 

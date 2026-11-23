@@ -5,7 +5,7 @@
 
 services:
   removarr:
-    image: ghcr.io/garnajee/removarr-v2:latest   # pin a version tag in production
+    image: ghcr.io/garnajee/removarr:latest   # pin a version tag in production
     container_name: removarr
     hostname: removarr
     restart: unless-stopped

@@ -1,6 +1,6 @@
 ##########################################################################
 # Title:            removarr | Default Variables (Saltbox role)          #
-# URL:              https://github.com/garnajee/removarr-v2              #
+# URL:              https://github.com/garnajee/removarr              #
 # --                                                                     #
 ##########################################################################
 #                   GNU Affero General Public License v3.0               #
@@ -19,7 +19,7 @@ removarr_name: removarr
 # Secrets and services
 ################################
 
-# `docker run --rm -i ghcr.io/garnajee/removarr-v2:latest hash-password` (Argon2id PHC string)
+# `docker run --rm -i ghcr.io/garnajee/removarr:latest hash-password` (Argon2id PHC string)
 removarr_role_password_hash: ""
 # `openssl rand -hex 64`
 removarr_role_session_key: ""
@@ -103,7 +103,7 @@ removarr_role_docker_container: "{{ removarr_name }}"
 
 # Image
 removarr_role_docker_image_pull: true
-removarr_role_docker_image_repo: "ghcr.io/garnajee/removarr-v2"
+removarr_role_docker_image_repo: "ghcr.io/garnajee/removarr"
 removarr_role_docker_image_tag: "latest"
 removarr_role_docker_image: "{{ lookup('role_var', '_docker_image_repo', role='removarr') }}:{{ lookup('role_var', '_docker_image_tag', role='removarr') }}"
 

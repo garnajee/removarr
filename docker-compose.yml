@@ -9,7 +9,7 @@
 
 services:
   removarr:
-    image: ghcr.io/garnajee/removarr-v2:latest   # pin a version tag in production
+    image: ghcr.io/garnajee/removarr:latest   # pin a version tag in production
     # build: .                                # uncomment to build from this checkout instead
     container_name: removarr
     restart: unless-stopped

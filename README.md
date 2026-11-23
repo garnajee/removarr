@@ -1,4 +1,4 @@
-# removarr-v2
+# removarr
 
 A self-hosted web app that audits the storage shared by **qBittorrent**, **Sonarr**, **Radarr** and **Jellyfin**,
 then helps you clean it up safely.
@@ -87,14 +87,14 @@ On a [Saltbox](https://docs.saltbox.dev/) server, follow [Install on Saltbox](#i
 Clone the repository; it holds the Compose file and the templates:
 
 ```sh
-git clone https://github.com/garnajee/removarr-v2.git
-cd removarr-v2
+git clone https://github.com/garnajee/removarr.git
+cd removarr
 ```
 
 Then either:
 
-- **Pull a released image:** `ghcr.io/garnajee/removarr-v2:<version>`. Images are published when a `v*.*.*` tag is
-  pushed. If the package is private, sign in first with `docker login ghcr.io`.
+- **Pull a released image:** `ghcr.io/garnajee/removarr:<version>`. Images are published when a `v*.*.*` tag is
+  pushed.
 - **Or build it locally** (works right away):
   ```sh
   docker build -t removarr:local .
@@ -258,24 +258,22 @@ The qBittorrent paths are the ones the Saltbox qBittorrent docs recommend. Every
 
 **With the role (recommended):**
 
-1. While the image is private, sign in once on the server: `docker login ghcr.io` (a GitHub token with
-   `read:packages`).
-2. Install saltbox_mod and copy the role:
+1. Install saltbox_mod and copy the role:
    ```sh
    sb install saltbox-mod
-   git clone https://github.com/garnajee/removarr-v2.git /tmp/removarr-v2
-   cp -r /tmp/removarr-v2/examples/saltbox/roles/removarr /opt/saltbox_mod/roles/
+   git clone https://github.com/garnajee/removarr.git /tmp/removarr
+   cp -r /tmp/removarr/examples/saltbox/roles/removarr /opt/saltbox_mod/roles/
    ```
-3. In `/opt/saltbox_mod/saltbox_mod.yml`, add this line under `roles:`, between `# Apps Start` and `# Apps End`:
+2. In `/opt/saltbox_mod/saltbox_mod.yml`, add this line under `roles:`, between `# Apps Start` and `# Apps End`:
    ```yaml
        - { role: removarr, tags: ['removarr'] }
    ```
-4. Create the secrets:
+3. Create the secrets:
    ```sh
-   docker run --rm -i ghcr.io/garnajee/removarr-v2:latest hash-password   # type the password
+   docker run --rm -i ghcr.io/garnajee/removarr:latest hash-password   # type the password
    openssl rand -hex 64                                                    # session key
    ```
-5. Add your settings to the Saltbox inventory (`sb edit inventory`, which opens
+4. Add your settings to the Saltbox inventory (`sb edit inventory`, which opens
    `/srv/git/saltbox/inventories/host_vars/localhost.yml`). Use single quotes so the `$` signs of the hash stay
    literal. Each service is optional: one without a key is simply not used.
    ```yaml
@@ -287,9 +285,9 @@ The qBittorrent paths are the ones the Saltbox qBittorrent docs recommend. Every
    removarr_role_radarr_api_key: '...'
    removarr_role_jellyfin_api_key: '...' # Jellyfin: Dashboard > API Keys
    ```
-6. Install it: `sb install mod-removarr`. Rerun the same command after any change, or to update the image.
-7. Open `https://removarr.<your domain>`. Sign in through Authelia, then with the removarr account. Continue with
-   [7. First dry run](#7-first-dry-run). To go live, add this line to the inventory and rerun step 6:
+5. Install it: `sb install mod-removarr`. Rerun the same command after any change, or to update the image.
+6. Open `https://removarr.<your domain>`. Sign in through Authelia, then with the removarr account. Continue with
+   [7. First dry run](#7-first-dry-run). To go live, add this line to the inventory and rerun step 5:
    ```yaml
    removarr_role_docker_envs_custom: { REMOVARR_DRY_RUN: 'false' }
    ```
@@ -438,7 +436,7 @@ published to GHCR only when a `v*.*.*` tag is pushed. The `latest` tag only move
 | `docs/architecture.md` | Architecture, module ownership, performance budgets |
 | `docs/release-readiness.md` | Last release assessment |
 | `docs/security/` | Security audit reports |
-| `MASTER-PROMPT.md`, `.claude/agents/` | The specification and the agents that built the application |
+| `.claude/agents/` | The agents that built the application |
 
 ## License
 

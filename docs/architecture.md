@@ -1,4 +1,4 @@
-# Architecture — removarr-v2
+# Architecture — removarr
 
 Owner: `01-system-arch` (wave 1). Status: proposed for checkpoint CP1.
 Inputs: `MASTER-PROMPT.md` ("MASTER"), `old/CONTEXTE_RACINE_APP_NAS.md` ("CONTEXTE"),

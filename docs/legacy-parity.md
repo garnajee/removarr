@@ -1,4 +1,4 @@
-# Legacy parity matrix — removarr-v2
+# Legacy parity matrix — removarr
 
 Produced by `00-legacy-audit` (wave 0). Read-only audit of `old/`. This document is the traceable
 bridge between the legacy Python tool and the Rust rewrite. Later agents reference its stable IDs.

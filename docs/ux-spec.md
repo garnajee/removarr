@@ -1,4 +1,4 @@
-# removarr-v2 UX specification
+# removarr UX specification
 
 Status: wave 13, agent 18 (ux-design). Audience: `web-ui` (19). Scope: server-rendered pages (Askama) enhanced by HTMX 2.0.4.
 No SPA, no client framework, no inline script, no `hx-on`, no `eval` (CSP `script-src 'self'`). Every action works with

@@ -28,3 +28,6 @@ data/
 
 # Local application data (SQLite database, config) of a compose run
 /config/
+
+# Local working notes (kept out of the repository)
+/MASTER-PROMPT.md
